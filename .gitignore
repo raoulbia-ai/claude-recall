@@ -25,6 +25,3 @@ npm-debug.log*
 # Testing
 coverage/
 .nyc_output/
-
-# References (cloned repos)
-references/
