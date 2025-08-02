@@ -1,0 +1,72 @@
+{
+  "name": "Claude Flow Development",
+  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/python:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2.12.2": {
+      "version": "latest",
+      "moby": true
+    }
+  },
+  "runArgs": ["--privileged"],
+  "remoteUser": "vscode",
+  
+  // Setup commands for Claude Flow project structure
+  "onCreateCommand": "npm install -g claude-flow@alpha && npm install -g @anthropic-ai/claude-code",
+  "postCreateCommand": "bash -c 'mkdir -p claude-flow-tool/{coordination/{memory_bank,orchestration,subtasks},memory/{agents,sessions}} project && touch project/.gitkeep && echo \"✅ Claude Flow project structure created\"'",
+  
+  // Environment variables
+  "remoteEnv": {
+    "CLAUDE_FLOW_TOOL_DIR": "${containerWorkspaceFolder}/claude-flow-tool",
+    "CLAUDE_FLOW_PROJECT_DIR": "${containerWorkspaceFolder}/project",
+    "CLAUDE_FLOW_MEMORY_DIR": "${containerWorkspaceFolder}/claude-flow-tool/memory"
+  },
+  
+  // VS Code customizations
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rooveterinaryinc.roo-cline",
+        "vsls-contrib.gistfs",
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-python.vscode-pylance",
+        "github.copilot",
+        "github.copilot-chat"
+      ],
+      "settings": {
+        "terminal.integrated.cwd": "${workspaceFolder}/project",
+        "files.exclude": {
+          "**/node_modules": true,
+          "**/.git": false,
+          "**/claude-flow-tool/memory/sessions/*": true,
+          "**/claude-flow-tool/memory/agents/*": true,
+          "**/claude-flow-tool/coordination/memory_bank/*": true,
+          "**/claude-flow-tool/coordination/subtasks/*": true,
+          "**/claude-flow-tool/coordination/orchestration/*": true
+        },
+        "search.exclude": {
+          "**/node_modules": true,
+          "**/claude-flow-tool/memory/**": true,
+          "**/claude-flow-tool/coordination/**": true
+        },
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll": "explicit"
+        }
+      }
+    }
+  },
+  
+  // Workspace configuration
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind",
+  
+  // Additional mounts for persistence
+  "mounts": [
+    "source=${localWorkspaceFolderBasename}-claude-flow-memory,target=/workspaces/${localWorkspaceFolderBasename}/claude-flow-tool/memory,type=volume"
+  ],
+  
+  "shutdownAction": "none"
+}
