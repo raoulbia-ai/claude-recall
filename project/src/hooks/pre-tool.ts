@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 import { HookCapture, HookEvent } from './capture';
+import { MemoryStorage } from '../memory/storage';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const capture = new HookCapture();
 const logFile = path.join(process.cwd(), 'hook-capture.log');
+const dbPath = path.join(process.cwd(), 'claude-recall.db');
+const storage = new MemoryStorage(dbPath);
 
 // Create a simple logging function
 function logToFile(message: string): void {
@@ -29,6 +32,17 @@ process.stdin.on('data', (data) => {
 
     // Capture the event
     capture.capture(event);
+    
+    // Store in memory database
+    storage.save({
+      key: `event_${event.type}_${Date.now()}`,
+      value: event,
+      type: 'tool-use',
+      project_id: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+      file_path: eventData.tool_input?.file_path || eventData.tool_input?.file,
+      timestamp: Date.now(),
+      relevance_score: 1.0
+    });
     
     // Log to file for verification
     logToFile(`Captured: ${event.type} - ${event.tool_name}`);

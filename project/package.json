@@ -10,7 +10,7 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/",
     "dev": "ts-node"
   },
   "keywords": [],
