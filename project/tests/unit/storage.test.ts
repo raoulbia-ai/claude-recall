@@ -140,4 +140,49 @@ describe('MemoryStorage', () => {
     const retrieved = storage.retrieve('update-test');
     expect(retrieved?.value).toEqual({ version: 2 });
   });
+  
+  it('should handle multiple initializations without errors', () => {
+    // Create a temporary file for the database
+    const tmpDb = path.join(__dirname, 'test-multi-init.db');
+    
+    try {
+      // First initialization
+      const storage1 = new MemoryStorage(tmpDb);
+      storage1.save({
+        key: 'init-test',
+        value: { test: true },
+        type: 'test'
+      });
+      storage1.close();
+      
+      // Second initialization - should not throw error
+      const storage2 = new MemoryStorage(tmpDb);
+      const retrieved = storage2.retrieve('init-test');
+      expect(retrieved?.value).toEqual({ test: true });
+      
+      // Third initialization - verify idempotency
+      const storage3 = new MemoryStorage(tmpDb);
+      storage3.save({
+        key: 'init-test-2',
+        value: { test: 2 },
+        type: 'test'
+      });
+      storage3.close();
+      
+      // Close second instance
+      storage2.close();
+      
+      // Verify both records exist
+      const storage4 = new MemoryStorage(tmpDb);
+      expect(storage4.retrieve('init-test')).toBeDefined();
+      expect(storage4.retrieve('init-test-2')).toBeDefined();
+      storage4.close();
+      
+    } finally {
+      // Clean up
+      if (fs.existsSync(tmpDb)) {
+        fs.unlinkSync(tmpDb);
+      }
+    }
+  });
 });

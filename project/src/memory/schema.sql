@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS memories (
   relevance_score REAL DEFAULT 1.0
 );
 
-CREATE INDEX idx_memories_project ON memories(project_id);
-CREATE INDEX idx_memories_type ON memories(type);
-CREATE INDEX idx_memories_timestamp ON memories(timestamp);
+CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
+CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);

@@ -23,9 +23,39 @@ export class MemoryStorage {
   }
   
   private initialize(): void {
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const schema = fs.readFileSync(schemaPath, 'utf-8');
-    this.db.exec(schema);
+    // Check if the database is already initialized
+    try {
+      const tableExists = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
+      ).get();
+      
+      if (tableExists) {
+        // Database is already initialized, skip schema execution
+        return;
+      }
+    } catch (error) {
+      // If checking fails, proceed with initialization
+    }
+    
+    // Initialize the database schema
+    try {
+      const schemaPath = path.join(__dirname, 'schema.sql');
+      const schema = fs.readFileSync(schemaPath, 'utf-8');
+      this.db.exec(schema);
+    } catch (error) {
+      // Log error but don't throw - database might already be initialized
+      console.error('Error initializing database schema:', error);
+      
+      // Verify that the memories table exists
+      const tableExists = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
+      ).get();
+      
+      if (!tableExists) {
+        // Re-throw the error if the table doesn't exist
+        throw new Error(`Failed to initialize database: ${error}`);
+      }
+    }
   }
   
   save(memory: Memory): void {

@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspaces/claude-recall/project/dist/hooks/post-tool.js"
+          }
+        ]
+      }
     ]
   }
 }
