@@ -6,6 +6,18 @@ export interface ClaudeRecallConfig {
   database: {
     path: string;
     name: string;
+    // Compaction settings
+    compaction?: {
+      autoCompact: boolean;
+      compactThreshold: number;
+      maxMemories: number;
+      retention: {
+        toolUse: number;
+        corrections: number;
+        preferences: number;
+        projectKnowledge: number;
+      };
+    };
   };
   
   // Logging configuration
@@ -58,7 +70,18 @@ export class ConfigService {
     const defaultConfig: ClaudeRecallConfig = {
       database: {
         path: process.env.CLAUDE_RECALL_DB_PATH || process.cwd(),
-        name: process.env.CLAUDE_RECALL_DB_NAME || 'claude-recall.db'
+        name: process.env.CLAUDE_RECALL_DB_NAME || 'claude-recall.db',
+        compaction: {
+          autoCompact: process.env.CLAUDE_RECALL_AUTO_COMPACT !== 'false',
+          compactThreshold: parseInt(process.env.CLAUDE_RECALL_COMPACT_THRESHOLD || '10485760'), // 10MB
+          maxMemories: parseInt(process.env.CLAUDE_RECALL_MAX_MEMORIES || '10000'),
+          retention: {
+            toolUse: parseInt(process.env.CLAUDE_RECALL_RETAIN_TOOL_USE || '1000'),
+            corrections: parseInt(process.env.CLAUDE_RECALL_RETAIN_CORRECTIONS || '100'),
+            preferences: parseInt(process.env.CLAUDE_RECALL_RETAIN_PREFERENCES || '-1'), // Keep forever
+            projectKnowledge: parseInt(process.env.CLAUDE_RECALL_RETAIN_PROJECT_KNOWLEDGE || '-1') // Keep forever
+          }
+        }
       },
       logging: {
         directory: process.env.CLAUDE_RECALL_LOG_DIR || process.cwd(),
@@ -106,7 +129,18 @@ export class ConfigService {
   
   private mergeConfig(defaultConfig: ClaudeRecallConfig, customConfig: any): ClaudeRecallConfig {
     return {
-      database: { ...defaultConfig.database, ...customConfig.database },
+      database: {
+        ...defaultConfig.database,
+        ...customConfig.database,
+        compaction: customConfig.database?.compaction ? {
+          ...defaultConfig.database.compaction,
+          ...customConfig.database.compaction,
+          retention: {
+            ...defaultConfig.database.compaction?.retention,
+            ...customConfig.database.compaction?.retention
+          }
+        } : defaultConfig.database.compaction
+      },
       logging: { ...defaultConfig.logging, ...customConfig.logging },
       memory: { ...defaultConfig.memory, ...customConfig.memory },
       project: { ...defaultConfig.project, ...customConfig.project },

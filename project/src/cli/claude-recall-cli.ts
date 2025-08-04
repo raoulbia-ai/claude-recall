@@ -4,6 +4,7 @@ import { HookService, HookEvent } from '../services/hook';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { LoggingService } from '../services/logging';
+import { DatabaseManager } from '../services/database-manager';
 import { program } from 'commander';
 
 interface CLIOptions {
@@ -17,6 +18,7 @@ class ClaudeRecallCLI {
   private memoryService = MemoryService.getInstance();
   private config = ConfigService.getInstance();
   private logger = LoggingService.getInstance();
+  private databaseManager = DatabaseManager.getInstance();
   
   constructor(private options: CLIOptions = {}) {
     // Override config if specified
@@ -170,6 +172,132 @@ class ClaudeRecallCLI {
       await Promise.race([dataPromise, timeoutPromise]);
       process.exit(0);
     } catch (error) {
+      process.exit(1);
+    }
+  }
+  
+  /**
+   * Compact the database
+   */
+  async compact(dryRun: boolean = false): Promise<void> {
+    try {
+      console.log(`\n🗜️  ${dryRun ? 'Analyzing' : 'Compacting'} Claude Recall database...`);
+      
+      // Get current stats
+      const stats = await this.databaseManager.getStats();
+      console.log(`\nCurrent database state:`);
+      console.log(`  Size: ${stats.sizeMB.toFixed(2)} MB`);
+      console.log(`  Total memories: ${stats.totalMemories}`);
+      
+      // Perform compaction
+      const result = await this.databaseManager.compact(dryRun);
+      
+      // Show results
+      console.log(`\n${dryRun ? 'Would remove' : 'Removed'}:`);
+      console.log(`  Duplicates: ${result.deduplicatedCount}`);
+      console.log(`  Old memories: ${result.removedCount}`);
+      
+      const savedBytes = result.beforeSize - result.afterSize;
+      const savedMB = (savedBytes / 1024 / 1024).toFixed(2);
+      const savedPercent = ((savedBytes / result.beforeSize) * 100).toFixed(1);
+      
+      if (dryRun) {
+        console.log(`\nPotential space savings: ${savedMB} MB (${savedPercent}%)`);
+      } else {
+        console.log(`\nSpace saved: ${savedMB} MB (${savedPercent}%)`);
+        console.log(`Duration: ${result.duration}ms`);
+        
+        if (result.backupPath) {
+          console.log(`\n✅ Backup created: ${result.backupPath}`);
+        }
+      }
+      
+      console.log('\n');
+      
+    } catch (error) {
+      this.logger.error('CLI', 'Error compacting database', error);
+      console.error('Failed to compact database:', error);
+      process.exit(1);
+    }
+  }
+  
+  /**
+   * Clear memories from the database
+   */
+  async clear(options: { type?: string; before?: string; force?: boolean } = {}): Promise<void> {
+    try {
+      // Get current stats for confirmation
+      const stats = this.memoryService.getStats();
+      
+      // Build confirmation message
+      let confirmMessage = '\n⚠️  Warning: This will permanently delete ';
+      let whereClause = '';
+      const params: any[] = [];
+      
+      if (options.type) {
+        confirmMessage += `all ${options.type} memories`;
+        whereClause = 'WHERE type = ?';
+        params.push(options.type);
+      } else if (options.before) {
+        // Parse dd-mm-yyyy format
+        const parts = options.before.split('-');
+        if (parts.length !== 3) {
+          console.error('Invalid date format. Please use dd-mm-yyyy');
+          process.exit(1);
+        }
+        
+        const day = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
+        const year = parseInt(parts[2]);
+        
+        const date = new Date(year, month, day);
+        if (isNaN(date.getTime())) {
+          console.error('Invalid date. Please use dd-mm-yyyy format');
+          process.exit(1);
+        }
+        
+        const timestamp = date.getTime();
+        confirmMessage += `memories from before ${options.before}`;
+        whereClause = 'WHERE timestamp < ?';
+        params.push(timestamp);
+      } else {
+        confirmMessage += `ALL ${stats.total} memories`;
+      }
+      
+      confirmMessage += '\n\nThis action cannot be undone. Continue? (yes/no): ';
+      
+      // Skip confirmation if --force flag is used
+      if (!options.force) {
+        const readline = require('readline').createInterface({
+          input: process.stdin,
+          output: process.stdout
+        });
+        
+        const answer = await new Promise<string>(resolve => {
+          readline.question(confirmMessage, resolve);
+        });
+        readline.close();
+        
+        if (answer.toLowerCase() !== 'yes' && answer.toLowerCase() !== 'y') {
+          console.log('\nOperation cancelled.');
+          return;
+        }
+      }
+      
+      // Perform the deletion
+      const db = this.memoryService.getDatabase();
+      const deleteStmt = db.prepare(`DELETE FROM memories ${whereClause}`);
+      const result = deleteStmt.run(...params);
+      
+      console.log(`\n✅ Deleted ${result.changes} memories`);
+      
+      // Show new stats
+      const newStats = this.memoryService.getStats();
+      console.log(`\nRemaining memories: ${newStats.total}`);
+      
+    } catch (error) {
+      this.logger.error('CLI', 'Error clearing memories', error);
+      console.error('Failed to clear memories:', error);
       process.exit(1);
     }
   }
@@ -527,6 +655,26 @@ async function main() {
     .action(async (query: string) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.search(query);
+    });
+    
+  program
+    .command('compact')
+    .description('Compact the database to reclaim space')
+    .option('--dry-run', 'Preview what would be removed without making changes')
+    .action(async (options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.compact(options.dryRun);
+    });
+    
+  program
+    .command('clear')
+    .description('Clear memories from the database')
+    .option('--type <type>', 'Clear only memories of a specific type')
+    .option('--before <dd-mm-yyyy>', 'Clear memories before a specific date')
+    .option('--force', 'Skip confirmation prompt')
+    .action(async (options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.clear(options);
     });
 
   // Parse and execute

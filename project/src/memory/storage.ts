@@ -308,6 +308,10 @@ export class MemoryStorage {
     return rows.map(row => this.rowToMemory(row));
   }
 
+  getDatabase(): Database.Database {
+    return this.db;
+  }
+  
   close(): void {
     this.db.close();
   }

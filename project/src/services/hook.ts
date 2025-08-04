@@ -5,6 +5,7 @@ import { LoggingService } from './logging';
 import { ActionPatternDetector } from './action-pattern-detector';
 import { PreferenceExtractor, ExtractedPreference } from './preference-extractor';
 import { SemanticPreferenceExtractor, ExtractedSemanticPreference } from './semantic-preference-extractor';
+import { DatabaseManager } from './database-manager';
 
 export interface HookEvent {
   type: string;
@@ -31,6 +32,7 @@ export class HookService {
   private preferenceExtractor = new PreferenceExtractor();
   private semanticExtractor = new SemanticPreferenceExtractor();
   private actionDetector = new ActionPatternDetector();
+  private databaseManager = DatabaseManager.getInstance();
   
   // Preference pattern regexes
   private readonly PREFERENCE_PATTERNS = [
@@ -51,6 +53,9 @@ export class HookService {
     
     // Claude-native architecture: trust Claude Code's intelligence
     this.logger.info('HookService', 'Initialized with Claude-native architecture (no redundant API calls)');
+    
+    // Check if auto-compaction is needed on startup
+    this.checkAutoCompaction();
   }
   
   static getInstance(): HookService {
@@ -550,5 +555,27 @@ export class HookService {
     }
     
     return formatted.trim();
+  }
+  
+  /**
+   * Check if auto-compaction is needed and run it
+   */
+  private async checkAutoCompaction(): Promise<void> {
+    try {
+      const shouldCompact = await this.databaseManager.shouldCompact();
+      if (shouldCompact) {
+        this.logger.info('HookService', 'Auto-compaction triggered on startup');
+        const result = await this.databaseManager.compact();
+        const savedMB = ((result.beforeSize - result.afterSize) / 1024 / 1024).toFixed(2);
+        this.logger.info('HookService', `Auto-compaction completed: saved ${savedMB} MB`, {
+          removedCount: result.removedCount,
+          deduplicatedCount: result.deduplicatedCount,
+          duration: `${result.duration}ms`
+        });
+      }
+    } catch (error) {
+      // Don't fail startup if compaction fails
+      this.logger.error('HookService', 'Auto-compaction check failed', error);
+    }
   }
 }

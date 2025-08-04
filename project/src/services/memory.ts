@@ -361,6 +361,13 @@ export class MemoryService {
   }
 
   /**
+   * Get direct database access (for CLI operations)
+   */
+  getDatabase() {
+    return this.storage.getDatabase();
+  }
+  
+  /**
    * Close database connection
    */
   close(): void {
