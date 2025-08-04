@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspaces/claude-recall/project/dist/hooks/pre-tool-enhanced.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": {
+          "tool_name": "Edit"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /workspaces/claude-recall/project/dist/hooks/post-tool.js"
+          }
+        ]
+      }
+    ]
+  }
+}

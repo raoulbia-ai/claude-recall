@@ -1,0 +1,27 @@
+{
+  "database": {
+    "path": "/path/to/database/directory",
+    "name": "claude-recall.db"
+  },
+  "logging": {
+    "directory": "/path/to/logs",
+    "level": "info",
+    "maxFiles": 5,
+    "maxSize": "10MB"
+  },
+  "memory": {
+    "maxRetrieval": 5,
+    "relevanceThreshold": 0.1,
+    "decayFactor": 0.5,
+    "halfLife": 7
+  },
+  "project": {
+    "rootDir": "/path/to/project",
+    "name": "My Project",
+    "id": "unique-project-id"
+  },
+  "hooks": {
+    "timeout": 5000,
+    "enabled": true
+  }
+}

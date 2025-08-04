@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx claude-recall capture pre-tool"
+            "command": "node /workspaces/claude-recall/project/dist/hooks/minimal/pre-tool-trigger.js"
           }
         ]
       }
@@ -17,17 +17,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx claude-recall capture post-tool"
+            "command": "node /workspaces/claude-recall/project/dist/hooks/minimal/post-tool-trigger.js"
           }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
+        "matcher": "*",
         "hooks": [
           {
-            "type": "command", 
-            "command": "npx claude-recall capture user-prompt"
+            "type": "command",
+            "command": "node /workspaces/claude-recall/project/dist/hooks/minimal/user-prompt-submit-trigger.js"
           }
         ]
       }

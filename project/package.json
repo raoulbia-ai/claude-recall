@@ -1,8 +1,11 @@
 {
-  "name": "project",
+  "name": "claude-recall",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Memory-enhanced Claude Code hooks with service layer architecture",
+  "main": "dist/cli/claude-recall-cli.js",
+  "bin": {
+    "claude-recall": "dist/cli/claude-recall-cli.js"
+  },
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -10,8 +13,17 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/",
-    "dev": "ts-node"
+    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js",
+    "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
+    "dev": "ts-node",
+    "start": "ts-node src/server.ts",
+    "start:dev": "nodemon --exec ts-node src/server.ts",
+    "claude-recall": "ts-node src/cli/claude-recall-cli.ts",
+    "install:global": "npm run build && npm link",
+    "stats": "npm run claude-recall stats",
+    "search": "npm run claude-recall search",
+    "migrate:service-layer": "ts-node migrate-to-service-layer.ts",
+    "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\""
   },
   "keywords": [],
   "author": "",
@@ -25,7 +37,14 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.2.0"
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.2.0",
+    "commander": "^12.1.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2"
   }
 }

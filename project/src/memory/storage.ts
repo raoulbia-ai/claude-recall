@@ -115,7 +115,7 @@ export class MemoryStorage {
     };
   }
   
-  searchByContext(context: { project_id?: string; file_path?: string; type?: string }): Memory[] {
+  searchByContext(context: { project_id?: string; file_path?: string; type?: string; keywords?: string[] }): Memory[] {
     let query = 'SELECT * FROM memories WHERE 1=1';
     const params: any[] = [];
     
@@ -133,6 +133,28 @@ export class MemoryStorage {
       query += ' AND type = ?';
       params.push(context.type);
     }
+    
+    // Add keyword search in value field
+    if (context.keywords && context.keywords.length > 0) {
+      const keywordConditions = context.keywords.map(() => 'value LIKE ?').join(' OR ');
+      query += ` AND (${keywordConditions})`;
+      
+      // Add parameters for each keyword
+      for (const keyword of context.keywords) {
+        params.push(`%${keyword}%`);
+      }
+    }
+    
+    // Order by type priority and relevance
+    query += ` ORDER BY 
+      CASE type 
+        WHEN 'project-knowledge' THEN 1 
+        WHEN 'preference' THEN 2 
+        WHEN 'tool-use' THEN 3 
+        ELSE 4 
+      END,
+      relevance_score DESC,
+      timestamp DESC`;
     
     const stmt = this.db.prepare(query);
     const rows = stmt.all(...params) as any[];
