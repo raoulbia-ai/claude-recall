@@ -376,33 +376,88 @@ Should return formatted memories about PostgreSQL usage.
    - Multiple project support
    - Advanced search capabilities
 
+## Stage 8: Intelligent Memory Enhancement (IN PROGRESS)
+
+### Overview
+Building on the stable Stage 7 foundation, we're adding intelligence to the memory system through pattern detection and associative retrieval, without modifying core architecture.
+
+### Phase 8.1: Pattern Detection Module (PENDING)
+**Goal**: Add task and context detection without changing existing interfaces
+
+#### Swarm Task Created
+- Task definition: `swarm-tasks/phase1-pattern-detection.md`
+- Implementation approach: New module that doesn't touch existing code
+- Features to implement:
+  - Task type detection (create_test, fix_bug, refactor, etc.)
+  - Language and framework detection
+  - Entity extraction from prompts
+  
+#### Architecture Plan
+```
+Current: User Prompt → Memory Search → Direct Keyword Match
+Enhanced: User Prompt → Pattern Detection → Context Enhancement → Smart Search
+```
+
+### Phase 8.2: Enhanced Memory Search (PLANNED)
+**Goal**: Layer intelligence on top of existing search
+
+- Create MemoryEnhancer service that wraps existing MemoryService
+- Detect patterns and include related memories
+- Example: "create a test" → also retrieves test directory preferences
+
+### Phase 8.3: Associative Memory Network (PLANNED)
+**Goal**: Build memory relationships without changing storage
+
+- New association table (additive, no schema changes)
+- Background process to find related memories
+- Enable "spreading activation" retrieval
+
+### Success Criteria
+- Zero breaking changes to Stage 7 functionality
+- Each phase independently testable and reversible
+- Maintain <100ms retrieval performance
+- Incremental value delivery
+
 ## Repository Structure
 ```
 claude-recall/
 ├── src/
+│   ├── cli/
+│   │   └── claude-recall-cli.ts      # Service layer CLI
 │   ├── hooks/
-│   │   ├── pre-tool-enhanced.ts
-│   │   ├── post-tool.ts
-│   │   └── user-prompt-submit-v2.ts  # NEW
+│   │   └── minimal/                  # Simple trigger hooks
+│   │       ├── pre-tool-trigger.ts
+│   │       ├── post-tool-trigger.ts
+│   │       └── user-prompt-trigger.ts
+│   ├── services/                     # Service layer (Stage 7)
+│   │   ├── config.ts
+│   │   ├── hook.ts
+│   │   ├── logging.ts
+│   │   └── memory.ts
 │   ├── memory/
 │   │   ├── storage.ts
 │   │   └── schema.sql
 │   ├── core/
 │   │   ├── patterns.ts
-│   │   └── retrieval.ts
-│   └── auth/
-│       └── authentication.ts
+│   │   ├── retrieval.ts
+│   │   └── pattern-detector.ts      # NEW (Stage 8.1)
+│   └── services/
+│       └── pattern-service.ts        # NEW (Stage 8.1)
 ├── tests/
 │   └── unit/
 │       ├── hooks.test.ts
 │       ├── storage.test.ts
 │       ├── patterns.test.ts
-│       └── retrieval.test.ts
+│       ├── retrieval.test.ts
+│       └── pattern-detector.test.ts  # NEW (Stage 8.1)
 ├── docs/
 │   ├── implementation-tracker.md
-│   ├── user-prompt-hook-guide.md  # NEW
+│   ├── user-prompt-hook-guide.md
+│   ├── incremental-enhancement-plan.md  # NEW (Stage 8)
 │   └── test-instructions-*.md
+├── swarm-tasks/
+│   └── phase1-pattern-detection.md   # NEW (Stage 8.1)
 └── .claude/
     ├── settings.json
-    └── settings-with-prompt-hook.json  # NEW
+    └── settings-with-prompt-hook.json
 ```

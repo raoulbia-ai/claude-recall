@@ -1,4 +1,5 @@
 import { MemoryService, MemoryServiceContext } from './memory';
+import { MemoryEnhancer } from './memory-enhancer';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
 
@@ -132,7 +133,8 @@ export class HookService {
       }
       
       // Retrieve relevant memories
-      const memories = this.memoryService.findRelevant(context);
+      const enhancer = new MemoryEnhancer();
+      const memories = await enhancer.enhanceSearch(content);
       
       if (memories.length > 0) {
         const formattedMemories = this.formatRetrievedMemories(memories);
