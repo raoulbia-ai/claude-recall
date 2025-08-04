@@ -1,122 +1,126 @@
 # Claude Recall
 
-Memory-enhanced Claude Code hooks with service layer architecture.
+A memory system for Claude Code that captures and recalls context from your development sessions.
 
-## What it does
+## Overview
 
-Claude Recall captures tool usage and user preferences from Claude Code sessions, storing them in a local SQLite database for context-aware retrieval in future conversations. It learns your patterns and provides relevant context automatically.
+Claude Recall enhances Claude Code by providing persistent memory across sessions. It automatically captures:
+- Tool usage patterns and preferences
+- User commands and workflows
+- Project-specific context and decisions
+
+This allows Claude to remember your preferences and provide more contextual assistance over time.
+
+## Features
+
+- **Automatic Memory Capture**: Hooks into Claude Code to capture relevant interactions
+- **Intelligent Retrieval**: Returns contextually relevant memories based on current queries
+- **Pattern Detection**: Identifies recurring patterns in your development workflow
+- **SQLite Storage**: Lightweight, local storage with no external dependencies
+- **CLI Interface**: Simple commands for memory management and statistics
 
 ## Installation
 
-### Global Installation (Recommended)
+### Prerequisites
+- Node.js >= 16.0.0
+- Claude Code CLI installed
 
+### Install from npm
 ```bash
 npm install -g claude-recall
 ```
 
-After installation, you can use `claude-recall` or `npx claude-recall` from anywhere.
-
-### Local Development
-
+### Install from source
 ```bash
-git clone <repository>
-cd claude-recall
+git clone https://github.com/raoulbia-ai/claude-recall.git
+cd claude-recall/project
 npm install
 npm run build
-npm link  # for global access during development
+npm link
 ```
 
-## Architecture
+## Configuration
 
-Claude Recall follows a clean service layer pattern inspired by claude-flow:
+### Automatic Setup
+During installation, Claude Recall will:
+1. Create a `.claude/` directory in your home folder
+2. Set up hooks in Claude's settings.json
+3. Initialize the SQLite database
 
-```
-Hooks → CLI → Service → Storage
-```
-
-### Why This Architecture?
-
-- **Hooks are dumb**: Simple triggers that only pipe data to CLI service
-- **CLI is smart**: Handles all business logic, parsing, and coordination  
-- **Services are modular**: Clean separation of concerns (memory, config, logging)
-- **Storage is isolated**: Database operations centralized in storage layer
-
-This prevents the brittleness common in hook-based systems where business logic is scattered across hook scripts.
-
-## CLI Commands
-
-### Capture Commands (Used by Hooks)
-
-```bash
-claude-recall capture pre-tool    # Handle pre-tool events
-claude-recall capture post-tool   # Handle post-tool events  
-claude-recall capture user-prompt # Handle user prompts
-```
-
-### Utility Commands
-
-```bash
-claude-recall stats              # Show memory statistics
-claude-recall search "database"  # Search memories by query
-claude-recall --help            # Show help
-```
-
-## Hook Configuration
-
-Update your `.claude/settings.json`:
+### Manual Setup
+If automatic setup fails, you can manually configure by adding to your Claude settings.json:
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture pre-tool"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "*", 
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture post-tool"
-      }]
-    }],
-    "UserPromptSubmit": [{
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture user-prompt"
-      }]
-    }]
+    "user-prompt-submit": "npx claude-recall capture user-prompt",
+    "pre-tool": "npx claude-recall capture pre-tool",
+    "post-tool": "npx claude-recall capture post-tool"
   }
 }
 ```
 
-## Key Features
+## Usage
 
-- **Memory Capture**: Automatically captures tool usage, preferences, and patterns
-- **Context Retrieval**: Provides relevant memories based on current context
-- **Pattern Recognition**: Learns from corrections and user preferences  
-- **Global Access**: Works with `npx claude-recall` from any directory
-- **Clean Architecture**: Service layer pattern prevents brittleness
-- **Local Storage**: All data stays on your machine (SQLite database)
+### CLI Commands
 
-## Development
+```bash
+# View memory statistics
+claude-recall stats
 
-The codebase is intentionally kept minimal (under 2000 lines) with clear separation:
+# Search memories
+claude-recall search "database"
 
-- `src/cli/` - CLI interface and command handling
-- `src/services/` - Business logic services  
-- `src/core/` - Core functionality (storage, retrieval, patterns)
-- `src/hooks/minimal/` - Simple hook triggers
-- `src/memory/` - Database schema and operations
+# Clear memories by type
+claude-recall clear --type user-prompt
+claude-recall clear --type tool-usage
+claude-recall clear --all
 
-## Success Criteria Met
+# View status
+claude-recall status
+```
 
-✅ Hooks contain NO business logic - just pipe data to CLI  
-✅ No hardcoded paths anywhere in the system  
-✅ Works with `npx claude-recall` from any directory  
-✅ Clean separation: hooks → CLI → service → storage  
-✅ All original functionality preserved after refactor  
+### How It Works
 
-This architecture makes Claude Recall maintainable, testable, and robust for long-term use.
+1. **Capture**: Hooks automatically capture interactions with Claude
+2. **Process**: Patterns and preferences are extracted from captured data
+3. **Store**: Information is stored in a local SQLite database
+4. **Retrieve**: Relevant memories are injected into Claude's context when needed
+
+## Memory Types
+
+- **user-prompt**: User commands and queries
+- **tool-usage**: Tool executions and parameters
+- **preferences**: Detected user preferences and patterns
+- **context**: Project-specific information
+
+## Privacy
+
+All data is stored locally on your machine. No information is sent to external servers.
+
+## Troubleshooting
+
+### Claude Code doesn't recognize memories
+- Restart Claude Code after installation
+- Verify hooks are properly configured: `claude-recall status`
+
+### Database errors
+- Check permissions: `~/.claude/claude-recall.db`
+- Reinitialize: `claude-recall clear --all`
+
+### Hook failures
+- Ensure `npx` is in your PATH
+- Check Claude's settings.json for proper hook configuration
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Support
+
+- Issues: https://github.com/raoulbia-ai/claude-recall/issues
+- Documentation: https://github.com/raoulbia-ai/claude-recall/wiki
