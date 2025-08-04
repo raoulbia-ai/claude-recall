@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "pre-tool": "~/.claude/hooks/pre-tool-trigger.js",
+    "post-tool": "~/.claude/hooks/post-tool-trigger.js",
+    "user-prompt-submit": "~/.claude/hooks/user-prompt-submit-trigger.js"
+  },
+  "claude-recall": {
+    "enabled": true,
+    "memory-injection": true,
+    "behavioral-learning": true,
+    "auto-capture": true,
+    "hook-timeout": 5000,
+    "max-memories": 10000,
+    "semantic-search": true
+  }
+}

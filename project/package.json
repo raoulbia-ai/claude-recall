@@ -1,7 +1,7 @@
 {
   "name": "claude-recall",
   "version": "1.0.0",
-  "description": "Memory-enhanced Claude Code hooks with service layer architecture",
+  "description": "Memory system for Claude Code with behavioral learning and automated NPM installation",
   "main": "dist/cli/claude-recall-cli.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"
@@ -13,7 +13,7 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js",
+    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js && cp -r scripts dist/ && cp -r templates dist/",
     "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
     "dev": "ts-node",
     "start": "ts-node src/server.ts",
@@ -23,11 +23,25 @@
     "stats": "npm run claude-recall stats",
     "search": "npm run claude-recall search",
     "migrate:service-layer": "ts-node migrate-to-service-layer.ts",
-    "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\""
+    "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\"",
+    "postinstall": "node scripts/install.js",
+    "preuninstall": "node scripts/uninstall.js",
+    "prepare": "npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["claude-code", "memory", "ai", "productivity", "automation", "claude", "recall"],
+  "author": "Claude Recall Team",
   "license": "ISC",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/claude-recall/claude-recall.git"
+  },
+  "homepage": "https://github.com/claude-recall/claude-recall#readme",
+  "bugs": {
+    "url": "https://github.com/claude-recall/claude-recall/issues"
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^24.1.0",

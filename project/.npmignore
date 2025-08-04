@@ -1,0 +1,76 @@
+# Development files
+src/
+tsconfig.json
+jest.config.js
+*.ts
+!dist/**/*.d.ts
+
+# Test files
+tests/
+tests-*/
+test-*/
+coverage/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Development artifacts
+.git/
+.gitignore
+node_modules/
+*.log
+errors.log
+info.log
+warnings.log
+*.db
+!dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Flow files
+.claude-flow/
+swarm-*/
+task-*.md
+*-stage*.md
+*-handoff.md
+*-instructions.md
+*-complete.md
+initialize-swarm.js
+swarm-initialization.md
+
+# Development scripts and configs
+debug-*.ts
+demo-*.ts
+test-*.ts
+test-*.js
+test-*.sh
+test.txt
+*.py
+settings/
+config/
+hook-capture.log
+user-prompt-capture.log
+
+# Documentation that shouldn't be in package
+docs/build-vs-fork-decision.md
+docs/execution-sequence.md
+docs/hooks-analysis-for-claude-recall.md
+docs/implementation-tracker.md
+docs/incremental-enhancement-plan.md
+docs/true-nlp-integration.md
+docs/user-prompt-hook-guide.md
+
+# Temporary files
+factorial.py
+hello.ts
+api-client.js

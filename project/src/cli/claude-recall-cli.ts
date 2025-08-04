@@ -240,6 +240,162 @@ class ClaudeRecallCLI {
   }
   
   /**
+   * Install Claude Recall hooks and settings
+   */
+  async install(): Promise<void> {
+    try {
+      const path = require('path');
+      const installerPath = path.join(__dirname, '..', 'scripts', 'install.js');
+      const installer = require(installerPath);
+      const inst = new installer();
+      await inst.install();
+    } catch (error) {
+      this.logger.error('CLI', 'Installation failed', error);
+      console.error('Installation failed:', error);
+      process.exit(1);
+    }
+  }
+  
+  /**
+   * Uninstall Claude Recall hooks and settings
+   */
+  async uninstall(): Promise<void> {
+    try {
+      const path = require('path');
+      const uninstallerPath = path.join(__dirname, '..', 'scripts', 'uninstall.js');
+      const uninstaller = require(uninstallerPath);
+      const uninst = new uninstaller();
+      await uninst.uninstall();
+    } catch (error) {
+      this.logger.error('CLI', 'Uninstallation failed', error);
+      console.error('Uninstallation failed:', error);
+      process.exit(1);
+    }
+  }
+  
+  /**
+   * Show installation and system status
+   */
+  async showStatus(): Promise<void> {
+    try {
+      const path = require('path');
+      const integrationPath = path.join(__dirname, '..', 'scripts', 'claude-integration.js');
+      const ClaudeIntegration = require(integrationPath);
+      const claude = new ClaudeIntegration();
+      await claude.initialize();
+      
+      console.log('\n📊 Claude Recall Status');
+      console.log('========================\n');
+      
+      // Get status from claude integration
+      const status = await claude.getStatus();
+      
+      // Check Claude Code installation
+      if (status.claudeDetection.found) {
+        console.log('✅ Claude Code: Installed');
+        console.log(`   Directory: ${status.claudeDetection.homePath}`);
+      } else {
+        console.log('❌ Claude Code: Not installed');
+      }
+      
+      // Check hooks installation
+      const hooksInstalled = status.hooksInstalled && status.hooksInstalled.length > 0;
+      console.log(`${hooksInstalled ? '✅' : '❌'} Hooks: ${hooksInstalled ? 'Installed' : 'Not installed'}`);
+      
+      // Check database
+      const dbPath = this.config.getDatabasePath();
+      const fs = require('fs');
+      const dbExists = fs.existsSync(dbPath);
+      console.log(`${dbExists ? '✅' : '❌'} Database: ${dbExists ? 'Initialized' : 'Not initialized'}`);
+      if (dbExists) {
+        console.log(`   Path: ${dbPath}`);
+        const stats = this.memoryService.getStats();
+        console.log(`   Memories: ${stats.total}`);
+      }
+      
+      // Check configuration
+      const config = this.config.getConfig();
+      console.log('\n⚙️  Configuration:');
+      console.log(`   Memory enabled: ${config.memory ? 'Yes' : 'No'}`);
+      console.log(`   Max retrieval: ${config.memory?.maxRetrieval || 10}`);
+      console.log(`   Relevance threshold: ${config.memory?.relevanceThreshold || 0.7}`);
+      console.log(`   Hook timeout: ${config.hooks?.timeout || 5000}ms`);
+      
+      console.log('\n');
+    } catch (error) {
+      this.logger.error('CLI', 'Error showing status', error);
+      console.error('Failed to retrieve status');
+      process.exit(1);
+    }
+  }
+  
+  /**
+   * Validate Claude Recall installation
+   */
+  async validate(): Promise<void> {
+    try {
+      const path = require('path');
+      const integrationPath = path.join(__dirname, '..', 'scripts', 'claude-integration.js');
+      const ClaudeIntegration = require(integrationPath);
+      const claude = new ClaudeIntegration();
+      await claude.initialize();
+      
+      console.log('\n🔍 Validating Claude Recall Installation');
+      console.log('=========================================\n');
+      
+      let isValid = true;
+      const issues: string[] = [];
+      
+      // Get status and validation
+      const status = await claude.getStatus();
+      const validation = await claude.validateInstallation();
+      
+      // Validate Claude Code installation
+      if (!status.claudeDetection.found) {
+        isValid = false;
+        issues.push('Claude Code is not installed');
+      }
+      
+      // Validate hooks
+      if (!validation.hooksValid) {
+        isValid = false;
+        issues.push('Hooks are not properly installed');
+      }
+      
+      // Validate settings
+      if (!validation.settingsValid) {
+        isValid = false;
+        issues.push('Claude Code settings are not properly configured');
+      }
+      
+      // Validate database
+      const dbPath = this.config.getDatabasePath();
+      const fs = require('fs');
+      if (!fs.existsSync(dbPath)) {
+        isValid = false;
+        issues.push('Database is not initialized');
+      }
+      
+      // Report results
+      if (isValid) {
+        console.log('✅ All validation checks passed!');
+        console.log('\nClaude Recall is properly installed and configured.');
+      } else {
+        console.log('❌ Validation failed!');
+        console.log('\nIssues found:');
+        issues.forEach(issue => console.log(`  - ${issue}`));
+        console.log('\nRun "claude-recall install" to fix these issues.');
+        process.exit(1);
+      }
+      
+    } catch (error) {
+      this.logger.error('CLI', 'Validation error', error);
+      console.error('Validation failed:', error);
+      process.exit(1);
+    }
+  }
+  
+  /**
    * Display help information
    */
   showHelp(): void {
@@ -255,6 +411,10 @@ Commands:
   post-tool                Handle post-tool hook execution
   stats                    Show memory statistics
   search <query>           Search memories by query
+  install                  Install or reinstall Claude Recall hooks
+  uninstall                Remove Claude Recall hooks
+  status                   Show installation and system status
+  validate                 Validate Claude Recall installation
   help                     Show this help message
 
 Options:
@@ -273,6 +433,8 @@ Examples:
   claude-recall-cli pre-tool --verbose
   claude-recall-cli stats
   claude-recall-cli search "database"
+  claude-recall-cli install
+  claude-recall-cli status
   claude-recall-cli --config /path/to/config.json pre-tool
 `);
   }
@@ -315,6 +477,39 @@ async function main() {
     .action(async () => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.handleUserPromptSubmit();
+    });
+
+  // Installation commands
+  program
+    .command('install')
+    .description('Install or reinstall Claude Recall hooks and settings')
+    .action(async () => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.install();
+    });
+    
+  program
+    .command('uninstall')
+    .description('Remove Claude Recall hooks and settings')
+    .action(async () => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.uninstall();
+    });
+    
+  program
+    .command('status')
+    .description('Show installation and system status')
+    .action(async () => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.showStatus();
+    });
+    
+  program
+    .command('validate')
+    .description('Validate Claude Recall installation')
+    .action(async () => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.validate();
     });
 
   // Utility commands
