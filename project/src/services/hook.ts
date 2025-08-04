@@ -2,9 +2,9 @@ import { MemoryService, MemoryServiceContext } from './memory';
 import { MemoryEnhancer } from './memory-enhancer';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
+import { ActionPatternDetector } from './action-pattern-detector';
 import { PreferenceExtractor, ExtractedPreference } from './preference-extractor';
 import { SemanticPreferenceExtractor, ExtractedSemanticPreference } from './semantic-preference-extractor';
-import { IntelligentPreferenceExtractor, IntelligentPreference } from './intelligent-preference-extractor';
 
 export interface HookEvent {
   type: string;
@@ -30,7 +30,7 @@ export class HookService {
   private logger = LoggingService.getInstance();
   private preferenceExtractor = new PreferenceExtractor();
   private semanticExtractor = new SemanticPreferenceExtractor();
-  private intelligentExtractor?: IntelligentPreferenceExtractor;
+  private actionDetector = new ActionPatternDetector();
   
   // Preference pattern regexes
   private readonly PREFERENCE_PATTERNS = [
@@ -49,13 +49,8 @@ export class HookService {
   private constructor() {
     this.logger.info('HookService', 'Initialized hook service');
     
-    // Initialize intelligent extractor if API key is available
-    if (process.env.ANTHROPIC_API_KEY) {
-      this.intelligentExtractor = new IntelligentPreferenceExtractor();
-      this.logger.info('HookService', 'Initialized intelligent NLP preference extractor');
-    } else {
-      this.logger.warn('HookService', 'ANTHROPIC_API_KEY not found, using pattern-based extraction only');
-    }
+    // Claude-native architecture: trust Claude Code's intelligence
+    this.logger.info('HookService', 'Initialized with Claude-native architecture (no redundant API calls)');
   }
   
   static getInstance(): HookService {
@@ -90,6 +85,17 @@ export class HookService {
       // Store the tool use event
       if (event.tool_name) {
         this.memoryService.storeToolUse(event.tool_name, event.tool_input, context);
+        
+        // Detect behavioral patterns from tool usage
+        const detectedAction = this.actionDetector.detectToolAction(event.tool_name, event.tool_input);
+        if (detectedAction && detectedAction.preference) {
+          this.memoryService.storePreferenceWithOverride(detectedAction.preference, context);
+          this.logger.info('HookService', 'Detected behavioral preference from tool usage', {
+            key: detectedAction.preference.key,
+            value: detectedAction.preference.value,
+            pattern: detectedAction.pattern
+          });
+        }
       }
       
       // Retrieve relevant memories
@@ -134,70 +140,41 @@ export class HookService {
       
       let preferencesStored = 0;
       
-      // Try intelligent NLP extraction first if available
-      if (this.intelligentExtractor) {
-        try {
-          // Prepare context for NLP analysis
-          const nlpContext = {
-            recentMemories: this.memoryService.findRelevant(context).slice(0, 10),
-            projectContext: { projectId: context.projectId },
-            sessionHistory: context.sessionId ? [context.sessionId] : []
-          };
-          
-          const intelligentPreferences = await this.intelligentExtractor.extractPreferences(content, nlpContext);
-          
-          for (const nlpPref of intelligentPreferences) {
-            // Convert to ExtractedPreference format
-            const preference: ExtractedPreference = {
-              key: nlpPref.key,
-              value: nlpPref.value,
-              confidence: nlpPref.confidence,
-              raw: nlpPref.rawText,
-              isOverride: nlpPref.analysis.preference?.isOverride || false,
-              overrideSignals: nlpPref.analysis.preference?.isOverride ? ['NLP-detected override'] : []
-            };
-            
-            this.memoryService.storePreferenceWithOverride(preference, context);
-            preferencesStored++;
-            
-            this.logger.info('HookService', `Stored NLP-extracted preference: ${preference.key} = ${preference.value}`, {
-              confidence: preference.confidence,
-              isOverride: preference.isOverride,
-              reasoning: nlpPref.analysis.reasoning,
-              source: nlpPref.metadata.source
-            });
-          }
-        } catch (nlpError) {
-          this.logger.warn('HookService', 'NLP extraction failed, falling back to pattern matching', nlpError as Error);
-        }
+      // Claude-native approach: Trust Claude Code's understanding
+      // Check for learned behavioral patterns
+      const learnedPatterns = this.actionDetector.getLearnedPatterns();
+      for (const pattern of learnedPatterns) {
+        this.memoryService.storePreferenceWithOverride(pattern, context);
+        preferencesStored++;
+        this.logger.info('HookService', `Stored learned behavioral preference: ${pattern.key} = ${pattern.value}`, {
+          confidence: pattern.confidence
+        });
       }
       
       // Extract preferences using semantic understanding  
       const semanticPreferences = this.semanticExtractor.extractAllPreferences(content);
       
-      // If no NLP preferences found or NLP not available, use semantic pattern extraction
-      if (preferencesStored === 0) {
-        // Store semantic preferences with override handling
-        for (const semanticPref of semanticPreferences) {
-          // Convert to ExtractedPreference format
-          const preference: ExtractedPreference = {
-            key: semanticPref.key,
-            value: semanticPref.value,
-            confidence: semanticPref.confidence,
-            raw: semanticPref.rawText,
-            isOverride: semanticPref.isOverride,
-            overrideSignals: semanticPref.overrideSignals
-          };
-          
-          this.memoryService.storePreferenceWithOverride(preference, context);
-          preferencesStored++;
-          
-          this.logger.info('HookService', `Stored semantic preference: ${preference.key} = ${preference.value}`, {
-            intent: semanticPref.intent,
-            confidence: preference.confidence,
-            isOverride: preference.isOverride
-          });
-        }
+      // Use semantic pattern extraction as primary method
+      // Store semantic preferences with override handling
+      for (const semanticPref of semanticPreferences) {
+        // Convert to ExtractedPreference format
+        const preference: ExtractedPreference = {
+          key: semanticPref.key,
+          value: semanticPref.value,
+          confidence: semanticPref.confidence,
+          raw: semanticPref.rawText,
+          isOverride: semanticPref.isOverride,
+          overrideSignals: semanticPref.overrideSignals
+        };
+        
+        this.memoryService.storePreferenceWithOverride(preference, context);
+        preferencesStored++;
+        
+        this.logger.info('HookService', `Stored semantic preference: ${preference.key} = ${preference.value}`, {
+          intent: semanticPref.intent,
+          confidence: preference.confidence,
+          isOverride: preference.isOverride
+        });
       }
       
       // Also try the pattern-based extractor for additional coverage
@@ -291,8 +268,24 @@ export class HookService {
         sessionId: event.session_id
       });
       
-      // This can be extended for pattern detection and correction storage
-      // For now, just log the event
+      // Detect patterns from tool output or Claude's responses
+      if (event.content) {
+        const responsePattern = this.actionDetector.detectResponsePattern(event.content);
+        if (responsePattern && responsePattern.preference) {
+          const context: MemoryServiceContext = {
+            projectId: this.config.getProjectId(),
+            tool: event.tool_name,
+            timestamp: event.timestamp,
+            sessionId: event.session_id
+          };
+          
+          this.memoryService.storePreferenceWithOverride(responsePattern.preference, context);
+          this.logger.info('HookService', 'Detected preference from Claude response', {
+            key: responsePattern.preference.key,
+            value: responsePattern.preference.value
+          });
+        }
+      }
       
     } catch (error) {
       this.logger.logServiceError('HookService', 'handlePostTool', error as Error, {
