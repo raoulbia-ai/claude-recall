@@ -224,10 +224,21 @@ class ClaudeRecallCLI {
   /**
    * Clear memories from the database
    */
-  async clear(options: { type?: string; before?: string; force?: boolean } = {}): Promise<void> {
+  async clear(options: { type?: string; before?: string; force?: boolean; listTypes?: boolean } = {}): Promise<void> {
     try {
       // Get current stats for confirmation
       const stats = this.memoryService.getStats();
+      
+      // If --list-types flag is used, show available types and exit
+      if (options.listTypes) {
+        console.log('\n📋 Available memory types:\n');
+        Object.entries(stats.byType).forEach(([type, count]) => {
+          console.log(`  ${type}: ${count} memories`);
+        });
+        console.log('\nUse: npx claude-recall clear --type <type> to clear a specific type');
+        console.log('Example: npx claude-recall clear --type tool-use --force\n');
+        return;
+      }
       
       // Build confirmation message
       let confirmMessage = '\n⚠️  Warning: This will permanently delete ';
@@ -235,6 +246,16 @@ class ClaudeRecallCLI {
       const params: any[] = [];
       
       if (options.type) {
+        // Validate the type exists
+        if (!stats.byType[options.type]) {
+          console.error(`\n❌ Error: Memory type '${options.type}' not found.\n`);
+          console.log('Available types:');
+          Object.entries(stats.byType).forEach(([type, count]) => {
+            console.log(`  - ${type} (${count} memories)`);
+          });
+          console.log('\nTip: Use --list-types to see all available types\n');
+          process.exit(1);
+        }
         confirmMessage += `all ${options.type} memories`;
         whereClause = 'WHERE type = ?';
         params.push(options.type);
@@ -672,6 +693,7 @@ async function main() {
     .option('--type <type>', 'Clear only memories of a specific type')
     .option('--before <dd-mm-yyyy>', 'Clear memories before a specific date')
     .option('--force', 'Skip confirmation prompt')
+    .option('--list-types', 'List all available memory types')
     .action(async (options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.clear(options);
