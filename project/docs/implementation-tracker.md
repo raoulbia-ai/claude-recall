@@ -619,4 +619,53 @@ claude-recall/
 ✅ Claude receives relevant context from previous conversations
 ✅ Preferences and instructions persist across sessions
 ✅ Solution tested and verified with multiple scenarios
+
+## Phase 8.6: Claude-Native Architecture Redesign ⏳ PLANNED (2025-08-04)
+**Goal**: Eliminate redundant API calls by leveraging Claude Code's native intelligence
+
+### Key Architectural Insight
+**Discovery**: Claude-flow doesn't need API keys for NLP because it doesn't do NLP - Claude Code does!
+
+#### Current Problem (Phase 8.5 Implementation)
+```
+User Input → Hook → API Call to Claude → Try to capture response → Action
+```
+- **Redundant API calls** - Already inside an intelligent system (Claude Code)
+- **Can't capture responses** - No mechanism to get Claude's API responses back
+- **Unnecessary complexity** - Trying to add intelligence to an already intelligent system
+
+#### Target Architecture (Claude-Native)
+```
+User Input → Claude Code (already intelligent) → Hooks (coordination/memory) → Action
+```
+- **No API calls for understanding** - Claude Code already understands natural language
+- **Hooks are just coordination** - They store decisions, track progress, format code
+- **"Agents" are prompting patterns** - Not separate API calls, just different instructions to Claude Code
+
+### Implementation Plan
+1. **Simplify Preference Extraction**:
+   - Remove IntelligentPreferenceExtractor and ClaudeNLPAnalyzer
+   - Trust Claude Code's native understanding
+   - Let hooks capture what Claude Code decides, not analyze separately
+
+2. **Refactor to Claude-Native Pattern**:
+   - Hooks become pure coordination/memory tools
+   - Claude Code does all natural language understanding
+   - System responds to Claude Code's natural behavior patterns
+
+3. **Align with Claude-Flow Architecture**:
+   - Study how claude-flow uses hooks for coordination only
+   - Adopt the proven pattern: hooks as triggers, not analyzers
+   - Focus on memory persistence and cross-session context
+
+### Success Criteria
+- ✅ Zero redundant API calls for NLP
+- ✅ Hooks focused purely on coordination and memory
+- ✅ Natural language understanding handled by Claude Code natively
+- ✅ Simpler, more reliable architecture
+- ✅ Full backward compatibility maintained
+
+### Task Definition
+Created: `/workspaces/claude-recall/project/task-phase-8.6-claude-native-redesign.md`
+
 EOF < /dev/null
