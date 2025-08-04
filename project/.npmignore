@@ -1,0 +1,58 @@
+# Source TypeScript files (dist has compiled JS)
+src/
+*.ts
+!*.d.ts
+
+# Development files
+tests/
+test/
+*.test.*
+jest.config.js
+tsconfig.json
+
+# Build artifacts we don't need
+dist/auth/
+dist/routes/
+dist/server.js
+dist/hooks/capture.js
+dist/hooks/post-tool.js
+dist/hooks/pre-tool.js
+dist/hooks/pre-tool-enhanced.js
+dist/hooks/user-prompt-submit.js
+dist/hooks/user-prompt-submit-v2.js
+dist/services/claude-nlp-analyzer.js
+dist/services/intelligent-preference-extractor.js
+dist/templates/
+
+# Claude settings (users will have their own)
+.claude/
+
+# Git and npm
+.git/
+.gitignore
+.npmignore
+
+# Logs and databases
+*.log
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Keep only what we need:
+# - dist/cli/
+# - dist/core/
+# - dist/hooks/minimal/
+# - dist/memory/
+# - dist/services/ (most)
+# - dist/scripts/
+# - scripts/
+# - package.json
+# - README.md
+# - LICENSE

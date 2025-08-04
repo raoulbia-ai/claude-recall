@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@genaisolutions/claude-recall": "^0.1.0",
     "perplexity-mcp": "^0.2.0"
   }
 }

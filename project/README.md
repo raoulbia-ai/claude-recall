@@ -38,7 +38,7 @@ The magic? This happens automatically. Every correction you make, every preferen
 
 ### Install
 ```bash
-npm install -g claude-recall
+npm install -g @genaisolutions/claude-recall
 ```
 
 That's it! Claude Recall automatically configures itself during installation.

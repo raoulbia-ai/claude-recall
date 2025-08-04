@@ -143,6 +143,19 @@ export class HookService {
         sessionId: event.session_id
       };
       
+      // Store the actual user prompt as a memory
+      this.memoryService.store({
+        key: `user_prompt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        value: {
+          content: content,
+          sessionId: event.session_id,
+          timestamp: event.timestamp
+        },
+        type: 'user-prompt',
+        context: context,
+        relevanceScore: 1.0
+      });
+      
       let preferencesStored = 0;
       
       // Claude-native approach: Trust Claude Code's understanding
