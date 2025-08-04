@@ -1,12 +1,11 @@
-# Claude Recall - Active Memory System
+# Claude Recall - Quick Reference
 
-## Current Status
-Claude-recall is fully operational with Stage 7 complete. The system captures all tool usage and user preferences, storing them in SQLite for future retrieval.
+## Overview
+Claude Recall captures tool usage and user preferences, storing them in SQLite for intelligent retrieval in future Claude sessions.
 
-## Important Notes for Next Session
-1. **Memory Injection is Fixed**: The CLI now outputs plain text instead of JSON, allowing memories to be injected into Claude's context
-2. **Restart Required**: After any changes to hooks or CLI, Claude Code must be restarted for changes to take effect
-3. **Current Memory Count**: 669+ memories stored and growing
+## Important Notes
+1. **Restart Required**: After any changes to hooks or CLI, Claude Code must be restarted for changes to take effect
+2. **Memory Storage**: All memories are stored locally in SQLite database
 
 ## Quick Test
 To verify memory injection is working:
@@ -16,11 +15,11 @@ echo '{"content":"what database do we use?"}' | npx claude-recall capture user-p
 
 Should return memories about PostgreSQL usage.
 
-## Key Information Stored
-- This project uses PostgreSQL as the primary database
-- Tests should be saved in tests-raoul/ directory (user preference)
-- The system uses a service layer architecture with CLI commands
-- All hooks are minimal triggers that call `npx claude-recall capture [type]`
+## What Gets Captured
+- Tool usage patterns (which tools you use and how)
+- User preferences (detected from your commands)
+- Project context (technology choices, patterns)
+- Command history (for workflow optimization)
 
 ## Architecture
 - Hooks: Simple 35-line triggers in `src/hooks/minimal/`

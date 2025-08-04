@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Memory system for Claude Code with behavioral learning and automated NPM installation",
   "main": "dist/cli/claude-recall-cli.js",
   "bin": {
@@ -13,7 +13,7 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js && cp -r scripts dist/ && cp -r templates dist/",
+    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js && cp -r scripts dist/",
     "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
     "dev": "ts-node",
     "start": "ts-node src/server.ts",
@@ -36,11 +36,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/claude-recall/claude-recall.git"
+    "url": "https://github.com/raoulbia-ai/claude-recall.git"
   },
-  "homepage": "https://github.com/claude-recall/claude-recall#readme",
+  "homepage": "https://github.com/raoulbia-ai/claude-recall#readme",
   "bugs": {
-    "url": "https://github.com/claude-recall/claude-recall/issues"
+    "url": "https://github.com/raoulbia-ai/claude-recall/issues"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
