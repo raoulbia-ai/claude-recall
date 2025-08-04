@@ -442,13 +442,23 @@ class ClaudeRecallCLI {
       // Check Claude Code installation
       if (status.claudeDetection.found) {
         console.log('✅ Claude Code: Installed');
-        console.log(`   Directory: ${status.claudeDetection.homePath}`);
+        console.log(`   Directory: ${status.claudeDetection.configPath || status.claudeDetection.homePath || status.claudeDir.path}`);
       } else {
         console.log('❌ Claude Code: Not installed');
       }
       
       // Check hooks installation
-      const hooksInstalled = status.hooksInstalled && status.hooksInstalled.length > 0;
+      let hooksInstalled = true;
+      if (status.hooks) {
+        for (const [hookName, hookInfo] of Object.entries(status.hooks)) {
+          if (!(hookInfo as any).exists) {
+            hooksInstalled = false;
+            break;
+          }
+        }
+      } else {
+        hooksInstalled = false;
+      }
       console.log(`${hooksInstalled ? '✅' : '❌'} Hooks: ${hooksInstalled ? 'Installed' : 'Not installed'}`);
       
       // Check database
