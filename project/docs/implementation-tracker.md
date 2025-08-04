@@ -716,4 +716,53 @@ Recent preferences captured via behavioral detection:
 
 System successfully transformed from redundant API-based analysis to elegant behavioral pattern learning.
 
+## Phase 8.7: NPM Installer & Distribution ⏳ PLANNED (2025-08-04)
+**Goal**: Create seamless NPM installation with automated Claude Code integration
+
+### Current Installation Problems
+- **Manual setup required**: Users must manually copy files, set permissions, edit settings
+- **Developer-only accessibility**: Complex git clone + setup process
+- **No NPM package**: Not available for standard `npm install -g claude-recall`
+- **Cross-platform issues**: Installation varies by OS and environment
+
+### Target Solution
+**One-command installation:**
+```bash
+npm install -g claude-recall
+# Automatically handles all setup, permissions, Claude Code integration
+```
+
+### Implementation Plan
+1. **NPM Package Preparation**:
+   - Update package.json for NPM publication
+   - Create proper bin, scripts, engines configuration
+   - Design clean package distribution structure
+
+2. **Automated Installer Script**:
+   - Cross-platform Claude Code detection
+   - Automatic directory structure creation
+   - Hook installation with correct permissions
+   - Claude Code settings.json integration
+   - SQLite database initialization
+
+3. **NPM Lifecycle Integration**:
+   - `postinstall` script for automatic setup
+   - `preuninstall` script for clean removal
+   - CLI commands: install, validate, uninstall, status
+
+4. **Cross-Platform Compatibility**:
+   - macOS, Windows, Linux support
+   - Handle different Shell environments
+   - Graceful error handling and recovery
+
+### Success Criteria
+- ✅ One-command install works on all platforms
+- ✅ Automatic Claude Code integration without manual steps
+- ✅ All dependencies resolved automatically
+- ✅ Clear error messages and validation
+- ✅ Easy uninstall process
+
+### Task Definition
+Created: `/workspaces/claude-recall/project/task-phase-8.7-npm-installer.md`
+
 EOF < /dev/null
