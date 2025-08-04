@@ -37,12 +37,14 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.9",
     "@types/bcrypt": "^6.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.2.0",
+    "chalk": "^5.5.0",
     "commander": "^12.1.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2"

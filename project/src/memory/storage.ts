@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface Memory {
+  id?: number;
   key: string;
   value: any;
   type: string;
@@ -12,6 +13,11 @@ export interface Memory {
   access_count?: number;
   last_accessed?: number;
   relevance_score?: number;
+  preference_key?: string;
+  is_active?: boolean;
+  superseded_by?: string;
+  superseded_at?: number;
+  confidence_score?: number;
 }
 
 export class MemoryStorage {
@@ -61,8 +67,9 @@ export class MemoryStorage {
   save(memory: Memory): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO memories 
-      (key, value, type, project_id, file_path, timestamp, relevance_score, access_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (key, value, type, project_id, file_path, timestamp, relevance_score, access_count, 
+       preference_key, is_active, superseded_by, superseded_at, confidence_score)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     stmt.run(
@@ -73,7 +80,12 @@ export class MemoryStorage {
       memory.file_path || null,
       memory.timestamp || Date.now(),
       memory.relevance_score || 1.0,
-      memory.access_count || 0
+      memory.access_count || 0,
+      memory.preference_key || null,
+      memory.is_active !== undefined ? (memory.is_active ? 1 : 0) : 1,
+      memory.superseded_by || null,
+      memory.superseded_at || null,
+      memory.confidence_score || null
     );
   }
   
@@ -103,6 +115,7 @@ export class MemoryStorage {
   
   private rowToMemory(row: any): Memory {
     return {
+      id: row.id,
       key: row.key,
       value: JSON.parse(row.value),
       type: row.type,
@@ -111,7 +124,12 @@ export class MemoryStorage {
       timestamp: row.timestamp,
       access_count: row.access_count,
       last_accessed: row.last_accessed,
-      relevance_score: row.relevance_score
+      relevance_score: row.relevance_score,
+      preference_key: row.preference_key,
+      is_active: row.is_active === 1,
+      superseded_by: row.superseded_by,
+      superseded_at: row.superseded_at,
+      confidence_score: row.confidence_score
     };
   }
   
@@ -191,6 +209,105 @@ export class MemoryStorage {
     return { total, byType };
   }
   
+  /**
+   * Update a memory record by key
+   */
+  update(key: string, updates: Partial<Memory>): void {
+    const fields = Object.keys(updates).filter(k => k !== 'key'); // Don't update key
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
+    const values = fields.map(field => {
+      const value = (updates as any)[field];
+      if (field === 'value') {
+        return JSON.stringify(value);
+      } else if (field === 'is_active') {
+        return value ? 1 : 0;
+      } else {
+        return value;
+      }
+    });
+    
+    const stmt = this.db.prepare(`UPDATE memories SET ${setClause} WHERE key = ?`);
+    stmt.run(...values, key);
+  }
+
+  /**
+   * Get preferences by preference key
+   */
+  getByPreferenceKey(preferenceKey: string, projectId?: string): Memory[] {
+    let query = 'SELECT * FROM memories WHERE preference_key = ? AND type = ?';
+    const params: any[] = [preferenceKey, 'preference'];
+    
+    if (projectId) {
+      query += ' AND project_id = ?';
+      params.push(projectId);
+    }
+    
+    query += ' ORDER BY timestamp DESC';
+    
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    
+    return rows.map(row => this.rowToMemory(row));
+  }
+
+  /**
+   * Get preferences by context with active filtering
+   */
+  getPreferencesByContext(context: { project_id?: string; file_path?: string }): Memory[] {
+    let query = 'SELECT * FROM memories WHERE type = ?';
+    const params: any[] = ['preference'];
+    
+    if (context.project_id) {
+      query += ' AND project_id = ?';
+      params.push(context.project_id);
+    }
+    
+    if (context.file_path) {
+      query += ' AND file_path = ?';
+      params.push(context.file_path);
+    }
+    
+    // Order by preference key, then by timestamp desc to get latest per key
+    query += ' ORDER BY preference_key, timestamp DESC';
+    
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    
+    return rows.map(row => this.rowToMemory(row));
+  }
+
+  /**
+   * Mark a memory as superseded
+   */
+  markSuperseded(key: string, supersededBy: string): void {
+    const stmt = this.db.prepare(`
+      UPDATE memories 
+      SET is_active = 0, superseded_by = ?, superseded_at = ?
+      WHERE key = ?
+    `);
+    stmt.run(supersededBy, Date.now(), key);
+  }
+
+  /**
+   * Get active preferences only
+   */
+  getActivePreferences(projectId?: string): Memory[] {
+    let query = 'SELECT * FROM memories WHERE type = ? AND is_active = 1';
+    const params: any[] = ['preference'];
+    
+    if (projectId) {
+      query += ' AND project_id = ?';
+      params.push(projectId);
+    }
+    
+    query += ' ORDER BY preference_key, timestamp DESC';
+    
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    
+    return rows.map(row => this.rowToMemory(row));
+  }
+
   close(): void {
     this.db.close();
   }

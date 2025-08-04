@@ -2,6 +2,7 @@ import { MemoryStorage, Memory } from '../memory/storage';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
+import { ExtractedPreference } from './preference-extractor';
 
 export interface MemoryServiceContext {
   projectId?: string;
@@ -219,6 +220,146 @@ export class MemoryService {
     });
   }
   
+  /**
+   * Store a preference with override handling
+   */
+  storePreferenceWithOverride(preference: ExtractedPreference, context: MemoryServiceContext): void {
+    try {
+      const key = `preference_${preference.key}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Handle override logic
+      if (preference.isOverride) {
+        this.markSupersededPreferences(preference.key, key, context);
+      }
+      
+      const memory: Memory = {
+        key,
+        value: {
+          ...preference,
+          session_id: context.sessionId,
+          preference_key: preference.key
+        },
+        type: 'preference',
+        project_id: context.projectId || this.config.getProjectId(),
+        file_path: context.filePath,
+        timestamp: context.timestamp || Date.now(),
+        relevance_score: preference.confidence,
+        preference_key: preference.key,
+        is_active: true,
+        confidence_score: preference.confidence
+      };
+      
+      this.storage.save(memory);
+      
+      this.logger.logMemoryOperation('STORE_PREFERENCE', {
+        key,
+        preferenceKey: preference.key,
+        value: preference.value,
+        isOverride: preference.isOverride,
+        confidence: preference.confidence,
+        projectId: memory.project_id
+      });
+      
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'storePreferenceWithOverride', error as Error, {
+        preferenceKey: preference.key,
+        value: preference.value
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark existing preferences as superseded
+   */
+  private markSupersededPreferences(preferenceKey: string, newPreferenceKey: string, context: MemoryServiceContext): void {
+    try {
+      const existingPreferences = this.getPreferencesByKey(preferenceKey, context);
+      
+      for (const existingPref of existingPreferences) {
+        if (existingPref.is_active) {
+          // Mark as superseded
+          this.storage.markSuperseded(existingPref.key, newPreferenceKey);
+          
+          this.logger.debug('MemoryService', `Marked preference as superseded: ${existingPref.key}`, {
+            preferenceKey,
+            supersededBy: newPreferenceKey
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'markSupersededPreferences', error as Error);
+    }
+  }
+
+  /**
+   * Get preferences by key
+   */
+  getPreferencesByKey(preferenceKey: string, context?: MemoryServiceContext): Memory[] {
+    try {
+      return this.storage.getByPreferenceKey(preferenceKey, context?.projectId);
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'getPreferencesByKey', error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * Get only active preferences
+   */
+  getActivePreferences(context: MemoryServiceContext): Memory[] {
+    try {
+      const allPreferences = this.storage.getPreferencesByContext({
+        project_id: context.projectId || this.config.getProjectId(),
+        file_path: context.filePath
+      });
+      
+      // Group by preference key and return only active ones
+      const activeByKey = new Map<string, Memory>();
+      
+      for (const pref of allPreferences) {
+        const prefKey = pref.preference_key;
+        if (!prefKey || !pref.is_active) continue;
+        
+        const current = activeByKey.get(prefKey);
+        
+        // If no current preference or this one is more recent
+        if (!current || pref.timestamp! > current.timestamp!) {
+          activeByKey.set(prefKey, pref);
+        }
+      }
+      
+      const activePreferences = Array.from(activeByKey.values());
+      
+      this.logger.debug('MemoryService', `Retrieved ${activePreferences.length} active preferences`, {
+        preferenceKeys: activePreferences.map(p => p.preference_key),
+        projectId: context.projectId
+      });
+      
+      return activePreferences;
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'getActivePreferences', error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * Mark a preference as superseded
+   */
+  markSuperseded(key: string, supersededBy: string): void {
+    try {
+      this.storage.markSuperseded(key, supersededBy);
+      
+      this.logger.logMemoryOperation('SUPERSEDE', {
+        key,
+        supersededBy
+      });
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'markSuperseded', error as Error);
+      throw error;
+    }
+  }
+
   /**
    * Close database connection
    */

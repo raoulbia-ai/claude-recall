@@ -376,47 +376,154 @@ Should return formatted memories about PostgreSQL usage.
    - Multiple project support
    - Advanced search capabilities
 
-## Stage 8: Intelligent Memory Enhancement (IN PROGRESS)
+## Stage 8: Intelligent Memory Enhancement ✅ (Phases 8.1 & 8.2 COMPLETED)
 
 ### Overview
-Building on the stable Stage 7 foundation, we're adding intelligence to the memory system through pattern detection and associative retrieval, without modifying core architecture.
+Building on the stable Stage 7 foundation, we've successfully added intelligence to the memory system through pattern detection and smart retrieval, without modifying core architecture.
 
-### Phase 8.1: Pattern Detection Module (PENDING)
+### Phase 8.1: Pattern Detection Module ✅ COMPLETED (2025-08-04)
 **Goal**: Add task and context detection without changing existing interfaces
 
-#### Swarm Task Created
-- Task definition: `swarm-tasks/phase1-pattern-detection.md`
-- Implementation approach: New module that doesn't touch existing code
-- Features to implement:
-  - Task type detection (create_test, fix_bug, refactor, etc.)
-  - Language and framework detection
-  - Entity extraction from prompts
-  
-#### Architecture Plan
-```
-Current: User Prompt → Memory Search → Direct Keyword Match
-Enhanced: User Prompt → Pattern Detection → Context Enhancement → Smart Search
-```
+#### Implementation Summary
+- Created `PatternDetector` class with comprehensive pattern matching
+- Detects 6 task types: create_test, fix_bug, refactor, add_feature, explain, review
+- Identifies 25+ programming languages via extensions and keywords
+- Recognizes 5 major frameworks: React, Express, Jest, Vue, Django
+- Extracts entities: file names, function names, classes, quoted strings
 
-### Phase 8.2: Enhanced Memory Search (PLANNED)
+#### Test Results
+- All 33 tests passing
+- 98.13% code coverage (100% for pattern-detector.ts)
+- Zero modifications to existing files
+- Build completed successfully
+
+### Phase 8.2: Enhanced Memory Search ✅ COMPLETED (2025-08-04)
 **Goal**: Layer intelligence on top of existing search
 
-- Create MemoryEnhancer service that wraps existing MemoryService
-- Detect patterns and include related memories
-- Example: "create a test" → also retrieves test directory preferences
+#### Implementation Summary
+- Created `MemoryEnhancer` service wrapping existing MemoryService
+- Implements task-specific memory rules:
+  - `create_test` → retrieves test directory preferences automatically
+  - `fix_bug` → finds similar error fixes and patterns
+  - `refactor` → retrieves code style preferences
+  - `add_feature` → finds architectural patterns
+- Minimal change to hook integration (2 lines in hook.ts)
 
-### Phase 8.3: Associative Memory Network (PLANNED)
+#### Key Achievement
+**The system now retrieves "tests should be saved in tests-raoul/" when user says "create a test" without mentioning "directory"!**
+
+#### Test Results
+- All 13 unit tests passing (100% coverage)
+- All 10 integration tests passing
+- Performance: All searches complete in <100ms
+- Backwards compatibility: 100% maintained
+
+### Phase 8.3: Memory Injection Fix ✅ COMPLETED (2025-08-04)
+**Goal**: Fix the critical issue where memories weren't reaching Claude's decision-making context
+
+#### Problem Solved
+- Memories were retrieved correctly but output format was too verbose
+- Removed emojis and complex formatting that prevented proper injection
+- Simplified output to clean, actionable text
+
+#### Solution Implementation
+- Modified `formatRetrievedMemories` in `/src/services/hook.ts`
+- Prioritized preferences as most important for decisions
+- Limited verbose content to essential information
+- New format shows preferences clearly at the top
+
+#### Test Results
+```
+Input: "create a test file"
+Output: 
+Previous instructions and preferences:
+- tests should be saved in tests-raoul/
+```
+
+#### Key Achievement
+**Claude now receives and uses stored preferences when making decisions!**
+
+### Phase 8.4: Intelligent Preference System ✅ COMPLETED (2025-08-04)
+**Goal**: Create preference understanding with override capability
+
+#### Solution Implemented
+1. **PreferenceExtractor Service**:
+   - Captures preferences like "moving forward, create all tests in tests-arlo"
+   - Detects override signals (temporal phrases)
+   - Stores with preference_key for grouping
+
+2. **Override System**:
+   - New preferences mark old ones as superseded
+   - Only active preferences shown to Claude
+   - Proper preference key management
+
+#### Remaining Issue
+- Still uses hardcoded patterns, not true NLP
+- More elaborate regex system instead of AI understanding
+- Won't handle unexpected natural language variations
+
+### Phase 8.5: True NLP Integration ✅ COMPLETED (2025-08-04)
+**Goal**: Use Claude's own NLP capabilities instead of patterns
+
+#### Problem Addressed
+- PreferenceExtractor still used hardcoded patterns
+- Needed Claude itself to understand natural language
+- HTML injection approach failed (no mechanism to capture Claude's responses)
+
+#### Solution Implemented
+1. **IntelligentPreferenceExtractor Service**:
+   - Uses Anthropic API directly for NLP analysis
+   - Calls Claude-3-haiku for fast preference understanding
+   - Implements proper fallback hierarchy in HookService
+   - Requires ANTHROPIC_API_KEY environment variable
+
+2. **ClaudeNLPAnalyzer Implementation**:
+   - Makes direct API calls to Claude
+   - Returns structured JSON with intent, entities, and confidence
+   - Analyzes code corrections for implicit preferences
+   - Context-aware preference validation
+
+3. **SemanticPreferenceExtractor Enhancement**:
+   - More flexible pattern matching as fallback
+   - Handles variations like "hey, lets put tests in test-new from now on"
+   - Confidence scoring based on context boosters
+   - Entity normalization and synonym handling
+
+#### Test Results
+- ✅ Natural language variations captured successfully
+- ✅ "moving forward create all tests in tests-arlo" properly understood
+- ✅ Preference override system working correctly
+- ✅ Memory injection confirmed (created test file in correct location)
+- ✅ Falls back gracefully when API key not available
+
+#### Key Achievement
+**System now supports both true NLP (with API key) and enhanced pattern matching (without API key), ensuring it works in all environments**
+
+#### Implementation Files
+- `src/services/intelligent-preference-extractor.ts` - Main NLP service
+- `src/services/claude-nlp-analyzer.ts` - Claude API integration
+- `src/services/semantic-preference-extractor.ts` - Enhanced pattern matching
+- Updated `src/services/hook.ts` with intelligent fallback hierarchy
+
+### Phase 8.6: Associative Memory Network (PLANNED)
 **Goal**: Build memory relationships without changing storage
 
-- New association table (additive, no schema changes)
+- New association table (additive, no schema changes)  
 - Background process to find related memories
 - Enable "spreading activation" retrieval
+- Cross-reference similar corrections and patterns
 
-### Success Criteria
-- Zero breaking changes to Stage 7 functionality
-- Each phase independently testable and reversible
-- Maintain <100ms retrieval performance
-- Incremental value delivery
+### Architecture Enhancements
+```
+Before: User Prompt → Memory Search → Direct Keyword Match
+Now:    User Prompt → Pattern Detection → Context Enhancement → Smart Search → Ranked Results
+```
+
+### Performance Metrics
+- Pattern detection overhead: <5ms
+- Total search time: <100ms (well within target)
+- Memory deduplication: Working correctly
+- Relevance ranking: Improved with context awareness
 
 ## Repository Structure
 ```
@@ -461,3 +568,55 @@ claude-recall/
     ├── settings.json
     └── settings-with-prompt-hook.json
 ```
+## Stage 8.3: Memory Injection Fix ✅
+
+### Problem Identified
+- Memories were retrieved correctly but not influencing Claude's decisions
+- Example: "tests should be saved in tests-raoul/" was found but not used
+- Hook output was too verbose and complex
+
+### Root Cause Analysis
+1. **Memory Retrieval**: ✅ Working correctly
+2. **Hook Execution**: ✅ Working correctly  
+3. **Output Format**: ❌ Too verbose with emojis and complex formatting
+4. **Context Injection**: ⚠️ Stdout wasn't clean enough for Claude to parse
+
+### Solution Implemented
+1. **Simplified Output Format:**
+   - Removed emojis and complex formatting
+   - Prioritized preferences (most important for decisions)
+   - Limited verbose content to essential information
+   - Used clear, concise plain text
+
+2. **Updated `formatRetrievedMemories` in `/src/services/hook.ts`:**
+   - Groups memories by type (preferences, knowledge, other)
+   - Shows raw preference text directly
+   - Limits project knowledge to first line (100 chars)
+   - Reduces noise in context injection
+
+3. **New Output Format:**
+   ```
+   Previous instructions and preferences:
+   - tests should be saved in tests-raoul/
+   - use pytest for testing Python code
+   
+   Relevant context:
+   - You are orchestrating a Claude Flow Swarm...
+   ```
+
+### Test Results
+- "create a test file" → Successfully retrieves "tests should be saved in tests-raoul/"
+- Output is clean and concise
+- Memory injection now properly influences Claude's decision-making
+
+### Technical Details
+- UserPromptSubmit hook stdout is added to Claude's context
+- Clean format ensures memories are readable and actionable
+- Preferences are shown first as they're most relevant for decisions
+
+### Final Status
+✅ Memory injection system fully operational
+✅ Claude receives relevant context from previous conversations
+✅ Preferences and instructions persist across sessions
+✅ Solution tested and verified with multiple scenarios
+EOF < /dev/null
