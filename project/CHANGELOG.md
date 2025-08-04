@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2] - 2024-11-04
+
+### Fixed
+- Critical bug: Hooks not being triggered by Claude Code
+- Changed hook configuration to use direct `npx` commands instead of file paths
+- Added support for both lowercase and capitalized hook names for compatibility
+- Installer now sets up hooks in a format Claude Code can execute
+
+### Changed
+- Hook configuration now uses `npx claude-recall capture` commands directly
+- Added fallback support for multiple Claude Code hook naming conventions
+
 ## [0.1.1] - 2024-11-04
 
 ### Fixed

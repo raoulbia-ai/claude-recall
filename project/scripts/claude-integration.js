@@ -121,14 +121,25 @@ class ClaudeIntegration {
         }
 
         // Add Claude Recall hooks
+        // Use direct commands instead of file paths for better compatibility
         const hookConfig = {
-            "pre-tool": path.join(this.hooksDir, "pre-tool-trigger.js"),
-            "post-tool": path.join(this.hooksDir, "post-tool-trigger.js"),
-            "user-prompt-submit": path.join(this.hooksDir, "user-prompt-submit-trigger.js")
+            "pre-tool": "npx claude-recall capture pre-tool",
+            "post-tool": "npx claude-recall capture post-tool",
+            "user-prompt-submit": "npx claude-recall capture user-prompt"
         };
 
         // Update settings with hook configuration
         settings.hooks = { ...settings.hooks, ...hookConfig };
+        
+        // Also add capitalized versions for compatibility with different Claude versions
+        const capitalizedHookConfig = {
+            "UserPromptSubmit": "npx claude-recall capture user-prompt",
+            "PreToolUse": "npx claude-recall capture pre-tool",
+            "PostToolUse": "npx claude-recall capture post-tool"
+        };
+        
+        // Merge both formats
+        settings.hooks = { ...settings.hooks, ...capitalizedHookConfig };
 
         // Add Claude Recall specific settings
         if (!settings["claude-recall"]) {

@@ -604,7 +604,7 @@ async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code hooks')
-    .version('0.1.1')
+    .version('0.1.2')
     .option('--timeout <ms>', 'Hook timeout in milliseconds', '5000')
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
