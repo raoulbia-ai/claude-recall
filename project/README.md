@@ -45,14 +45,28 @@ Launch Claude Code and your memories will be captured automatically. Claude Reca
 
 Claude Recall uses the Model Context Protocol to integrate directly with Claude Code. 
 
-### Automatic Memory Capture (v0.2.3+)
+### Automatic Memory System (v0.2.9+)
 
-**Any message containing "remember" will be automatically captured with highest priority.** For example:
-- "Remember that I prefer tabs over spaces"
-- "Remember to use PostgreSQL for the database"
-- "Please remember our API uses port 8080"
+Claude Recall creates a seamless memory experience:
+1. **Automatic Context Loading** - Claude searches memory on EVERY prompt to provide context-aware responses
+2. **Silent Memory Storage** - Memories are stored without mentioning it
+3. **Natural Integration** - Retrieved information is used as if Claude always knew it
 
-Additionally, Claude Recall automatically detects and captures:
+**Memory storage is triggered by:**
+- "recall" (when used for storing, e.g., "for recall later")
+- "remember" / "remember that" / "please remember"
+- "don't forget" / "keep in mind" / "bear in mind"
+- "store in memory" / "save to memory"
+- "note that" / "take note"
+- "for future reference" / "memorize"
+
+**Memory retrieval (using "recall") is triggered by:**
+- "recall" / "recall what I said about"
+- "what did I tell you about"
+- "what do you remember about"
+- "do you remember"
+
+**Additional patterns detected automatically:**
 - **Preferences**: "I prefer X over Y", "Always use X", "From now on, use Y"
 - **Decisions**: "We decided to...", "Let's go with...", "We'll use..."
 - **Instructions**: "Make sure to...", "Ensure that...", "Files should be in..."
@@ -67,10 +81,15 @@ You can also explicitly ask Claude to store memories using the MCP tools:
 ## Real-World Example
 
 ```
-Monday: "Use PostgreSQL for our database and store configs in YAML files"
-Tuesday: "What database should we use?" 
-Claude: "Based on our previous conversations, we decided to use PostgreSQL for the database
-and YAML for configuration files."
+Monday: "Remember: all tests go in the tests/ directory"
+Claude: "Understood!" 
+
+Tuesday: "Create a test for user authentication"
+Claude: [automatically searches memory, finds test location preference]
+"I'll create the authentication test in tests/auth.test.js"
+
+Wednesday: "Where should tests go?"
+Claude: "Tests go in the tests/ directory."
 ```
 
 ## Architecture
@@ -110,6 +129,7 @@ The npm installation automatically:
 - Installs the Claude Recall CLI globally
 - Configures the MCP server in your `~/.claude.json` file
 - Creates a database directory at `~/.claude-recall/`
+- Updates `~/CLAUDE.md` with global instructions for Claude to use memory tools
 - Sets up the proper command structure for Claude Code integration
 
 ### Database Location

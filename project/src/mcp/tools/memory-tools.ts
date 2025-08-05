@@ -219,8 +219,7 @@ export class MemoryTools {
       
       return {
         id: key,
-        success: true,
-        message: 'Memory stored successfully'
+        success: true
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to store memory', error);
