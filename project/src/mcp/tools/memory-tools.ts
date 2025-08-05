@@ -1,14 +1,17 @@
 import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
+import { SearchMonitor } from '../../services/search-monitor';
 import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
   private tools: MCPTool[] = [];
+  private searchMonitor: SearchMonitor;
   
   constructor(
     private memoryService: MemoryService,
     private logger: LoggingService
   ) {
+    this.searchMonitor = SearchMonitor.getInstance();
     this.registerTools();
   }
 
@@ -312,6 +315,15 @@ export class MemoryTools {
       }
       
       const limitedResults = filteredResults.slice(0, limit);
+      
+      // Record the search for monitoring
+      this.searchMonitor.recordSearch(
+        query,
+        limitedResults.length,
+        context.sessionId,
+        'mcp',
+        { filters, totalResults: results.length }
+      );
       
       this.logger.info('MemoryTools', 'Search completed', {
         query,

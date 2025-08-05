@@ -10,6 +10,7 @@ import * as os from 'os';
 import { PatternService } from '../services/pattern-service';
 import { MigrateCommand } from './commands/migrate';
 import { MCPServer } from '../mcp/server';
+import { SearchMonitor } from '../services/search-monitor';
 
 const program = new Command();
 
@@ -247,7 +248,7 @@ async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code via MCP')
-    .version('0.2.9')
+    .version('0.2.10')
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
@@ -379,6 +380,107 @@ async function main() {
     .action(async () => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.status();
+    });
+
+  // Test memory search command
+  program
+    .command('test-memory-search')
+    .description('Test if Claude properly searches memory before creating files')
+    .action(async () => {
+      console.log('\n🧪 Testing Claude Memory Search Compliance\n');
+      console.log('This test verifies that Claude searches memory before file operations.\n');
+      
+      // Store a test preference
+      const memoryService = MemoryService.getInstance();
+      const testKey = `test_${Date.now()}`;
+      memoryService.store({
+        key: testKey,
+        value: 'save all tests in test-pasta/',
+        type: 'preference',
+        context: { projectId: 'test', type: 'location_preference' }
+      });
+      
+      console.log('✅ Test preference stored: "save all tests in test-pasta/"\n');
+      console.log('📋 Now test with Claude:');
+      console.log('1. Ask Claude: "create a blank test script"');
+      console.log('2. Claude SHOULD:');
+      console.log('   - First search memory for test location preferences');
+      console.log('   - Find the stored preference');
+      console.log('   - Create the file in test-pasta/ (NOT in tests/)');
+      console.log('\n❌ If Claude creates in tests/ instead, the search was NOT performed.');
+      console.log('✅ If Claude creates in test-pasta/, the search WAS performed.\n');
+      
+      // Show search results to verify
+      console.log('🔍 Verifying stored preference can be found:');
+      const results = memoryService.search('test script location directory');
+      const found = results.find((r: any) => r.value.includes('test-pasta'));
+      
+      if (found) {
+        console.log('✅ Memory search returns: "' + found.value + '"');
+        console.log('   Score: ' + found.score.toFixed(3));
+      } else {
+        console.log('❌ Warning: Test preference not found in search!');
+      }
+      
+      console.log('\n📊 Memory search monitoring is active.');
+      console.log('   Check logs to verify search calls are being made.\n');
+    });
+
+  // Search monitor command
+  program
+    .command('monitor')
+    .description('View memory search monitoring statistics')
+    .option('--clear', 'Clear monitoring logs')
+    .action(async (options) => {
+      const monitor = SearchMonitor.getInstance();
+      
+      if (options.clear) {
+        monitor.clearLogs();
+        console.log('✅ Search monitoring logs cleared.\n');
+        return;
+      }
+      
+      console.log('\n📊 Memory Search Monitoring Statistics\n');
+      
+      const stats = monitor.getSearchStats();
+      console.log(`Total searches: ${stats.totalSearches}`);
+      console.log(`Average results per search: ${stats.averageResultCount.toFixed(1)}`);
+      
+      if (stats.lastSearchTime) {
+        console.log(`Last search: ${stats.lastSearchTime.toLocaleString()}`);
+      }
+      
+      if (Object.keys(stats.searchesBySource).length > 0) {
+        console.log('\nSearches by source:');
+        for (const [source, count] of Object.entries(stats.searchesBySource)) {
+          console.log(`  ${source}: ${count}`);
+        }
+      }
+      
+      // Check compliance
+      const compliance = monitor.checkCompliance();
+      console.log('\nCompliance check (last 5 minutes):');
+      console.log(`  Status: ${compliance.compliant ? '✅ Compliant' : '❌ Non-compliant'}`);
+      console.log(`  Compliance rate: ${(compliance.details.complianceRate * 100).toFixed(0)}%`);
+      
+      if (compliance.details.issues.length > 0) {
+        console.log('  Issues:');
+        compliance.details.issues.forEach(issue => {
+          console.log(`    - ${issue}`);
+        });
+      }
+      
+      // Show recent searches
+      const recent = monitor.getRecentSearches(5);
+      if (recent.length > 0) {
+        console.log('\nRecent searches:');
+        recent.forEach((search, i) => {
+          const time = new Date(search.timestamp).toLocaleTimeString();
+          console.log(`  ${i + 1}. [${time}] "${search.query.substring(0, 50)}${search.query.length > 50 ? '...' : ''}" (${search.resultCount} results)`);
+        });
+      }
+      
+      console.log('\n');
     });
 
   // Parse arguments
