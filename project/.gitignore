@@ -58,7 +58,14 @@ STAGE*.md
 task-phase-*.md
 swarm-tasks/
 .claude-flow/
+.claude/
 test-instructions-*.md
+CLAUDE.md
+
+# Scripts - exclude all except postinstall.js and publish.sh
+scripts/*
+!scripts/postinstall.js
+!scripts/publish.sh
 
 # User-specific
 .claude-recall.json

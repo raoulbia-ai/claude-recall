@@ -1,122 +1,279 @@
 # Claude Recall
 
-Memory-enhanced Claude Code hooks with service layer architecture.
+An MCP server that gives Claude persistent memory across conversations.
 
-## What it does
+## The Story
 
-Claude Recall captures tool usage and user preferences from Claude Code sessions, storing them in a local SQLite database for context-aware retrieval in future conversations. It learns your patterns and provides relevant context automatically.
+Every time you start a new conversation with Claude, you're starting from scratch. Claude doesn't remember your preferences, your project context, or the decisions you've made together. Until now.
 
-## Installation
+**Claude Recall** is an MCP (Model Context Protocol) server that captures and stores memories from your Claude Code sessions. It learns from your interactions and provides relevant context in future conversations, making Claude feel like a true collaborator who remembers your journey together.
 
-### Global Installation (Recommended)
+## What Makes It Special
+
+- **Persistent Memory**: Your preferences, decisions, and context persist across Claude sessions
+- **Intelligent Retrieval**: Automatically surfaces relevant memories based on your current work
+- **Privacy First**: All memories stored locally in SQLite - your data never leaves your machine
+- **MCP Native**: Built on Anthropic's official Model Context Protocol for seamless integration
+- **Zero Configuration**: Start capturing memories immediately after installation
+- **Lightweight**: SQLite database with automatic memory management
+
+## 🚀 Quick Start
+
+### 1. Install Claude Recall
 
 ```bash
 npm install -g claude-recall
 ```
 
-After installation, you can use `claude-recall` or `npx claude-recall` from anywhere.
+**Note**: Installation automatically configures Claude Recall in your `~/.claude.json` file.
 
-### Local Development
+### 2. Restart Claude Code
 
-```bash
-git clone <repository>
-cd claude-recall
-npm install
-npm run build
-npm link  # for global access during development
+If Claude Code is currently running, restart it to load the new MCP server.
+
+### 3. Start Using Claude
+
+Launch Claude Code and your memories will be captured automatically. Claude Recall provides these MCP tools:
+
+- `store_memory` - Save important information
+- `search` - Search through your memories  
+- `retrieve_memory` - Get specific memories
+- `get_stats` - View memory statistics
+- `clear_context` - Clear session context
+
+## How It Works
+
+Claude Recall uses the Model Context Protocol to integrate directly with Claude Code. 
+
+### Automatic Memory Capture (v0.2.3+)
+
+**Any message containing "remember" will be automatically captured with highest priority.** For example:
+- "Remember that I prefer tabs over spaces"
+- "Remember to use PostgreSQL for the database"
+- "Please remember our API uses port 8080"
+
+Additionally, Claude Recall automatically detects and captures:
+- **Preferences**: "I prefer X over Y", "Always use X", "From now on, use Y"
+- **Decisions**: "We decided to...", "Let's go with...", "We'll use..."
+- **Instructions**: "Make sure to...", "Ensure that...", "Files should be in..."
+
+### Manual Memory Storage
+
+You can also explicitly ask Claude to store memories using the MCP tools:
+- Use the `mcp__claude-recall__store_memory` tool
+- Search with `mcp__claude-recall__search`
+- Get stats with `mcp__claude-recall__get_stats`
+
+## Real-World Example
+
+```
+Monday: "Use PostgreSQL for our database and store configs in YAML files"
+Tuesday: "What database should we use?" 
+Claude: "Based on our previous conversations, we decided to use PostgreSQL for the database
+and YAML for configuration files."
 ```
 
 ## Architecture
 
-Claude Recall follows a clean service layer pattern inspired by claude-flow:
+Claude Recall is built as a modern MCP server with a clean architecture:
 
 ```
-Hooks → CLI → Service → Storage
+MCP Protocol → Server → Services → SQLite Storage
 ```
 
-### Why This Architecture?
-
-- **Hooks are dumb**: Simple triggers that only pipe data to CLI service
-- **CLI is smart**: Handles all business logic, parsing, and coordination  
-- **Services are modular**: Clean separation of concerns (memory, config, logging)
-- **Storage is isolated**: Database operations centralized in storage layer
-
-This prevents the brittleness common in hook-based systems where business logic is scattered across hook scripts.
+- **MCP Server**: Handles protocol communication with Claude Code
+- **Service Layer**: Manages memory operations and intelligence
+- **Local Storage**: SQLite database for fast, private storage
 
 ## CLI Commands
 
-### Capture Commands (Used by Hooks)
+While the MCP server handles automatic memory capture, you can also use the CLI:
 
 ```bash
-claude-recall capture pre-tool    # Handle pre-tool events
-claude-recall capture post-tool   # Handle post-tool events  
-claude-recall capture user-prompt # Handle user prompts
+# View statistics
+claude-recall stats
+
+# Search memories
+claude-recall search "database choices"
+
+# Export memories
+claude-recall migrate export
+
+# MCP server management
+claude-recall mcp start  # Usually automatic via Claude Code
+claude-recall mcp test   # Test the MCP server
 ```
 
-### Utility Commands
+## Installation Details
+
+The npm installation automatically:
+- Installs the Claude Recall CLI globally
+- Configures the MCP server in your `~/.claude.json` file
+- Creates a database directory at `~/.claude-recall/`
+- Sets up the proper command structure for Claude Code integration
+
+### Database Location
+
+Your memories are stored in: `~/.claude-recall/claude-recall.db`
+
+This keeps your data:
+- Out of project directories
+- In a consistent location
+- Safe from accidental deletion
+- Easy to backup
+
+### Database & Storage
+
+Claude Recall uses SQLite for fast, reliable local storage:
+
+- **Single database**: One database for all projects at `~/.claude-recall/claude-recall.db`
+- **Cross-project intelligence**: Learn once, apply everywhere
+- **Project isolation**: Memories are tagged by project for contextual retrieval
+- **Zero dependencies**: SQLite is embedded, no database server needed
+- **Portable**: Easy to backup, restore, or transfer your memories
+
+### Memory Management
+
+Claude Recall automatically manages memory to prevent unlimited growth:
+- **Auto-compaction**: When database exceeds 10MB
+- **Memory limits**: Maximum 10,000 memories (older entries are cleaned up)
+- **Smart retention**: Preferences and project knowledge are kept forever
+- **Tool-use history**: Limited to most recent 1,000 entries
+
+No manual configuration needed!
+
+## Privacy & Security
+
+- **100% Local**: All data stored in SQLite on your machine
+- **No Telemetry**: Zero data collection or phone-home behavior
+- **You Own Your Data**: Export and delete at any time
+- **Open Source**: Inspect the code yourself
+
+## Advanced Usage
+
+### Custom Memory Storage
+
+You can manually store memories for specific contexts:
+
+```javascript
+// In Claude Code, use the MCP tool:
+await mcp__claude-recall__store_memory({
+  content: "Always use 2 spaces for indentation in this project",
+  metadata: { type: "preference", project: "my-app" }
+})
+```
+
+### Memory Search
+
+Search through your memories programmatically:
+
+```javascript
+// Find all database-related decisions
+const memories = await mcp__claude-recall__search({
+  query: "database",
+  limit: 10
+})
+```
+
+### Customizing Memory Patterns
+
+Claude Recall uses configurable patterns for automatic memory capture. You can customize these by setting the `CLAUDE_RECALL_PATTERNS_CONFIG` environment variable to point to your own JSON configuration file.
+
+Default patterns include:
+- **Explicit remember**: Any sentence with "remember" (confidence: 1.0)
+- **Preferences**: "I prefer", "Always use", "From now on" (confidence: 0.85-0.9)
+- **Locations**: "Should be in X directory" (confidence: 0.8)
+- **Instructions**: "Make sure", "Ensure that" (confidence: 0.7)
+
+See `src/config/memory-patterns.json` for the full configuration format.
+
+## Troubleshooting
+
+### MCP Server Not Found
+
+If Claude Code can't find the MCP server:
+
+1. Ensure Claude Code was not running when you ran `claude mcp add`
+2. Try: `claude-recall mcp test` to verify the server works
+3. Check logs: `claude-recall status`
+
+### Memories Not Appearing
+
+1. Verify installation: `claude-recall validate`
+2. Check stats: `claude-recall stats`
+3. Ensure MCP tools are being used in Claude Code
+
+### Clearing npm Cache (Version Issues)
+
+If you're seeing an old version after installing `@latest`, clear the npm cache:
 
 ```bash
-claude-recall stats              # Show memory statistics
-claude-recall search "database"  # Search memories by query
-claude-recall --help            # Show help
+# Complete cache clear and reinstall
+npm uninstall -g claude-recall
+npm cache clean --force
+npm cache verify
+npm install -g claude-recall@latest
+
+# Verify the installation
+claude-recall --version
+claude-recall mcp test
 ```
 
-## Hook Configuration
+### Diagnostic Commands for Support
 
-Update your `.claude/settings.json`:
+If you need help troubleshooting, run these commands and share the output:
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture pre-tool"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "*", 
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture post-tool"
-      }]
-    }],
-    "UserPromptSubmit": [{
-      "hooks": [{
-        "type": "command",
-        "command": "npx claude-recall capture user-prompt"
-      }]
-    }]
-  }
-}
+```bash
+"""# 1. Check Installation
+claude-recall --version
+which claude-recall
+npm list -g claude-recall
+
+# 2. Check MCP Configuration
+cat ~/.claude.json | grep -A10 "claude-recall"
+claude-recall mcp test
+
+# 3. Check Database
+ls -la ~/.claude-recall/
+ls -lh ~/.claude-recall/claude-recall.db 2>/dev/null || echo "Database not found"
+
+# 4. Check System Status
+claude-recall status
+claude-recall stats
+
+# 5. Test Basic Functionality
+claude-recall search "test"
+claude-recall stats | grep "Total memories"
+
+# 6. Check for Errors
+ls -la *.log 2>/dev/null || echo "No log files"
+tail -20 info.log 2>/dev/null || echo "No info log"
+
+# 7. Environment Info
+node --version
+npm --version
+echo "OS: $(uname -s)"
+echo "Home: $HOME""""
 ```
 
-## Key Features
+## Contributing
 
-- **Memory Capture**: Automatically captures tool usage, preferences, and patterns
-- **Context Retrieval**: Provides relevant memories based on current context
-- **Pattern Recognition**: Learns from corrections and user preferences  
-- **Global Access**: Works with `npx claude-recall` from any directory
-- **Clean Architecture**: Service layer pattern prevents brittleness
-- **Local Storage**: All data stays on your machine (SQLite database)
+We welcome contributions! Claude Recall is designed to be hackable:
 
-## Development
+- **Small Codebase**: Intentionally kept under 3000 lines
+- **Clean Architecture**: Easy to understand and modify
+- **Well Tested**: Comprehensive test coverage
 
-The codebase is intentionally kept minimal (under 2000 lines) with clear separation:
+## License
 
-- `src/cli/` - CLI interface and command handling
-- `src/services/` - Business logic services  
-- `src/core/` - Core functionality (storage, retrieval, patterns)
-- `src/hooks/minimal/` - Simple hook triggers
-- `src/memory/` - Database schema and operations
+MIT - Use it, modify it, make it yours.
 
-## Success Criteria Met
+## The Future
 
-✅ Hooks contain NO business logic - just pipe data to CLI  
-✅ No hardcoded paths anywhere in the system  
-✅ Works with `npx claude-recall` from any directory  
-✅ Clean separation: hooks → CLI → service → storage  
-✅ All original functionality preserved after refactor  
+Claude Recall is part of a larger vision where AI assistants truly understand and remember their users. By building on open protocols like MCP, we're creating a future where your AI tools work together seamlessly, with memory and context that persists across sessions, projects, and time.
 
-This architecture makes Claude Recall maintainable, testable, and robust for long-term use.
+Start building with memory. Start building with Claude Recall.
+
+---
+
+Built with ❤️ by developers who were tired of repeating themselves to Claude.

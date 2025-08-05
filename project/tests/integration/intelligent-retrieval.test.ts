@@ -56,8 +56,8 @@ describe('Intelligent Retrieval Integration Tests', () => {
     // Add test directory preference
     memoryService.storePreference({
       pattern: 'test directory',
-      value: 'tests-raoul/',
-      description: 'Tests should be saved in tests-raoul/ directory'
+      value: 'tests/',
+      description: 'Tests should be saved in tests/ directory'
     }, {
       projectId: 'test-project',
       timestamp: Date.now()
@@ -124,13 +124,13 @@ describe('Intelligent Retrieval Integration Tests', () => {
       const testDirMemory = results.find(m => 
         m.value && 
         typeof m.value === 'object' && 
-        (m.value.value?.includes('tests-raoul') || 
-         m.value.description?.includes('tests-raoul'))
+        (m.value.value?.includes('tests/') || 
+         m.value.description?.includes('tests/'))
       );
       
       expect(testDirMemory).toBeDefined();
       expect(testDirMemory?.type).toBe('preference');
-      expect(JSON.stringify(testDirMemory?.value)).toContain('tests-raoul');
+      expect(JSON.stringify(testDirMemory?.value)).toContain('tests/');
     });
     
     test('Scenario 2: User says "fix TypeError" → System retrieves previous TypeError fixes', async () => {
@@ -200,7 +200,7 @@ describe('Intelligent Retrieval Integration Tests', () => {
         
         // Each should retrieve test directory preference
         const hasTestDirPref = results.some(m => 
-          JSON.stringify(m.value).includes('tests-raoul')
+          JSON.stringify(m.value).includes('tests/')
         );
         
         expect(hasTestDirPref).toBe(true);

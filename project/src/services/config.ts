@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 export interface ClaudeRecallConfig {
   // Database configuration
@@ -69,7 +70,7 @@ export class ConfigService {
     // Default configuration
     const defaultConfig: ClaudeRecallConfig = {
       database: {
-        path: process.env.CLAUDE_RECALL_DB_PATH || process.cwd(),
+        path: process.env.CLAUDE_RECALL_DB_PATH || path.join(os.homedir(), '.claude-recall'),
         name: process.env.CLAUDE_RECALL_DB_NAME || 'claude-recall.db',
         compaction: {
           autoCompact: process.env.CLAUDE_RECALL_AUTO_COMPACT !== 'false',
@@ -153,6 +154,10 @@ export class ConfigService {
   }
   
   getDatabasePath(): string {
+    // Ensure database directory exists
+    if (!fs.existsSync(this.config.database.path)) {
+      fs.mkdirSync(this.config.database.path, { recursive: true });
+    }
     return path.join(this.config.database.path, this.config.database.name);
   }
   

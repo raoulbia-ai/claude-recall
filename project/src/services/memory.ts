@@ -368,6 +368,19 @@ export class MemoryService {
   }
   
   /**
+   * Check if database is connected
+   */
+  isConnected(): boolean {
+    try {
+      // Try to get stats as a connection check
+      this.storage.getStats();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  
+  /**
    * Close database connection
    */
   close(): void {

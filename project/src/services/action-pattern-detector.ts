@@ -244,7 +244,7 @@ export class ActionPatternDetector {
     for (let i = 0; i < pathParts.length; i++) {
       const part = pathParts[i];
       if (part.includes('test') || part.includes('spec')) {
-        // Check if it's a user-specific test directory (e.g., tests-raoul)
+        // Check if it's a custom test directory
         if (part.startsWith('tests-') || part.startsWith('test-')) {
           return part;
         }

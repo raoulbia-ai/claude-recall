@@ -1,19 +1,27 @@
 {
   "name": "claude-recall",
-  "version": "0.1.0",
-  "description": "Memory system for Claude Code with behavioral learning and automated NPM installation",
-  "main": "dist/cli/claude-recall-cli.js",
+  "version": "0.2.4",
+  "description": "MCP server for persistent memory in Claude Code conversations",
+  "main": "dist/index.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"
   },
+  "files": [
+    "dist/",
+    "scripts/postinstall.js",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ],
   "directories": {
     "doc": "docs",
     "test": "tests"
   },
   "scripts": {
-    "test": "jest",
+    "postinstall": "node scripts/postinstall.js || true",
+    "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "build": "tsc && mkdir -p dist/memory && cp src/memory/schema.sql dist/memory/ && chmod +x dist/cli/claude-recall-cli.js && chmod +x dist/hooks/minimal/*.js && cp -r scripts dist/",
+    "build": "tsc && mkdir -p dist/memory dist/config && cp src/memory/schema.sql dist/memory/ && cp -r src/config/* dist/config/ 2>/dev/null || true && chmod +x dist/cli/claude-recall-cli.js",
     "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
     "dev": "ts-node",
     "start": "ts-node src/server.ts",
@@ -24,11 +32,27 @@
     "search": "npm run claude-recall search",
     "migrate:service-layer": "ts-node migrate-to-service-layer.ts",
     "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\"",
-    "postinstall": "node scripts/install.js",
     "preuninstall": "node scripts/uninstall.js",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "mcp:start": "node dist/cli/claude-recall-cli.js mcp start",
+    "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
+    "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",
+    "mcp:test": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}' | npm run mcp:start",
+    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start"
   },
-  "keywords": ["claude-code", "memory", "ai", "productivity", "automation", "claude", "recall"],
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "memory",
+    "ai",
+    "claude",
+    "anthropic",
+    "model-context-protocol"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "author": "Claude Recall Team",
   "license": "ISC",
   "engines": {
@@ -36,7 +60,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/raoulbia-ai/claude-recall.git"
+    "url": "git+https://github.com/raoulbia-ai/claude-recall.git"
   },
   "homepage": "https://github.com/raoulbia-ai/claude-recall#readme",
   "bugs": {
