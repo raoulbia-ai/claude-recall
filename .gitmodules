@@ -1,6 +1,0 @@
-[submodule "references/claude-code"]
-	path = references/claude-code
-	url = https://github.com/anthropics/claude-code.git
-[submodule "references/claude-flow"]
-	path = references/claude-flow
-	url = https://github.com/ruvnet/claude-flow.git
