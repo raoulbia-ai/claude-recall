@@ -100,6 +100,7 @@ export class DatabaseManager {
       if (!dryRun) {
         backupPath = await this.createBackup();
         this.logger.info('DatabaseManager', `Created backup at ${backupPath}`);
+        console.log(`🔄 Created backup at ${backupPath}`);
       }
       
       const db = new Database(dbPath, { readonly: dryRun });
@@ -123,6 +124,7 @@ export class DatabaseManager {
       // 4. Run VACUUM to reclaim space (only if not dry run)
       if (!dryRun) {
         this.logger.info('DatabaseManager', 'Running VACUUM to reclaim space...');
+        console.log('🗜️  Compacting database...');
         db.exec('VACUUM');
       }
       
@@ -150,6 +152,10 @@ export class DatabaseManager {
         savedMB,
         duration: `${result.duration}ms`
       });
+      
+      if (!dryRun && savedBytes > 0) {
+        console.log(`✅ Database compacted, saved ${savedMB}MB`);
+      }
       
       return result;
       
@@ -238,6 +244,9 @@ export class DatabaseManager {
       }
       
       this.logger.info('DatabaseManager', `Deduplicated ${totalRemoved} memories`);
+      if (totalRemoved > 0 && !dryRun) {
+        console.log(`🔄 Deduplicated ${totalRemoved} identical memories`);
+      }
       return totalRemoved;
       
     } catch (error) {
@@ -267,6 +276,9 @@ export class DatabaseManager {
       }
       
       this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories`);
+      if (toRemove.length > 0 && !dryRun) {
+        console.log(`🔄 Pruned ${toRemove.length} old tool-use memories`);
+      }
       return toRemove.length;
       
     } catch (error) {
@@ -311,6 +323,9 @@ export class DatabaseManager {
       }
       
       this.logger.info('DatabaseManager', `Pruned ${totalRemoved} old corrections`);
+      if (totalRemoved > 0 && !dryRun) {
+        console.log(`🔄 Pruned ${totalRemoved} old correction memories`);
+      }
       return totalRemoved;
       
     } catch (error) {

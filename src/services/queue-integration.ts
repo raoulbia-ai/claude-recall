@@ -14,6 +14,9 @@ export class QueueIntegrationService {
   private config = ConfigService.getInstance();
   private isInitialized = false;
   private processors: Map<string, any> = new Map();
+  private healthMonitorInterval?: NodeJS.Timeout;
+  private originalMemoryMethods: Map<string, Function> = new Map();
+  private isShuttingDown = false;
 
   private constructor() {
     this.queueAPI = QueueAPI.getInstance();
@@ -99,8 +102,13 @@ export class QueueIntegrationService {
    */
   private async patchMemoryService(): Promise<void> {
     const memoryService = MemoryService.getInstance();
-    const originalStore = memoryService.store.bind(memoryService);
-    const originalStorePreference = memoryService.storePreferenceWithOverride.bind(memoryService);
+    
+    // Store original methods for cleanup
+    this.originalMemoryMethods.set('store', memoryService.store.bind(memoryService));
+    this.originalMemoryMethods.set('storePreferenceWithOverride', memoryService.storePreferenceWithOverride.bind(memoryService));
+    
+    const originalStore = this.originalMemoryMethods.get('store')!;
+    const originalStorePreference = this.originalMemoryMethods.get('storePreferenceWithOverride')!;
 
     // Override store method to use queue for pattern detection
     memoryService.store = (request: any) => {
@@ -176,8 +184,10 @@ export class QueueIntegrationService {
    */
   private startHealthMonitoring(): void {
     // Monitor queue health every 30 seconds
-    setInterval(() => {
-      this.checkQueueHealth();
+    this.healthMonitorInterval = setInterval(() => {
+      if (!this.isShuttingDown) {
+        this.checkQueueHealth();
+      }
     }, 30000);
 
     this.logger.info('QueueIntegrationService', 'Health monitoring started');
@@ -300,25 +310,49 @@ export class QueueIntegrationService {
    * Shutdown the integration service
    */
   shutdown(): void {
-    if (!this.isInitialized) {
+    if (!this.isInitialized || this.isShuttingDown) {
       return;
     }
 
+    this.isShuttingDown = true;
     this.logger.info('QueueIntegrationService', 'Shutting down queue integration service');
 
-    // Stop all processors
-    for (const [queueName, processor] of this.processors) {
-      if (processor && typeof processor.stop === 'function') {
-        processor.stop();
-        this.logger.info('QueueIntegrationService', `Processor stopped: ${queueName}`);
+    try {
+      // Stop health monitoring
+      if (this.healthMonitorInterval) {
+        clearInterval(this.healthMonitorInterval);
+        this.healthMonitorInterval = undefined;
       }
+
+      // Restore original memory service methods
+      const memoryService = MemoryService.getInstance();
+      if (this.originalMemoryMethods.has('store')) {
+        memoryService.store = this.originalMemoryMethods.get('store') as any;
+      }
+      if (this.originalMemoryMethods.has('storePreferenceWithOverride')) {
+        memoryService.storePreferenceWithOverride = this.originalMemoryMethods.get('storePreferenceWithOverride') as any;
+      }
+      this.originalMemoryMethods.clear();
+
+      // Stop all processors
+      for (const [queueName, processor] of this.processors) {
+        if (processor && typeof processor.stop === 'function') {
+          processor.stop();
+          this.logger.info('QueueIntegrationService', `Processor stopped: ${queueName}`);
+        }
+      }
+      this.processors.clear();
+
+      // Close queue API
+      this.queueAPI.close();
+
+      this.isInitialized = false;
+      this.logger.info('QueueIntegrationService', 'Queue integration service shut down');
+    } catch (error) {
+      this.logger.error('QueueIntegrationService', 'Error during shutdown', error);
+    } finally {
+      this.isShuttingDown = false;
     }
-
-    // Close queue API
-    this.queueAPI.close();
-
-    this.isInitialized = false;
-    this.logger.info('QueueIntegrationService', 'Queue integration service shut down');
   }
 }
 

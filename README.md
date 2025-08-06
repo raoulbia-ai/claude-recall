@@ -118,12 +118,19 @@ claude-recall capture user-prompt '{"content":"your message here"}'
 
 ## Memory Management
 
-Claude Recall includes automatic memory management to prevent unlimited database growth:
+Claude Recall automatically manages memory to prevent unlimited database growth, with user notifications:
 
 ### Current Limits
 - **Maximum memories**: 10,000 total (configurable)
 - **Database size threshold**: 10MB for automatic compaction
 - **Queue message retention**: 7 days for completed messages
+
+### User Notifications
+- **Stats command** shows current usage: `8,234/10,000 (82.3%)`
+- **Warning at 80%**: "⚠️ Note: Memory usage is high"
+- **Critical at 90%**: "⚠️ WARNING: Approaching memory limit - pruning will occur soon"
+- **During pruning**: "🔄 Pruned 500 old tool-use memories"
+- **During compaction**: "🗜️ Compacting database... ✅ saved 2.3MB"
 
 ### Memory Retention by Type
 - **Preferences**: Kept indefinitely (your coding style, tool choices)
@@ -134,7 +141,7 @@ Claude Recall includes automatic memory management to prevent unlimited database
 
 ### Manual Management
 ```bash
-# Check database size and memory count
+# Check database size and memory count (with usage percentage)
 claude-recall stats
 
 # Clear old memories
@@ -153,8 +160,6 @@ export CLAUDE_RECALL_MAX_MEMORIES=20000        # Increase memory limit
 export CLAUDE_RECALL_COMPACT_THRESHOLD=20971520 # 20MB compaction threshold
 export CLAUDE_RECALL_RETAIN_TOOL_USE=2000      # Keep more tool usage history
 ```
-
-**Note**: Automatic pruning when limits are exceeded is planned for v0.3.0. Currently, use manual cleanup commands if needed.
 
 ## Troubleshooting
 
@@ -226,7 +231,7 @@ For issues or questions:
 ## Acknowledgements
 
 This project makes extensive use of the excellent work from:
-- [claude-flow](https://github.com/ruvnet/claude-flow) - AI-driven development workflow automation that powers our testing and development infrastructure
+- [claude-flow](https://github.com/ruvnet/claude-flow) - by Ruvnet
 
 ## License
 
@@ -240,4 +245,4 @@ Start building with memory. Start building with Claude Recall.
 
 ---
 
-Built with ❤️ by developers who were tired of repeating themselves to Claude.
+Built with ❤️ by a developer who was tired of repeating himself to Claude.

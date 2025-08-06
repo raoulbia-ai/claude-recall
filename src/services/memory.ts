@@ -50,6 +50,16 @@ export class MemoryService {
    */
   store(request: MemoryStoreRequest): void {
     try {
+      // Check memory limits and notify if approaching
+      const stats = this.getStats();
+      const config = this.config.getConfig();
+      const maxMemories = config.database.compaction?.maxMemories || 10000;
+      
+      if (stats.total >= maxMemories * 0.8) {
+        const percent = ((stats.total / maxMemories) * 100).toFixed(0);
+        console.log(`⚠️  Memory usage at ${percent}% (${stats.total}/${maxMemories})`);
+      }
+      
       const memory: Memory = {
         key: request.key,
         value: request.value,

@@ -119,9 +119,24 @@ export class QueueSystem {
 
   /**
    * Get or create a prepared statement with caching
+   * Includes automatic cleanup of unused statements to prevent memory leaks
    */
   private getPreparedStatement(key: string, sql: string): Database.Statement {
+    // Limit cache size to prevent unbounded growth
+    const MAX_CACHE_SIZE = 100;
+    
     if (!this.preparedStatements.has(key)) {
+      // Clear old entries if cache is too large
+      if (this.preparedStatements.size >= MAX_CACHE_SIZE) {
+        const entriesToRemove = Math.floor(MAX_CACHE_SIZE * 0.2); // Remove 20% of oldest entries
+        const keysToRemove = Array.from(this.preparedStatements.keys()).slice(0, entriesToRemove);
+        keysToRemove.forEach(k => {
+          // Remove from cache - better-sqlite3 handles cleanup automatically
+          this.preparedStatements.delete(k);
+        });
+        this.logger.debug('QueueSystem', 'Cleared prepared statement cache', { removed: entriesToRemove });
+      }
+      
       this.preparedStatements.set(key, this.db.prepare(sql));
     }
     return this.preparedStatements.get(key)!;
@@ -268,6 +283,27 @@ export class QueueSystem {
     // Validate inputs
     if (!queueName || !messageType) {
       throw new Error('Queue name and message type are required');
+    }
+
+    // Check queue size limit
+    const maxQueueSize = 10000; // Maximum messages per queue
+    const currentSize = this.getQueueSize(queueName);
+    
+    if (currentSize >= maxQueueSize) {
+      this.logger.error('QueueSystem', 'Queue size limit exceeded', {
+        queueName,
+        currentSize,
+        maxQueueSize
+      });
+      
+      // Try to cleanup old completed messages
+      this.cleanupOldMessages();
+      
+      // Check again after cleanup
+      const sizeAfterCleanup = this.getQueueSize(queueName);
+      if (sizeAfterCleanup >= maxQueueSize) {
+        throw new Error(`Queue ${queueName} has reached maximum size of ${maxQueueSize} messages`);
+      }
     }
 
     // Validate payload size (limit to 1MB)
@@ -1020,6 +1056,22 @@ export class QueueSystem {
       return transaction(this.db);
     } catch (error) {
       this.logger.error('QueueSystem', 'Transaction execution failed', error);
+      
+      // Ensure any pending transaction is rolled back
+      try {
+        this.db.exec('ROLLBACK');
+      } catch (rollbackError) {
+        // Ignore rollback errors as transaction may have already been rolled back
+        this.logger.debug('QueueSystem', 'Rollback attempted after transaction error', rollbackError);
+      }
+      
+      // Clear any cached statements that might be in an invalid state
+      if (this.preparedStatements.size > 0) {
+        this.logger.info('QueueSystem', 'Clearing prepared statements cache after transaction error');
+        // Simply clear the cache - better-sqlite3 handles cleanup
+        this.preparedStatements.clear();
+      }
+      
       throw error;
     }
   }
@@ -1031,6 +1083,20 @@ export class QueueSystem {
     const stmt = this.db.prepare('SELECT DISTINCT queue_name FROM queue_messages');
     const results = stmt.all() as Array<{ queue_name: string }>;
     return results.map(r => r.queue_name);
+  }
+
+  /**
+   * Get the current size of a specific queue
+   */
+  getQueueSize(queueName: string): number {
+    const stmt = this.getPreparedStatement('queueSize', `
+      SELECT COUNT(*) as count 
+      FROM queue_messages 
+      WHERE queue_name = ? 
+      AND status IN ('pending', 'processing', 'retrying')
+    `);
+    const result = stmt.get(queueName) as { count: number };
+    return result?.count || 0;
   }
 
   /**
@@ -1056,8 +1122,8 @@ export class QueueSystem {
     this.processors.clear();
     
     // Clear prepared statements cache
-    // Note: better-sqlite3 automatically finalizes statements when database closes
     try {
+      // Simply clear the cache - better-sqlite3 handles cleanup automatically when DB is closed
       this.preparedStatements.clear();
       this.logger.info('QueueSystem', 'Prepared statements cache cleared');
     } catch (error) {
@@ -1095,6 +1161,8 @@ export abstract class QueueProcessor {
   protected logger = LoggingService.getInstance();
   protected isRunning = false;
   protected processInterval?: NodeJS.Timeout;
+  protected activeProcessing = new Set<Promise<void>>();
+  protected maxConcurrentProcessing = 10;
 
   constructor(
     queueName: string,
@@ -1144,7 +1212,34 @@ export abstract class QueueProcessor {
       this.processInterval = undefined;
     }
     
-    // Wait for any in-flight processing to complete
+    // Wait for all active processing to complete
+    if (this.activeProcessing.size > 0) {
+      this.logger.info('QueueProcessor', 'Waiting for active processing to complete', {
+        queueName: this.queueName,
+        activeCount: this.activeProcessing.size
+      });
+      
+      try {
+        // Wait with timeout to prevent hanging
+        await Promise.race([
+          Promise.all(Array.from(this.activeProcessing)),
+          new Promise<void>((resolve) => setTimeout(() => {
+            this.logger.warn('QueueProcessor', 'Timeout waiting for processing to complete', {
+              queueName: this.queueName,
+              remainingCount: this.activeProcessing.size
+            });
+            resolve();
+          }, 30000)) // 30 second timeout
+        ]);
+      } catch (error) {
+        this.logger.error('QueueProcessor', 'Error waiting for active processing', error);
+      }
+    }
+    
+    // Clear any remaining references
+    this.activeProcessing.clear();
+    
+    // Wait for any custom cleanup
     await this.onStop();
     
     this.logger.info('QueueProcessor', 'Stopped', { queueName: this.queueName });
@@ -1165,13 +1260,38 @@ export abstract class QueueProcessor {
       return;
     }
 
+    // Don't start new processing if we're at capacity
+    if (this.activeProcessing.size >= this.maxConcurrentProcessing) {
+      this.logger.debug('QueueProcessor', 'At max concurrent processing capacity', {
+        queueName: this.queueName,
+        activeCount: this.activeProcessing.size
+      });
+      return;
+    }
+
     try {
-      const messages = this.queueSystem.dequeue(this.queueName, this.config.batchSize);
+      // Calculate how many messages we can process
+      const availableSlots = this.maxConcurrentProcessing - this.activeProcessing.size;
+      const batchSize = Math.min(this.config.batchSize, availableSlots);
       
-      // Process messages in parallel with timeout
-      const processingPromises = messages.map(message => 
-        this.processMessageWithTimeout(message)
-      );
+      if (batchSize <= 0) {
+        return;
+      }
+      
+      const messages = this.queueSystem.dequeue(this.queueName, batchSize);
+      
+      // Process messages in parallel with timeout and tracking
+      const processingPromises = messages.map(message => {
+        const promise = this.processMessageWithTimeout(message);
+        
+        // Track active processing
+        this.activeProcessing.add(promise);
+        promise.finally(() => {
+          this.activeProcessing.delete(promise);
+        });
+        
+        return promise;
+      });
       
       await Promise.allSettled(processingPromises);
     } catch (error) {

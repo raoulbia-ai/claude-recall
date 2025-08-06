@@ -60,6 +60,15 @@ The core intelligence layer that manages memory storage, retrieval, and relevanc
 - Relevance scoring based on recency, frequency, and context
 - Memory enhancement with metadata and embeddings
 - Pattern detection for identifying user preferences
+- Configurable pattern recognition via JSON configuration file
+- Custom patterns supported through environment variable override
+
+**Pattern Recognition**:
+- Default patterns defined in `src/config/memory-patterns.json`
+- Patterns include confidence scores (0.0-1.0) for prioritization
+- Custom patterns loadable via `CLAUDE_RECALL_PATTERNS_CONFIG` environment variable
+- Supports regex and keyword-based pattern matching
+- Categories: preferences, decisions, instructions, corrections
 
 **Flow**: Raw input → Pattern extraction → Enhancement → Storage → Indexing → Retrieval scoring
 

@@ -39,9 +39,20 @@ class ClaudeRecallCLI {
    */
   showStats(): void {
     const stats = this.memoryService.getStats();
+    const configService = ConfigService.getInstance();
+    const config = configService.getConfig();
+    const maxMemories = config.database.compaction?.maxMemories || 10000;
+    const usagePercent = (stats.total / maxMemories) * 100;
     
     console.log('\n📊 Claude Recall Statistics\n');
-    console.log(`Total memories: ${stats.total}`);
+    console.log(`Total Memories: ${stats.total}/${maxMemories} (${usagePercent.toFixed(1)}%)`);
+    
+    // Simple status indicator
+    if (usagePercent >= 90) {
+      console.log('⚠️  WARNING: Approaching memory limit - pruning will occur soon');
+    } else if (usagePercent >= 80) {
+      console.log('⚠️  Note: Memory usage is high');
+    }
     
     if (stats.byType && Object.keys(stats.byType).length > 0) {
       console.log('\nMemories by type:');
