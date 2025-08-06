@@ -11,6 +11,7 @@ import { PatternService } from '../services/pattern-service';
 import { MigrateCommand } from './commands/migrate';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
+import { LiveTestCommand } from './commands/live-test';
 
 const program = new Command();
 
@@ -319,6 +320,9 @@ async function main() {
 
   // Migration commands
   MigrateCommand.register(program);
+  
+  // Register live test command
+  new LiveTestCommand().register(program);
 
   // Search command
   program
