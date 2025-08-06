@@ -336,6 +336,7 @@ async function main() {
         limit: parseInt(options.limit),
         json: options.json
       });
+      process.exit(0);
     });
 
   // Stats command
@@ -345,6 +346,7 @@ async function main() {
     .action(() => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.showStats();
+      process.exit(0);
     });
 
   // Export command
@@ -355,6 +357,7 @@ async function main() {
     .action(async (output, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.export(output, options);
+      process.exit(0);
     });
 
   // Import command
@@ -364,6 +367,7 @@ async function main() {
     .action(async (input) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.import(input);
+      process.exit(0);
     });
 
   // Clear command
@@ -375,6 +379,7 @@ async function main() {
     .action(async (options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.clear(options);
+      process.exit(0);
     });
 
   // Status command
@@ -384,6 +389,7 @@ async function main() {
     .action(async () => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.status();
+      process.exit(0);
     });
 
   // Test memory search command
@@ -428,6 +434,7 @@ async function main() {
       
       console.log('\n📊 Memory search monitoring is active.');
       console.log('   Check logs to verify search calls are being made.\n');
+      process.exit(0);
     });
 
   // Search monitor command
@@ -441,7 +448,7 @@ async function main() {
       if (options.clear) {
         monitor.clearLogs();
         console.log('✅ Search monitoring logs cleared.\n');
-        return;
+        process.exit(0);
       }
       
       console.log('\n📊 Memory Search Monitoring Statistics\n');
@@ -485,6 +492,7 @@ async function main() {
       }
       
       console.log('\n');
+      process.exit(0);
     });
 
   // Parse arguments
