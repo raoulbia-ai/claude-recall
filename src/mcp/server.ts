@@ -1,5 +1,6 @@
 import { StdioTransport } from './transports/stdio';
 import { MemoryTools } from './tools/memory-tools';
+import { TestTools } from './tools/test-tools';
 import { MemoryService } from '../services/memory';
 import { LoggingService } from '../services/logging';
 import { SessionManager } from './session-manager';
@@ -114,9 +115,15 @@ export class MCPServer {
 
   private registerTools(): void {
     const memoryTools = new MemoryTools(this.memoryService, this.logger);
-    const tools = memoryTools.getTools();
+    const testTools = new TestTools(this.memoryService, this.logger);
     
-    for (const tool of tools) {
+    // Register memory tools
+    for (const tool of memoryTools.getTools()) {
+      this.tools.set(tool.name, tool);
+    }
+    
+    // Register test tools
+    for (const tool of testTools.getTools()) {
       this.tools.set(tool.name, tool);
     }
     
