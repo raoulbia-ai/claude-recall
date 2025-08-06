@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { ConfigService } from './config';
 
 export enum LogLevel {
@@ -45,6 +46,18 @@ export class LoggingService {
   
   private writeLog(logName: string, entry: LogEntry): void {
     const logPath = this.config.getLogPath(logName);
+    const logDir = path.dirname(logPath);
+    
+    // Ensure log directory exists
+    if (!fs.existsSync(logDir)) {
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+      } catch (error) {
+        // If we can't create the log directory, skip logging to file
+        return;
+      }
+    }
+    
     const logMessage = `[${entry.timestamp}] ${entry.level} [${entry.service}] ${entry.message}`;
     const fullMessage = entry.metadata 
       ? `${logMessage}\n  Metadata: ${JSON.stringify(entry.metadata)}\n`
@@ -53,7 +66,7 @@ export class LoggingService {
     try {
       fs.appendFileSync(logPath, fullMessage);
     } catch (error) {
-      console.error('Failed to write to log file:', error);
+      // Silently fail - we don't want logging errors to break the application
     }
   }
   

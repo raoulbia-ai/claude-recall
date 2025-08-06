@@ -85,7 +85,7 @@ export class ConfigService {
         }
       },
       logging: {
-        directory: process.env.CLAUDE_RECALL_LOG_DIR || process.cwd(),
+        directory: process.env.CLAUDE_RECALL_LOG_DIR || path.join(os.homedir(), '.claude-recall', 'logs'),
         level: (process.env.CLAUDE_RECALL_LOG_LEVEL as any) || 'info',
         maxFiles: parseInt(process.env.CLAUDE_RECALL_LOG_MAX_FILES || '5'),
         maxSize: process.env.CLAUDE_RECALL_LOG_MAX_SIZE || '10MB'
