@@ -1,0 +1,83 @@
+{
+  "name": "claude-recall",
+  "version": "0.2.10",
+  "description": "MCP server for persistent memory in Claude Code conversations",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-recall": "dist/cli/claude-recall-cli.js"
+  },
+  "files": [
+    "dist/",
+    "scripts/postinstall.js",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ],
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js || true",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "build": "tsc && mkdir -p dist/memory dist/config && cp src/memory/schema.sql dist/memory/ && cp -r src/config/* dist/config/ 2>/dev/null || true && chmod +x dist/cli/claude-recall-cli.js",
+    "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
+    "dev": "ts-node",
+    "start": "ts-node src/server.ts",
+    "start:dev": "nodemon --exec ts-node src/server.ts",
+    "claude-recall": "ts-node src/cli/claude-recall-cli.ts",
+    "install:global": "npm run build && npm link",
+    "stats": "npm run claude-recall stats",
+    "search": "npm run claude-recall search",
+    "migrate:service-layer": "ts-node migrate-to-service-layer.ts",
+    "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\"",
+    "preuninstall": "node scripts/uninstall.js",
+    "prepare": "npm run build",
+    "mcp:start": "node dist/cli/claude-recall-cli.js mcp start",
+    "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
+    "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",
+    "mcp:test": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}' | npm run mcp:start",
+    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start"
+  },
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "memory",
+    "ai",
+    "claude",
+    "anthropic",
+    "model-context-protocol"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "author": "Claude Recall Team",
+  "license": "ISC",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raoulbia-ai/claude-recall.git"
+  },
+  "homepage": "https://github.com/raoulbia-ai/claude-recall#readme",
+  "bugs": {
+    "url": "https://github.com/raoulbia-ai/claude-recall/issues"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.1.0",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "chalk": "^5.5.0",
+    "commander": "^12.1.0"
+  }
+}
