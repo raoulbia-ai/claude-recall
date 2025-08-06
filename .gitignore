@@ -46,12 +46,21 @@ tmp/
 temp/
 .tmp/
 
-# Test files
+# Test files and directory
+tests/
 test-*.js
 test-*.ts
 test-*.sh
+debug-*.js
 debug-*.ts
 demo-*.ts
+continuity-*.js
+verify-*.js
+live-*.js
+simple-*.ts
+final-*.js
+*-test.js
+*-test.ts
 
 # Development files
 STAGE*.md

@@ -138,10 +138,16 @@ export class MemoryService {
    */
   search(query: string): ScoredMemory[] {
     try {
-      const results = this.retrieval.searchByKeyword(query);
+      // Use findRelevant with query context for better semantic matching
+      const context = {
+        query: query,
+        timestamp: Date.now()
+      };
+      
+      const results = this.retrieval.findRelevant(context);
       
       this.logger.logRetrieval(query, results.length, {
-        searchType: 'keyword'
+        searchType: 'contextual'
       });
       
       return results;

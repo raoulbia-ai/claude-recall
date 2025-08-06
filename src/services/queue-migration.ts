@@ -156,8 +156,15 @@ export class QueueMigration {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS queue_configs (
             queue_name TEXT PRIMARY KEY,
-            retry_config TEXT NOT NULL,
-            processor_config TEXT NOT NULL,
+            max_retries INTEGER DEFAULT 3,
+            base_delay_ms INTEGER DEFAULT 1000,
+            max_delay_ms INTEGER DEFAULT 300000,
+            use_jitter INTEGER DEFAULT 1,
+            backoff_multiplier REAL DEFAULT 2.0,
+            batch_size INTEGER DEFAULT 10,
+            processing_timeout INTEGER DEFAULT 30000,
+            retention_period INTEGER DEFAULT 604800000,
+            enabled INTEGER DEFAULT 1,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
           );
@@ -205,40 +212,28 @@ export class QueueMigration {
 
         // Insert default queue configurations
         const now = Date.now();
-        this.db.prepare(`
-          INSERT OR IGNORE INTO queue_configs (queue_name, retry_config, processor_config, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run('hook-events', 
-          JSON.stringify({ maxRetries: 3, baseDelayMs: 30000, maxDelayMs: 300000 }),
-          JSON.stringify({ batchSize: 5, processingTimeout: 15000, cleanupInterval: 2000 }),
-          now, now
+        const insertConfigStmt = this.db.prepare(`
+          INSERT OR IGNORE INTO queue_configs (
+            queue_name, max_retries, base_delay_ms, max_delay_ms, use_jitter,
+            backoff_multiplier, batch_size, processing_timeout, retention_period,
+            enabled, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        insertConfigStmt.run('hook-events', 
+          3, 1000, 300000, 1, 2.0, 5, 15000, 604800000, 1, now, now
         );
 
-        this.db.prepare(`
-          INSERT OR IGNORE INTO queue_configs (queue_name, retry_config, processor_config, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run('mcp-operations',
-          JSON.stringify({ maxRetries: 5, baseDelayMs: 30000, maxDelayMs: 300000 }),
-          JSON.stringify({ batchSize: 3, processingTimeout: 30000, cleanupInterval: 3000 }),
-          now, now
+        insertConfigStmt.run('mcp-operations',
+          5, 1000, 300000, 1, 2.0, 3, 30000, 604800000, 1, now, now
         );
 
-        this.db.prepare(`
-          INSERT OR IGNORE INTO queue_configs (queue_name, retry_config, processor_config, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run('memory-operations',
-          JSON.stringify({ maxRetries: 3, baseDelayMs: 30000, maxDelayMs: 300000 }),
-          JSON.stringify({ batchSize: 10, processingTimeout: 10000, cleanupInterval: 1000 }),
-          now, now
+        insertConfigStmt.run('memory-operations',
+          3, 1000, 300000, 1, 2.0, 10, 10000, 604800000, 1, now, now
         );
 
-        this.db.prepare(`
-          INSERT OR IGNORE INTO queue_configs (queue_name, retry_config, processor_config, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run('pattern-detection',
-          JSON.stringify({ maxRetries: 2, baseDelayMs: 30000, maxDelayMs: 300000 }),
-          JSON.stringify({ batchSize: 5, processingTimeout: 20000, cleanupInterval: 3000 }),
-          now, now
+        insertConfigStmt.run('pattern-detection',
+          2, 1000, 300000, 1, 2.0, 5, 20000, 604800000, 1, now, now
         );
       });
 

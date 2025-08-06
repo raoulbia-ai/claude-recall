@@ -445,8 +445,14 @@ class HookEventProcessor extends QueueProcessor {
     const preferenceExtractor = new PreferenceExtractor();
     const memoryService = MemoryService.getInstance();
     
-    // Extract preferences from user prompt
-    const preferences = preferenceExtractor.extractPreferences(payload.content);
+    // Extract preferences from user prompt (handle both 'content' and 'prompt' fields)
+    const promptContent = payload.content || payload.prompt;
+    if (!promptContent) {
+      this.logger.warn('HookEventProcessor', 'No prompt content found in payload', payload);
+      return;
+    }
+    
+    const preferences = preferenceExtractor.extractPreferences(promptContent);
     
     // Store each extracted preference
     for (const preference of preferences) {
@@ -481,7 +487,7 @@ class HookEventProcessor extends QueueProcessor {
     // Also run legacy pattern detection as fallback
     const { PatternService } = await import('./pattern-service');
     const patternService = PatternService.getInstance();
-    const patterns = patternService.analyzePrompt(payload.content);
+    const patterns = patternService.analyzePrompt(promptContent);
     
     if (patterns) {
       memoryService.store({

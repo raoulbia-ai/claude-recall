@@ -475,6 +475,16 @@ export class QueueSystem {
           }
         }
         
+        // Sort messages by priority if RETURNING was used (it doesn't preserve ORDER BY)
+        if (this.supportsReturning) {
+          messages.sort((a, b) => {
+            if (b.priority !== a.priority) {
+              return b.priority - a.priority; // Higher priority first
+            }
+            return a.created_at - b.created_at; // Earlier created first for same priority
+          });
+        }
+        
         // Parse JSON fields
         return messages.map(message => {
           try {
@@ -716,7 +726,7 @@ export class QueueSystem {
         config.maxRetries ?? 3,
         config.baseDelayMs ?? 1000,
         config.maxDelayMs ?? 300000,
-        config.useJitter ? 1 : 0,
+        (config.useJitter ?? true) ? 1 : 0,
         config.backoffMultiplier ?? 2.0,
         config.batchSize ?? 10,
         config.processingTimeout ?? 30000,

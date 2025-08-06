@@ -224,16 +224,16 @@ describe('QueueSystem Fixes', () => {
       const retrievedConfig = queueSystem.getQueueConfig(queueName);
       
       expect(retrievedConfig).not.toBeNull();
-      expect(retrievedConfig?.retryConfig.maxRetries).toBe(5);
-      expect(retrievedConfig?.retryConfig.baseDelayMs).toBe(2000);
-      expect(retrievedConfig?.processorConfig.batchSize).toBe(20);
-      expect(retrievedConfig?.processorConfig.cleanupInterval).toBe(1000);
-      expect(retrievedConfig?.processorConfig.retentionPeriod).toBe(172800000);
+      expect(retrievedConfig?.maxRetries).toBe(5);
+      expect(retrievedConfig?.baseDelayMs).toBe(2000);
+      expect(retrievedConfig?.batchSize).toBe(20);
+      expect(retrievedConfig?.cleanupInterval).toBe(1000);
+      expect(retrievedConfig?.retentionPeriod).toBe(172800000);
       
       // Update configuration
       queueSystem.configureQueue(queueName, { maxRetries: 10 });
       const updatedConfig = queueSystem.getQueueConfig(queueName);
-      expect(updatedConfig?.retryConfig.maxRetries).toBe(10);
+      expect(updatedConfig?.maxRetries).toBe(10);
     });
     
     it('should use queue configuration for retry behavior', () => {
@@ -245,7 +245,7 @@ describe('QueueSystem Fixes', () => {
       // Configure queue with custom retry settings
       queueSystem.configureQueue(queueName, {
         maxRetries: 2,
-        retryDelay: 500
+        baseDelayMs: 500
       });
       
       // Enqueue a message

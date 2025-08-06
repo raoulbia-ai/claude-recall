@@ -12,6 +12,7 @@ import { MigrateCommand } from './commands/migrate';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
 import { LiveTestCommand } from './commands/live-test';
+import { QueueIntegrationService } from '../services/queue-integration';
 
 const program = new Command();
 
@@ -249,7 +250,7 @@ async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code via MCP')
-    .version('0.2.10')
+    .version('0.2.12')
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
@@ -263,6 +264,10 @@ async function main() {
     .description('Start Claude Recall as an MCP server')
     .action(async () => {
       try {
+        // Initialize queue integration service for background processing
+        const queueIntegration = QueueIntegrationService.getInstance();
+        await queueIntegration.initialize();
+        
         const server = new MCPServer();
         server.setupSignalHandlers();
         await server.start();

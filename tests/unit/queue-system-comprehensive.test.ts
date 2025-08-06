@@ -15,7 +15,7 @@ describe('QueueSystem Comprehensive Test Suite', () => {
     (QueueSystem as any).instance = null;
     
     // Mock dependencies
-    vi.mock('../../src/services/config', () => ({
+    jest.mock('../../src/services/config', () => ({
       ConfigService: {
         getInstance: () => ({
           getDatabasePath: () => testDbPath
@@ -23,13 +23,13 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       }
     }));
     
-    vi.mock('../../src/services/logging', () => ({
+    jest.mock('../../src/services/logging', () => ({
       LoggingService: {
         getInstance: () => ({
-          info: vi.fn(),
-          warn: vi.fn(),
-          error: vi.fn(),
-          debug: vi.fn()
+          info: jest.fn(),
+          warn: jest.fn(),
+          error: jest.fn(),
+          debug: jest.fn()
         })
       }
     }));
@@ -46,7 +46,7 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       fs.unlinkSync(testDbPath);
     }
     
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('Race Condition Prevention', () => {
@@ -204,8 +204,8 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       
       // Register a mock processor
       const mockProcessor = {
-        start: vi.fn(),
-        stop: vi.fn()
+        start: jest.fn(),
+        stop: jest.fn()
       } as unknown as QueueProcessor;
       
       queueSystem.registerProcessor(queueName, mockProcessor);
@@ -230,8 +230,8 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       
       // Register a processor that throws on stop
       const faultyProcessor = {
-        start: vi.fn(),
-        stop: vi.fn(() => { throw new Error('Stop failed'); })
+        start: jest.fn(),
+        stop: jest.fn(() => { throw new Error('Stop failed'); })
       } as unknown as QueueProcessor;
       
       queueSystem.registerProcessor(queueName, faultyProcessor);
@@ -247,9 +247,9 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       const queueName = 'config-test';
       const config = {
         maxRetries: 5,
-        retryDelay: 2000,
+        baseDelayMs: 2000,
         batchSize: 20,
-        processInterval: 1000,
+        processingTimeout: 1000,
         retentionPeriod: 86400000
       };
       
@@ -257,9 +257,9 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       
       const retrieved = queueSystem.getQueueConfig(queueName);
       expect(retrieved).not.toBeNull();
-      expect(retrieved?.retryConfig.maxRetries).toBe(5);
-      expect(retrieved?.retryConfig.baseDelayMs).toBe(2000);
-      expect(retrieved?.processorConfig.batchSize).toBe(20);
+      expect(retrieved?.maxRetries).toBe(5);
+      expect(retrieved?.baseDelayMs).toBe(2000);
+      expect(retrieved?.batchSize).toBe(20);
     });
 
     it('should use queue configuration for retry logic', () => {
@@ -268,7 +268,7 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       // Configure queue with custom retry settings
       queueSystem.configureQueue(queueName, {
         maxRetries: 2,
-        retryDelay: 500
+        baseDelayMs: 500
       });
       
       const messageId = queueSystem.enqueue(queueName, 'test', { data: 'test' });
@@ -426,8 +426,8 @@ describe('QueueSystem Comprehensive Test Suite', () => {
       // Verify final configuration is consistent
       const config = queueSystem.getQueueConfig(queueName);
       expect(config).not.toBeNull();
-      expect(config?.retryConfig.maxRetries).toBeGreaterThan(0);
-      expect(config?.processorConfig.batchSize).toBeGreaterThan(0);
+      expect(config?.maxRetries).toBeGreaterThan(0);
+      expect(config?.batchSize).toBeGreaterThan(0);
     });
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.2.10",
+  "version": "0.2.12",
   "description": "MCP server for persistent memory in Claude Code conversations",
   "main": "dist/index.js",
   "bin": {

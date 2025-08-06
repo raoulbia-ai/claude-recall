@@ -7,6 +7,7 @@ import { LoggingService } from '../services/logging';
 import { SessionManager } from './session-manager';
 import { RateLimiter } from './rate-limiter';
 import { MemoryCaptureMiddleware } from './memory-capture-middleware';
+import { QueueIntegrationService } from '../services/queue-integration';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -52,6 +53,7 @@ export class MCPServer {
   private sessionManager: SessionManager;
   private rateLimiter: RateLimiter;
   private memoryCaptureMiddleware: MemoryCaptureMiddleware;
+  private queueIntegration: QueueIntegrationService;
   private isInitialized = false;
 
   constructor() {
@@ -65,6 +67,7 @@ export class MCPServer {
       skipSuccessfulRequests: false
     });
     this.memoryCaptureMiddleware = new MemoryCaptureMiddleware();
+    this.queueIntegration = QueueIntegrationService.getInstance();
     
     this.setupRequestHandlers();
     this.registerTools();
@@ -370,6 +373,11 @@ export class MCPServer {
   async start(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Starting Claude Recall MCP server...');
+      
+      // Initialize queue integration for background processing
+      await this.queueIntegration.initialize();
+      this.logger.info('MCPServer', 'Queue integration initialized');
+      
       await this.transport.start();
       this.logger.info('MCPServer', 'MCP server started successfully');
     } catch (error) {
