@@ -154,11 +154,17 @@ export class ConfigService {
   }
   
   getDatabasePath(): string {
+    // ALWAYS use ~/.claude-recall/claude-recall.db regardless of environment variables
+    // This ensures consistency across CLI and MCP server
+    const dbDir = path.join(os.homedir(), '.claude-recall');
+    const dbPath = path.join(dbDir, 'claude-recall.db');
+    
     // Ensure database directory exists
-    if (!fs.existsSync(this.config.database.path)) {
-      fs.mkdirSync(this.config.database.path, { recursive: true });
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
     }
-    return path.join(this.config.database.path, this.config.database.name);
+    
+    return dbPath;
   }
   
   getLogPath(logName: string): string {

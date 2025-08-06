@@ -25,6 +25,10 @@ export class MemoryStorage {
   
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
+    // Enable WAL mode for better concurrency and to ensure writes are visible
+    this.db.pragma('journal_mode = WAL');
+    // Ensure changes are synced to disk
+    this.db.pragma('synchronous = NORMAL');
     this.initialize();
   }
   
@@ -87,6 +91,10 @@ export class MemoryStorage {
       memory.superseded_at || null,
       memory.confidence_score || null
     );
+    
+    // Force a WAL checkpoint to ensure the data is written to the main database file
+    // This ensures that other processes (like CLI) can see the changes immediately
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
   }
   
   retrieve(key: string): Memory | null {

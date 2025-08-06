@@ -43,14 +43,11 @@ try {
   }
 
   // Add or update claude-recall configuration
+  // Remove env variables since we're hardcoding the path to ~/.claude-recall/claude-recall.db
   config.mcpServers['claude-recall'] = {
     type: 'stdio',
     command: 'npx',
-    args: ['claude-recall', 'mcp', 'start'],
-    env: {
-      CLAUDE_RECALL_DB_PATH: dbDir,
-      CLAUDE_RECALL_DB_NAME: 'claude-recall.db'
-    }
+    args: ['claude-recall', 'mcp', 'start']
   };
 
   // Write back the config with proper formatting
