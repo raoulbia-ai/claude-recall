@@ -16,6 +16,8 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **MCP Native**: Built on Anthropic's official Model Context Protocol for seamless integration
 - **Zero Configuration**: Start capturing memories immediately after installation
 - **Lightweight**: SQLite database with automatic memory management
+- **Restart Continuity**: Maintains state across Claude Code restarts for uninterrupted workflows
+- **Live Testing**: AI-driven testing with automatic restart and recovery capabilities
 
 ## 🚀 Quick Start
 
@@ -168,6 +170,40 @@ No manual configuration needed!
 - **No Telemetry**: Zero data collection or phone-home behavior
 - **You Own Your Data**: Export and delete at any time
 - **Open Source**: Inspect the code yourself
+
+## Restart Continuity & Live Testing (v0.2.11+)
+
+Claude Recall now includes advanced restart continuity and live testing capabilities, ensuring your workflows continue seamlessly even when Claude Code needs to restart.
+
+### Restart Continuity
+
+Maintains state across Claude Code restarts:
+- **Automatic Recovery**: Resumes interrupted tests and workflows after restart
+- **Checkpoint System**: Save progress points for granular recovery
+- **Session Tracking**: Preserves session context through restarts
+- **Pending Actions**: Queues actions to be processed after restart
+
+### Live Testing
+
+AI-driven testing with automatic restart capability:
+```bash
+# Start live testing with auto-restart
+claude-recall live-test start -s memory_persistence search_compliance
+
+# Check status
+claude-recall live-test status
+
+# View continuity state
+claude-recall live-test continuity
+```
+
+**Features:**
+- **Auto-Restart on Changes**: Detects hook/CLI changes and restarts automatically
+- **Test Recovery**: Resumes tests from last checkpoint after restart
+- **Result Injection**: Test results stored as searchable memories
+- **Configurable Policies**: Control restart behavior and limits
+
+See [RESTART_CONTINUITY.md](docs/RESTART_CONTINUITY.md) for detailed documentation.
 
 ## Advanced Usage
 

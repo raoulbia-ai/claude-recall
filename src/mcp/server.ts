@@ -1,6 +1,7 @@
 import { StdioTransport } from './transports/stdio';
 import { MemoryTools } from './tools/memory-tools';
 import { TestTools } from './tools/test-tools';
+import { LiveTestingTools } from './tools/live-testing-tools';
 import { MemoryService } from '../services/memory';
 import { LoggingService } from '../services/logging';
 import { SessionManager } from './session-manager';
@@ -116,6 +117,7 @@ export class MCPServer {
   private registerTools(): void {
     const memoryTools = new MemoryTools(this.memoryService, this.logger);
     const testTools = new TestTools(this.memoryService, this.logger);
+    const liveTestingTools = new LiveTestingTools();
     
     // Register memory tools
     for (const tool of memoryTools.getTools()) {
@@ -124,6 +126,23 @@ export class MCPServer {
     
     // Register test tools
     for (const tool of testTools.getTools()) {
+      this.tools.set(tool.name, tool);
+    }
+    
+    // Register live testing tools
+    for (const toolDef of liveTestingTools.getToolDefinitions()) {
+      const tool: MCPTool = {
+        name: toolDef.name,
+        description: toolDef.description,
+        inputSchema: {
+          type: "object",
+          properties: toolDef.parameters.properties,
+          required: toolDef.parameters.required
+        },
+        handler: async (input: any, context: MCPContext) => {
+          return await liveTestingTools.handleToolCall(toolDef.name, input);
+        }
+      };
       this.tools.set(tool.name, tool);
     }
     
