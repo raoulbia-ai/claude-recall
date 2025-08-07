@@ -1,6 +1,6 @@
 # Claude Recall
 
-An MCP server that gives Claude persistent memory across conversations, with automatic capture and retrieval of relevant context.
+An MCP server that gives Claude persistent memory across conversations.
 
 ## The Story
 
@@ -34,7 +34,6 @@ For automatic CLAUDE.md integration in your project:
 ```bash
 cd your-project
 npm install claude-recall
-npx claude-recall --version
 ```
 This automatically adds Claude Recall instructions to your project's CLAUDE.md file.
 
@@ -42,7 +41,6 @@ This automatically adds Claude Recall instructions to your project's CLAUDE.md f
 For CLI access from anywhere:
 ```bash
 npm install -g claude-recall@latest
-claude-recall --version
 ```
 
 **Note:** You can have both installations. For global installations, manually add this to your `~/.claude/CLAUDE.md`:
@@ -53,19 +51,17 @@ claude-recall --version
 - Memories include: coding preferences, file locations, project patterns, and team conventions
 ```
 
-### Start Using Claude
-That's it! Claude Recall works automatically in the background. Your memories are captured and retrieved seamlessly.
+After installation, verify with: `claude-recall --version` (or `npx claude-recall --version` for local installs)
 
 ## How It Works
 
-### Automatic Mode (Default)
 When you chat with Claude, the system:
-1. **Captures** your preferences and important information automatically
-2. **Stores** them in a local SQLite database
+1. **Captures** your preferences and important information
+2. **Stores** them locally in SQLite (`~/.claude-recall/claude-recall.db`)
 3. **Retrieves** relevant memories when you start new conversations
 4. **Injects** context so Claude remembers your preferences
 
-### Example Workflow
+### Example
 ```
 You: "I prefer TypeScript with strict mode for all my projects"
 [Claude Recall automatically stores this preference]
@@ -124,13 +120,6 @@ claude-recall clear --all               # Clear everything
 claude-recall capture user-prompt '{"content":"your message here"}'
 ```
 
-## Privacy & Storage
-
-- **Local storage only** - All memories stored in `~/.claude-recall/claude-recall.db`
-- **No cloud sync** - Your data never leaves your machine
-- **User control** - View, export, or delete memories at any time
-- **Gitignored by default** - Memory database excluded from version control
-
 ## Memory Management
 
 Claude Recall automatically manages memory to prevent unlimited database growth, with user notifications:
@@ -179,9 +168,8 @@ export CLAUDE_RECALL_RETAIN_TOOL_USE=2000      # Keep more tool usage history
 ## Troubleshooting
 
 ### Memories not being retrieved?
-1. Check if claude-recall is installed: `claude-recall --version`
-2. Verify memories exist: `claude-recall stats`
-3. Search manually to test: `claude-recall search "your topic"`
+1. Verify memories exist: `claude-recall stats`
+2. Search manually to test: `claude-recall search "your topic"`
 
 ### Installation shows old version?
 
@@ -206,28 +194,14 @@ npx claude-recall --version
 - Clear old memories: `claude-recall clear --days 30`
 - The system uses SQLite with optimized indexes for fast retrieval
 
-### Diagnostic Commands for Support
-If you need help, run these commands and share the output:
+### Need Help?
+Run this diagnostic script and share the output:
 ```bash
-# Check Installation
 claude-recall --version
-which claude-recall
-npm list -g claude-recall
-
-# Check Database
-ls -la ~/.claude-recall/
-ls -lh ~/.claude-recall/claude-recall.db
-
-# Check System Status
 claude-recall stats
-
-# Test Basic Functionality
-claude-recall search "test"
-
-# Environment Info
+ls -lh ~/.claude-recall/claude-recall.db
 node --version
 npm --version
-echo "OS: $(uname -s)"
 ```
 
 ## Best Practices
