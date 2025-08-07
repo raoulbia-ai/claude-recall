@@ -122,6 +122,11 @@ export class QueueSystem {
    * Includes automatic cleanup of unused statements to prevent memory leaks
    */
   private getPreparedStatement(key: string, sql: string): Database.Statement {
+    // Check if database is open
+    if (!this.db || !this.db.open) {
+      throw new Error('Database connection is not open');
+    }
+    
     // Limit cache size to prevent unbounded growth
     const MAX_CACHE_SIZE = 100;
     
@@ -309,7 +314,7 @@ export class QueueSystem {
     // Validate payload size (limit to 1MB)
     const payloadStr = JSON.stringify(payload);
     if (payloadStr.length > 1048576) {
-      throw new Error('Payload exceeds maximum size of 1MB');
+      throw new Error('Payload size exceeds 1MB limit');
     }
 
     const now = Date.now();
@@ -408,7 +413,7 @@ export class QueueSystem {
           // Validate payload size (limit to 1MB)
           const payloadStr = JSON.stringify(msg.payload);
           if (payloadStr.length > 1048576) {
-            throw new Error('Payload exceeds maximum size of 1MB');
+            throw new Error('Payload size exceeds 1MB limit');
           }
 
           const result = stmt.run(
@@ -563,10 +568,10 @@ export class QueueSystem {
    */
   markCompleted(messageId: number): void {
     try {
-      const stmt = this.db.prepare(`
+      const stmt = this.getPreparedStatement('markCompleted', `
         UPDATE queue_messages 
         SET status = 'completed', processed_at = ?
-        WHERE id = ? AND status = 'processing'
+        WHERE id = ?
       `);
 
       const result = stmt.run(Date.now(), messageId);

@@ -186,7 +186,16 @@ export class RestartContinuityManager {
   
   private saveState(): void {
     if (this.currentState) {
-      fs.writeFileSync(this.stateFile, JSON.stringify(this.currentState, null, 2));
+      try {
+        // Ensure directory exists before writing
+        const dir = path.dirname(this.stateFile);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(this.stateFile, JSON.stringify(this.currentState, null, 2));
+      } catch (error) {
+        this.logger.error('RestartContinuity', 'Error saving state', error as Error);
+      }
     }
   }
   

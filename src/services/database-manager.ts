@@ -385,4 +385,15 @@ export class DatabaseManager {
       memoryTypes
     };
   }
+  
+  /**
+   * Close database connections
+   * Note: This is a no-op as DatabaseManager doesn't maintain persistent connections
+   */
+  close(): void {
+    // DatabaseManager doesn't maintain persistent database connections
+    // Each operation opens and closes its own connection
+    // This method exists for API compatibility with tests
+    this.logger.info('DatabaseManager', 'Close called (no-op - connections are per-operation)');
+  }
 }
