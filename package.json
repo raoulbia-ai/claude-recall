@@ -11,11 +11,9 @@
     "scripts/postinstall.js",
     "scripts/postinstall-claude-md.js",
     "README.md",
-    "LICENSE",
-    "docs/"
+    "LICENSE"
   ],
   "directories": {
-    "doc": "docs",
     "test": "tests"
   },
   "scripts": {

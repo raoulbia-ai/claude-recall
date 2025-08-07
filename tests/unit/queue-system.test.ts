@@ -336,4 +336,4 @@ describe('QueueAPI', () => {
 });
 
 // Migration tests removed - not applicable for fresh installations
-// See docs/issues/sqlite-queue-implementation-issues-13.md for details
+// These tests were for migrating from non-existent old schema
