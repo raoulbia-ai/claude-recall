@@ -25,7 +25,7 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **No cloud sync** - Your data never leaves your machine
 - **You own your data** - Export, view, or delete memories at any time
 - **Zero telemetry** - No data collection or phone-home behavior
-- **Security Audited** - No exposed secrets, SQL injection protection, 0 npm vulnerabilities
+- **Security Audited** - Reviewed by Claude Code using `/security-review` command: No exposed secrets, SQL injection protection, 0 npm vulnerabilities
 
 ## Quick Start
 
