@@ -211,20 +211,6 @@ npm --version
 3. **Review periodically** - Use `claude-recall stats` to see what's being remembered
 4. **Export important memories** - Backup critical preferences with `claude-recall export`
 
-## Contributing
-
-We welcome contributions! Claude Recall is designed to be hackable:
-
-- **Small Codebase**: Intentionally kept under 3000 lines
-- **Clean Architecture**: Easy to understand and modify
-- **Well Tested**: Comprehensive test coverage
-
-## Support
-
-For issues or questions:
-- GitHub: https://github.com/raoulbia-ai/claude-recall
-- npm: https://www.npmjs.com/package/claude-recall
-
 ## Acknowledgements
 
 This project makes extensive use of the excellent work from:
