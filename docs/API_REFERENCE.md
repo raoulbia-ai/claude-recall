@@ -233,4 +233,4 @@ socket.on('queue:processed', (message) => {});
 ```
 
 ---
-*API Reference v0.2.18 - Last updated: August 2025*
+*API Reference v0.2.19 - Last updated: August 2025*
