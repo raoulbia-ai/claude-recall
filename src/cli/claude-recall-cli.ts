@@ -257,7 +257,7 @@ async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code via MCP')
-    .version('0.2.15')
+    .version('0.2.16')
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
