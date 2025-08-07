@@ -183,21 +183,17 @@ class ClaudeRecallCLI {
     
     try {
       const memoryService = MemoryService.getInstance();
-      const stats = memoryService.getStats();
+      
+      // Actually clear the memories
+      const count = memoryService.clear(options.type);
       
       if (options.type) {
-        // Clear specific type
-        // Note: MemoryService doesn't have a delete method yet
-        // For now, just show a message
-        console.log(`⚠️  Clear by type not yet implemented`);
-        console.log(`   Would clear memories of type: ${options.type}`);
+        console.log(`✅ Cleared ${count} memories of type: ${options.type}`);
       } else {
-        // Clear all
-        // Note: This would need implementation in MemoryService
-        console.log(`✅ Cleared ${stats.total} memories`);
+        console.log(`✅ Cleared ${count} memories`);
       }
       
-      this.logger.info('CLI', 'Clear completed', { type: options.type });
+      this.logger.info('CLI', 'Clear completed', { type: options.type, count });
     } catch (error) {
       console.error('❌ Clear failed:', error);
       this.logger.error('CLI', 'Clear failed', error);

@@ -204,6 +204,25 @@ export class MemoryService {
   }
   
   /**
+   * Clear memories
+   */
+  clear(type?: string): number {
+    try {
+      const count = this.storage.clear(type);
+      
+      this.logger.logMemoryOperation('CLEAR', {
+        type: type || 'all',
+        count
+      });
+      
+      return count;
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'clear', error as Error, { type });
+      throw error;
+    }
+  }
+  
+  /**
    * Store a user preference
    */
   storePreference(preference: any, context: MemoryServiceContext): void {

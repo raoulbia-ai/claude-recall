@@ -188,6 +188,26 @@ export class MemoryStorage {
     return rows.map(row => this.rowToMemory(row));
   }
   
+  clear(type?: string): number {
+    let stmt;
+    let result;
+    
+    if (type) {
+      // Clear specific type
+      stmt = this.db.prepare('DELETE FROM memories WHERE type = ?');
+      result = stmt.run(type);
+    } else {
+      // Clear all memories
+      stmt = this.db.prepare('DELETE FROM memories');
+      result = stmt.run();
+    }
+    
+    // Force checkpoint to ensure deletion is persisted
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    
+    return result.changes;
+  }
+  
   search(query: string): Memory[] {
     const stmt = this.db.prepare(`
       SELECT * FROM memories 
