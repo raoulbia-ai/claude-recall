@@ -28,23 +28,23 @@ Every time you start a new conversation with Claude, you're starting from scratc
 
 ## Quick Start
 
-### 1. Install via npm
+### Option 1: Global Installation (Recommended)
+For CLI access from anywhere:
 ```bash
 npm install -g claude-recall@latest
-```
-
-### 2. Verify Installation
-```bash
 claude-recall --version  # Should show 0.2.19 or higher
 ```
 
-### 3. (Optional) For Project-Specific CLAUDE.md Integration
-If you want Claude Recall instructions added to your project's CLAUDE.md:
+### Option 2: Local Project Installation
+For CLAUDE.md integration in your project:
 ```bash
-npm install claude-recall  # Install locally in your project
+cd your-project
+npm install claude-recall
+npx claude-recall --version  # Should show 0.2.19 or higher
 ```
+This will also add Claude Recall instructions to your project's CLAUDE.md file.
 
-### 4. Start Using Claude
+### Start Using Claude
 That's it! Claude Recall works automatically in the background. Your memories are captured and retrieved seamlessly.
 
 ## How It Works
@@ -175,12 +175,21 @@ export CLAUDE_RECALL_RETAIN_TOOL_USE=2000      # Keep more tool usage history
 3. Search manually to test: `claude-recall search "your topic"`
 
 ### Installation shows old version?
-Clear npm cache and reinstall:
+
+#### For global installation (CLI usage):
 ```bash
 npm cache clean --force
 npm uninstall -g claude-recall
 npm install -g claude-recall@latest
 claude-recall --version
+```
+
+#### For local installation (CLAUDE.md integration):
+```bash
+npm cache clean --force
+npm uninstall claude-recall
+npm install claude-recall@latest
+npx claude-recall --version
 ```
 
 ### Performance issues?
