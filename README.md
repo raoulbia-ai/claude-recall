@@ -174,6 +174,7 @@ Clear npm cache and reinstall:
 npm cache clean --force
 npm uninstall -g claude-recall
 npm install -g claude-recall@latest
+claude-recall --version
 ```
 
 ### Performance issues?
