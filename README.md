@@ -20,11 +20,12 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **Categorized storage** - Organizes memories by type (preferences, project knowledge, corrections)
 - **Priority-based** - More important or frequently used memories are prioritized
 
-### 🔒 Privacy First
+### 🔒 Privacy & Security First
 - **100% Local** - All memories stored locally in SQLite (~/.claude-recall/)
 - **No cloud sync** - Your data never leaves your machine
 - **You own your data** - Export, view, or delete memories at any time
 - **Zero telemetry** - No data collection or phone-home behavior
+- **Security Audited** - No exposed secrets, SQL injection protection, 0 npm vulnerabilities
 
 ## Quick Start
 
