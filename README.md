@@ -28,23 +28,29 @@ Every time you start a new conversation with Claude, you're starting from scratc
 
 ## Quick Start
 
-### Option 1: Global Installation (Recommended)
-For CLI access from anywhere:
-```bash
-npm install -g claude-recall@latest
-claude-recall --version  # Should show 0.2.19 or higher
-```
-
-### Option 2: Local Project Installation
-For CLAUDE.md integration in your project:
+### Option 1: Local Project Installation (Recommended)
+For automatic CLAUDE.md integration in your project:
 ```bash
 cd your-project
 npm install claude-recall
-npx claude-recall --version  # Should show 0.2.19 or higher
+npx claude-recall --version
 ```
-This will also add Claude Recall instructions to your project's CLAUDE.md file.
+This automatically adds Claude Recall instructions to your project's CLAUDE.md file.
 
-**Note:** You can have both global and local installations. They don't conflict with each other.
+### Option 2: Global Installation
+For CLI access from anywhere:
+```bash
+npm install -g claude-recall@latest
+claude-recall --version
+```
+
+**Note:** You can have both installations. For global installations, manually add this to your `~/.claude/CLAUDE.md`:
+```markdown
+## Claude Recall Integration
+- IMPORTANT: Always search memories before creating new files or making decisions
+- Use `mcp__claude-recall__search_memory` to check for stored preferences and project knowledge
+- Memories include: coding preferences, file locations, project patterns, and team conventions
+```
 
 ### Start Using Claude
 That's it! Claude Recall works automatically in the background. Your memories are captured and retrieved seamlessly.
