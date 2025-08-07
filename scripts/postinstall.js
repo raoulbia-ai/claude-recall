@@ -48,6 +48,14 @@ try {
 
   console.log('✅ Successfully configured Claude Recall in ~/.claude.json');
   
+  // Update project CLAUDE.md with minimal instructions
+  const { execSync } = require('child_process');
+  try {
+    execSync('node ' + path.join(__dirname, 'postinstall-claude-md.js'), { stdio: 'inherit' });
+  } catch (error) {
+    // Don't fail installation if CLAUDE.md update fails
+  }
+  
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
   console.log('   Restart Claude Code to activate the memory system.');
