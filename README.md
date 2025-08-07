@@ -35,7 +35,7 @@ npm install -g claude-recall@latest
 
 ### 2. Verify Installation
 ```bash
-claude-recall --version  # Should show 0.2.16 or higher
+claude-recall --version  # Should show 0.2.17 or higher
 ```
 
 ### 3. Start Using Claude
