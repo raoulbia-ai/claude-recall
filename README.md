@@ -44,6 +44,8 @@ npx claude-recall --version  # Should show 0.2.19 or higher
 ```
 This will also add Claude Recall instructions to your project's CLAUDE.md file.
 
+**Note:** You can have both global and local installations. They don't conflict with each other.
+
 ### Start Using Claude
 That's it! Claude Recall works automatically in the background. Your memories are captured and retrieved seamlessly.
 
