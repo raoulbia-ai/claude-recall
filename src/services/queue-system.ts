@@ -95,6 +95,25 @@ export class QueueSystem {
   }
 
   /**
+   * Reinitialize database connection if closed
+   */
+  private reinitializeDatabase(): void {
+    try {
+      const dbPath = this.config.getDatabasePath();
+      this.db = new Database(dbPath);
+      this.configureDatabase();
+      this.checkSQLiteVersion();
+      this.initializeSchema();
+      // Clear prepared statements cache as they're no longer valid
+      this.preparedStatements.clear();
+      this.logger.info('QueueSystem', 'Database connection reinitialized');
+    } catch (error) {
+      this.logger.error('QueueSystem', 'Failed to reinitialize database', error);
+      throw new Error(`Failed to reinitialize database: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
    * Check SQLite version for RETURNING clause support
    */
   private checkSQLiteVersion(): void {
@@ -122,9 +141,10 @@ export class QueueSystem {
    * Includes automatic cleanup of unused statements to prevent memory leaks
    */
   private getPreparedStatement(key: string, sql: string): Database.Statement {
-    // Check if database is open
+    // Check if database is open and reinitialize if needed
     if (!this.db || !this.db.open) {
-      throw new Error('Database connection is not open');
+      this.logger.warn('QueueSystem', 'Database connection closed, reinitializing...');
+      this.reinitializeDatabase();
     }
     
     // Limit cache size to prevent unbounded growth

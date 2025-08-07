@@ -22,7 +22,7 @@
     "postinstall": "node scripts/postinstall.js || true",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "build": "tsc && mkdir -p dist/memory dist/config && cp src/memory/schema.sql dist/memory/ && cp -r src/config/* dist/config/ 2>/dev/null || true && chmod +x dist/cli/claude-recall-cli.js",
+    "build": "tsc && mkdir -p dist/memory dist/config && cp src/memory/schema.sql dist/memory/ && (cp -r src/config/* dist/config/ 2>/dev/null || true) && chmod +x dist/cli/claude-recall-cli.js",
     "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",
     "dev": "ts-node",
     "start": "ts-node src/server.ts",

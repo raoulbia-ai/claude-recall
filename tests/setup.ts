@@ -6,9 +6,10 @@ process.env.HOME = '/tmp/test-home';
 
 // Ensure clean test environment
 beforeEach(() => {
-  // Clear any test databases
+  // Clear any test databases - only in /tmp, not project directories
   const testDbPath = '/tmp/test-home/.claude-recall/';
-  if (require('fs').existsSync(testDbPath)) {
+  // Ensure we're only cleaning temp directories, not the actual tests folder
+  if (testDbPath.startsWith('/tmp/') && require('fs').existsSync(testDbPath)) {
     require('fs').rmSync(testDbPath, { recursive: true, force: true });
   }
 });

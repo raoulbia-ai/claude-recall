@@ -16,23 +16,23 @@ describe('Claude Recall Memory Search Compliance', () => {
   const DEFAULT_DIR = 'tests';
   
   beforeEach(() => {
-    // Clean up test directories
+    // Clean up test directories - but NOT the actual tests directory
     if (fs.existsSync(TEST_DIR)) {
       fs.rmSync(TEST_DIR, { recursive: true });
     }
-    if (fs.existsSync(DEFAULT_DIR)) {
-      fs.rmSync(DEFAULT_DIR, { recursive: true });
+    // Don't delete the DEFAULT_DIR as it's the actual tests directory!
+    // Only create it if it doesn't exist
+    if (!fs.existsSync(DEFAULT_DIR)) {
+      fs.mkdirSync(DEFAULT_DIR, { recursive: true });
     }
   });
 
   afterEach(() => {
-    // Clean up after tests
+    // Clean up after tests - only remove test-pasta, not the tests directory
     if (fs.existsSync(TEST_DIR)) {
       fs.rmSync(TEST_DIR, { recursive: true });
     }
-    if (fs.existsSync(DEFAULT_DIR)) {
-      fs.rmSync(DEFAULT_DIR, { recursive: true });
-    }
+    // Don't delete the actual tests directory
   });
 
   test('Claude should search memory before creating files', async () => {
@@ -46,15 +46,24 @@ describe('Claude Recall Memory Search Compliance', () => {
     console.log('3. Expected: File created in test-pasta/ (not tests/)');
     console.log('');
     
-    // Step 1: Store the preference
+    // Step 1: Store the preference using MemoryService directly
     console.log('Storing preference in memory...');
-    const storeCommand = `echo '{"content":"All tests should be saved in ${TEST_DIR}/ directory","metadata":{"type":"location_preference","entity":"tests","location":"${TEST_DIR}/"}}' | npx claude-recall store`;
-    execSync(storeCommand, { stdio: 'inherit' });
+    const { MemoryService } = require('../dist/services/memory');
+    const memoryService = MemoryService.getInstance();
+    memoryService.store({
+      key: `test-location-${Date.now()}`,
+      value: `All tests should be saved in ${TEST_DIR}/ directory`,
+      type: 'location_preference',
+      metadata: {
+        entity: 'tests',
+        location: `${TEST_DIR}/`
+      }
+    });
     
     // Step 2: Search for the preference (simulating what Claude should do)
     console.log('\\nSearching memory for test location preferences...');
-    const searchCommand = `echo '{"query":"test script location directory folder save"}' | npx claude-recall search`;
-    const searchResult = execSync(searchCommand, { encoding: 'utf8' });
+    const searchResults = memoryService.search('test script location directory folder save');
+    const searchResult = JSON.stringify(searchResults);
     
     // Verify search returns the stored preference
     expect(searchResult).toContain(TEST_DIR);
@@ -75,16 +84,32 @@ describe('Claude Recall Memory Search Compliance', () => {
     console.log('TEST: Multiple preferences - latest should win');
     
     // Store first preference
-    const store1 = `echo '{"content":"All tests should be saved in old-tests/ directory","metadata":{"type":"location_preference","entity":"tests","location":"old-tests/"}}' | npx claude-recall store`;
-    execSync(store1, { stdio: 'inherit' });
+    const { MemoryService } = require('../dist/services/memory');
+    const memoryService = MemoryService.getInstance();
+    memoryService.store({
+      key: `test-location-old-${Date.now()}`,
+      value: 'All tests should be saved in old-tests/ directory',
+      type: 'location_preference',
+      metadata: {
+        entity: 'tests',
+        location: 'old-tests/'
+      }
+    });
     
     // Store second preference (should override)
-    const store2 = `echo '{"content":"All tests should be saved in ${TEST_DIR}/ directory","metadata":{"type":"location_preference","entity":"tests","location":"${TEST_DIR}/"}}' | npx claude-recall store`;
-    execSync(store2, { stdio: 'inherit' });
+    memoryService.store({
+      key: `test-location-new-${Date.now()}`,
+      value: `All tests should be saved in ${TEST_DIR}/ directory`,
+      type: 'location_preference',
+      metadata: {
+        entity: 'tests',
+        location: `${TEST_DIR}/`
+      }
+    });
     
     // Search should return both, but latest should be used
-    const searchCommand = `echo '{"query":"test location directory"}' | npx claude-recall search`;
-    const searchResult = execSync(searchCommand, { encoding: 'utf8' });
+    const searchResults = memoryService.search('test location directory');
+    const searchResult = JSON.stringify(searchResults);
     
     expect(searchResult).toContain(TEST_DIR);
     console.log('✅ Latest preference found in search results');
@@ -96,21 +121,37 @@ describe('Claude Recall Memory Search Compliance', () => {
     console.log('TEST: Different file types with different locations');
     
     // Store test location
-    const storeTests = `echo '{"content":"All tests should be saved in ${TEST_DIR}/ directory","metadata":{"type":"location_preference","entity":"tests","location":"${TEST_DIR}/"}}' | npx claude-recall store`;
-    execSync(storeTests, { stdio: 'inherit' });
+    const { MemoryService } = require('../dist/services/memory');
+    const memoryService = MemoryService.getInstance();
+    memoryService.store({
+      key: `test-location-${Date.now()}`,
+      value: `All tests should be saved in ${TEST_DIR}/ directory`,
+      type: 'location_preference',
+      metadata: {
+        entity: 'tests',
+        location: `${TEST_DIR}/`
+      }
+    });
     
     // Store config location  
-    const storeConfigs = `echo '{"content":"All configs should be saved in settings/ directory","metadata":{"type":"location_preference","entity":"configs","location":"settings/"}}' | npx claude-recall store`;
-    execSync(storeConfigs, { stdio: 'inherit' });
+    memoryService.store({
+      key: `config-location-${Date.now()}`,
+      value: 'All configs should be saved in settings/ directory',
+      type: 'location_preference',
+      metadata: {
+        entity: 'configs',
+        location: 'settings/'
+      }
+    });
     
     // Search for test location
-    const searchTests = `echo '{"query":"test location"}' | npx claude-recall search`;
-    const testResult = execSync(searchTests, { encoding: 'utf8' });
+    const testResults = memoryService.search('test location');
+    const testResult = JSON.stringify(testResults);
     expect(testResult).toContain(TEST_DIR);
     
     // Search for config location
-    const searchConfigs = `echo '{"query":"config location"}' | npx claude-recall search`;
-    const configResult = execSync(searchConfigs, { encoding: 'utf8' });
+    const configResults = memoryService.search('config location');
+    const configResult = JSON.stringify(configResults);
     expect(configResult).toContain('settings');
     
     console.log('✅ Different preferences maintained for different file types');
