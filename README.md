@@ -175,23 +175,6 @@ export CLAUDE_RECALL_COMPACT_THRESHOLD=20971520 # 20MB compaction threshold
 export CLAUDE_RECALL_RETAIN_TOOL_USE=2000      # Keep more tool usage history
 ```
 
-## Testing
-
-### Test Commands That Work
-```bash
-# Run all tests (some will fail due to known issues)
-npx jest --passWithNoTests --forceExit
-
-# Run working test suites individually
-npx jest tests/unit/storage.test.ts
-npx jest tests/unit/retrieval.test.ts  
-npx jest tests/unit/patterns.test.ts
-npx jest tests/unit/pattern-detector.test.ts
-npx jest tests/unit/memory-enhancer.test.ts
-npx jest tests/mcp --passWithNoTests
-npx jest tests/integration/intelligent-retrieval.test.ts
-```
-
 ## Troubleshooting
 
 ### Memories not being retrieved?
