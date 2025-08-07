@@ -38,7 +38,13 @@ npm install -g claude-recall@latest
 claude-recall --version  # Should show 0.2.19 or higher
 ```
 
-### 3. Start Using Claude
+### 3. (Optional) For Project-Specific CLAUDE.md Integration
+If you want Claude Recall instructions added to your project's CLAUDE.md:
+```bash
+npm install claude-recall  # Install locally in your project
+```
+
+### 4. Start Using Claude
 That's it! Claude Recall works automatically in the background. Your memories are captured and retrieved seamlessly.
 
 ## How It Works
