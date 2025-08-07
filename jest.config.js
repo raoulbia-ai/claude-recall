@@ -16,6 +16,6 @@ module.exports = {
       statements: 70
     }
   },
-  testTimeout: 30000 // 30 seconds for MCP tests
-  // setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'] // Temporarily disabled
+  testTimeout: 30000, // 30 seconds for MCP tests
+  setupFilesAfterEnv: ['<rootDir>/tests/config/setup.ts']
 };
