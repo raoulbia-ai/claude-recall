@@ -35,7 +35,7 @@ npm install -g claude-recall@latest
 
 ### 2. Verify Installation
 ```bash
-claude-recall --version  # Should show 0.2.14 or higher
+claude-recall --version  # Should show 0.2.15 or higher
 ```
 
 ### 3. Start Using Claude
@@ -171,11 +171,9 @@ export CLAUDE_RECALL_RETAIN_TOOL_USE=2000      # Keep more tool usage history
 ### Installation shows old version?
 Clear npm cache and reinstall:
 ```bash
-npm uninstall -g claude-recall
 npm cache clean --force
-npm cache verify
+npm uninstall -g claude-recall
 npm install -g claude-recall@latest
-claude-recall --version
 ```
 
 ### Performance issues?
