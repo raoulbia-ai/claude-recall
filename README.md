@@ -238,13 +238,7 @@ MIT - Use it, modify it, make it yours.
 
 This software is provided "as-is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the software or the use or other dealings in the software.
 
-This is a solo developer project provided for free to the community. While every effort has been made to ensure quality and security (including automated security reviews), users should review and test the code according to their own requirements before use in production environments.
-
-## The Future
-
-Claude Recall is part of a larger vision where AI assistants truly understand and remember their users. By building on open protocols and local-first principles, we're creating a future where your AI tools work together seamlessly, with memory and context that persists across sessions, projects, and time.
-
-Start building with memory. Start building with Claude Recall.
+This project is provided for free to the community. While every effort has been made to ensure quality and security (including automated security reviews), users should review and test the code according to their own requirements before use in production environments.
 
 ---
 
