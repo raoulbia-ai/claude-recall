@@ -114,7 +114,7 @@ claude-recall import memories.json
 
 # Clear memories (use with caution)
 claude-recall clear --type preferences  # Clear only preferences
-claude-recall clear --all               # Clear everything
+claude-recall clear --force               # Clear everything
 
 # Test memory capture (for debugging)
 claude-recall capture user-prompt '{"content":"your message here"}'
