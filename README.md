@@ -2,8 +2,6 @@
 
 An MCP server that gives Claude persistent memory across conversations.
 
-## The Story
-
 Every time you start a new conversation with Claude, you're starting from scratch. Claude doesn't remember your preferences, your project context, or the decisions you've made together. Until now.
 
 **Claude Recall** is an MCP (Model Context Protocol) server that gives Claude persistent memory across conversations. It learns from your interactions and provides relevant context in future conversations, making Claude feel like a true collaborator who remembers your journey together.
