@@ -12,6 +12,7 @@ import { ResourcesHandler } from './resources-handler';
 import { PromptsHandler } from './prompts-handler';
 import { PreferenceAnalyzer } from '../services/preference-analyzer';
 import { ContextEnhancer } from '../services/context-enhancer';
+import { ConversationContextManager } from '../services/conversation-context-manager';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -62,6 +63,7 @@ export class MCPServer {
   private promptsHandler: PromptsHandler;
   private preferenceAnalyzer: PreferenceAnalyzer;
   private contextEnhancer: ContextEnhancer;
+  private conversationContext: ConversationContextManager;
   private isInitialized = false;
 
   constructor() {
@@ -84,6 +86,7 @@ export class MCPServer {
       this.sessionManager
     );
     this.contextEnhancer = ContextEnhancer.getInstance();
+    this.conversationContext = ConversationContextManager.getInstance();
 
     this.setupRequestHandlers();
     this.registerTools();
@@ -261,6 +264,43 @@ export class MCPServer {
     try {
       // Create or get session context
       const sessionId = toolArgs?.sessionId || this.generateSessionId();
+
+      // Phase 4: Check for duplicate requests
+      const duplicateCheck = this.conversationContext.checkForDuplicate(
+        sessionId,
+        name,
+        toolArgs
+      );
+
+      if (duplicateCheck.isDuplicate && duplicateCheck.previousAction) {
+        this.logger.info('MCPServer', 'Duplicate request detected', {
+          sessionId,
+          tool: name,
+          turnsSince: duplicateCheck.turnsSince
+        });
+
+        // Return helpful response instead of re-executing
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: `${duplicateCheck.suggestion}\n\nPrevious result:\n${JSON.stringify(duplicateCheck.previousAction.result, null, 2)}`
+              }
+            ],
+            isError: false,
+            metadata: {
+              toolName: name,
+              duration: Date.now() - startTime,
+              sessionId,
+              wasDuplicate: true,
+              previousTimestamp: duplicateCheck.previousAction.timestamp
+            }
+          }
+        };
+      }
       
       // Get or create session
       let session = this.sessionManager.getSession(sessionId);
@@ -307,6 +347,9 @@ export class MCPServer {
 
       // Phase 2: Track conversation and detect preference signals
       this.trackConversationTurn(sessionId, name, toolArgs, result);
+
+      // Phase 4: Record action for duplicate detection
+      this.conversationContext.recordAction(sessionId, name, toolArgs, result);
 
       // Claude-flow pattern: Enhanced response format
       return {
@@ -424,7 +467,8 @@ export class MCPServer {
 
   private async handleHealthCheck(request: MCPRequest): Promise<MCPResponse> {
     const rateLimiterStats = this.rateLimiter.getStats();
-    
+    const conversationStats = this.conversationContext.getStats();
+
     const health = {
       status: 'healthy',
       version: '0.2.0',
@@ -440,11 +484,16 @@ export class MCPServer {
         activeSessions: rateLimiterStats.activeSessions,
         totalRequests: rateLimiterStats.totalRequests,
         topSessions: rateLimiterStats.topSessions
+      },
+      conversationContext: {
+        activeSessions: conversationStats.activeSessions,
+        totalActions: conversationStats.totalActions,
+        averageActionsPerSession: conversationStats.averageActionsPerSession
       }
     };
-    
+
     this.logger.info('MCPServer', 'Health check performed', health);
-    
+
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -471,19 +520,22 @@ export class MCPServer {
   async stop(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Stopping MCP server...');
-      
+
       // Clean up old sessions before shutdown
       this.sessionManager.cleanupOldSessions();
-      
+
       // Shutdown session manager (persists sessions)
       this.sessionManager.shutdown();
-      
+
       // Shutdown rate limiter
       this.rateLimiter.shutdown();
-      
+
       // Clean up memory capture middleware
       this.memoryCaptureMiddleware.cleanupSessions();
-      
+
+      // Clean up conversation context
+      this.conversationContext.cleanup();
+
       await this.transport.stop();
       this.memoryService.close();
       this.logger.info('MCPServer', 'MCP server stopped');
