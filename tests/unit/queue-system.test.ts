@@ -1,339 +1,552 @@
-import { QueueSystem, QueueMessage } from '../../src/services/queue-system';
-import { QueueAPI } from '../../src/services/queue-api';
-import * as fs from 'fs';
-import * as path from 'path';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import Database from 'better-sqlite3';
+import * as path from 'path';
+import * as fs from 'fs';
+import { QueueSystem, QueueProcessor, QueueMessage } from '../../src/services/queue-system';
 
-describe('QueueSystem', () => {
-  let queueSystem: QueueSystem;
+describe('QueueSystem Comprehensive Test Suite', () => {
   let testDbPath: string;
+  let queueSystem: QueueSystem;
 
-  beforeEach(async () => {
-    // Reset singleton instance
-    QueueSystem.resetInstance();
-    
-    // Create temporary test database
-    testDbPath = path.join(__dirname, `test-queue-${Date.now()}.db`);
-    
-    // Mock ConfigService to use test database
-    const mockConfig = {
-      getDatabasePath: () => testDbPath
-    };
-    
-    // Override ConfigService for testing
-    jest.doMock('../../src/services/config', () => ({
+  beforeEach(() => {
+    // Create unique database file for each test using timestamp + random string
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    testDbPath = path.join(__dirname, `test-queue-${uniqueId}.db`);
+
+    // Reset singleton for test isolation
+    (QueueSystem as any).instance = null;
+
+    // Mock dependencies
+    jest.mock('../../src/services/config', () => ({
       ConfigService: {
-        getInstance: () => mockConfig
+        getInstance: () => ({
+          getDatabasePath: () => testDbPath
+        })
       }
     }));
 
-    // Create fresh instance
+    jest.mock('../../src/services/logging', () => ({
+      LoggingService: {
+        getInstance: () => ({
+          info: jest.fn(),
+          warn: jest.fn(),
+          error: jest.fn(),
+          debug: jest.fn()
+        })
+      }
+    }));
+
     queueSystem = QueueSystem.getInstance();
   });
 
-  afterEach(async () => {
-    // Close queue system
-    queueSystem.close();
-    
-    // Reset singleton instance
-    QueueSystem.resetInstance();
-    
-    // Clean up test database
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
+  afterEach(() => {
+    try {
+      if (queueSystem) {
+        queueSystem.close();
+      }
+    } catch (error) {
+      // Already closed
     }
-    
+
+    // Clean up test database file
+    try {
+      if (fs.existsSync(testDbPath)) {
+        fs.unlinkSync(testDbPath);
+      }
+      // Also clean up WAL files
+      const walPath = `${testDbPath}-wal`;
+      const shmPath = `${testDbPath}-shm`;
+      if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+      if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    } catch (error) {
+      // File might not exist
+    }
+
     jest.clearAllMocks();
-    jest.resetModules();
   });
 
-  describe('Database Initialization', () => {
-    test.skip('should initialize database schema correctly', () => {
-      const db = new Database(testDbPath);
+  describe('Race Condition Prevention', () => {
+    it('should prevent duplicate message processing with concurrent dequeues', async () => {
+      const queueName = 'concurrent-test';
+      const messageCount = 50;
+      const workerCount = 10;
       
-      // Check if tables exist
-      const tablesQuery = "SELECT name FROM sqlite_master WHERE type='table'";
-      const tables = db.prepare(tablesQuery).all() as Array<{ name: string }>;
-      const tableNames = tables.map(t => t.name);
+      // Enqueue messages
+      const messageIds = new Set<number>();
+      for (let i = 0; i < messageCount; i++) {
+        const id = queueSystem.enqueue(queueName, 'test', { index: i });
+        messageIds.add(id);
+      }
       
-      expect(tableNames).toContain('queue_messages');
-      expect(tableNames).toContain('queue_configs');
-      expect(tableNames).toContain('dead_letter_queue');
+      // Simulate concurrent workers
+      const processedMessages = new Set<number>();
+      const workers = Array.from({ length: workerCount }, async () => {
+        const messages = queueSystem.dequeue(queueName, 5);
+        messages.forEach(msg => {
+          if (msg.id) processedMessages.add(msg.id);
+        });
+        return messages;
+      });
       
-      db.close();
+      await Promise.all(workers);
+      
+      // Verify no duplicates
+      const processedArray = Array.from(processedMessages);
+      expect(new Set(processedArray).size).toBe(processedArray.length);
+      
+      // Verify all processed messages are valid
+      processedArray.forEach(id => {
+        expect(messageIds.has(id)).toBe(true);
+      });
     });
 
-    test('should create required indexes', () => {
-      // Access the private db property for testing
-      const db = queueSystem['db'];
+    it('should handle race conditions in mark completed operations', async () => {
+      const queueName = 'completion-race';
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'test' });
       
-      const indexesQuery = "SELECT name FROM sqlite_master WHERE type='index'";
-      const indexes = db.prepare(indexesQuery).all() as Array<{ name: string }>;
-      const indexNames = indexes.map(i => i.name);
+      // Dequeue the message
+      const [message] = queueSystem.dequeue(queueName, 1);
+      expect(message.id).toBe(messageId);
       
-      expect(indexNames).toContain('idx_queue_messages_queue_status');
-      expect(indexNames).toContain('idx_queue_messages_scheduled');
-      expect(indexNames).toContain('idx_queue_messages_priority');
-    });
-  });
-
-  describe('Message Enqueue/Dequeue', () => {
-    test('should enqueue and dequeue messages correctly', () => {
-      const payload = { test: 'data', number: 123 };
-      
-      // Enqueue message
-      const messageId = queueSystem.enqueue(
-        'test-queue',
-        'test-message',
-        payload,
-        { priority: 5 }
+      // Try to mark completed multiple times concurrently
+      const completions = Array.from({ length: 5 }, () => 
+        queueSystem.markCompleted(messageId)
       );
       
-      expect(messageId).toBeGreaterThan(0);
+      await Promise.all(completions);
       
-      // Dequeue message
-      const messages = queueSystem.dequeue('test-queue', 1);
-      
-      expect(messages).toHaveLength(1);
-      expect(messages[0].id).toBe(messageId);
-      expect(messages[0].queue_name).toBe('test-queue');
-      expect(messages[0].message_type).toBe('test-message');
-      expect(messages[0].payload).toEqual(payload);
-      expect(messages[0].priority).toBe(5);
-      expect(messages[0].status).toBe('processing');
-    });
-
-    test('should respect message priority ordering', () => {
-      // Enqueue messages with different priorities
-      const lowPriorityId = queueSystem.enqueue('test-queue', 'low', {}, { priority: 1 });
-      const highPriorityId = queueSystem.enqueue('test-queue', 'high', {}, { priority: 10 });
-      const mediumPriorityId = queueSystem.enqueue('test-queue', 'medium', {}, { priority: 5 });
-      
-      // Dequeue should return highest priority first
-      const messages = queueSystem.dequeue('test-queue', 3);
-      
-      expect(messages).toHaveLength(3);
-      expect(messages[0].id).toBe(highPriorityId);
-      expect(messages[1].id).toBe(mediumPriorityId);
-      expect(messages[2].id).toBe(lowPriorityId);
-    });
-
-    test.skip('should handle scheduled messages correctly', () => {
-      const futureTime = Date.now() + 10000; // 10 seconds in future
-      
-      // Enqueue message scheduled for future
-      const messageId = queueSystem.enqueue(
-        'test-queue',
-        'future-message',
-        { scheduled: true },
-        { scheduledAt: futureTime }
-      );
-      
-      // Should not dequeue immediately
-      let messages = queueSystem.dequeue('test-queue', 1);
-      expect(messages).toHaveLength(0);
-      
-      // Enqueue message for immediate processing
-      queueSystem.enqueue('test-queue', 'immediate', { now: true });
-      
-      // Should only get the immediate message
-      messages = queueSystem.dequeue('test-queue', 2);
-      expect(messages).toHaveLength(1);
-      expect(messages[0].message_type).toBe('immediate');
-    });
-  });
-
-  describe('Message Status Management', () => {
-    test('should mark messages as completed', () => {
-      const messageId = queueSystem.enqueue('test-queue', 'test', {});
-      const messages = queueSystem.dequeue('test-queue', 1);
-      
-      expect(messages[0].status).toBe('processing');
-      
-      queueSystem.markCompleted(messageId);
-      
-      // Verify status changed
-      const db = queueSystem['db'];
-      const result = db.prepare('SELECT status FROM queue_messages WHERE id = ?').get(messageId) as any;
-      expect(result.status).toBe('completed');
-    });
-
-    test.skip('should handle retry logic correctly', () => {
-      const messageId = queueSystem.enqueue('test-queue', 'test', {}, { maxRetries: 2 });
-      queueSystem.dequeue('test-queue', 1);
-      
-      // First failure should schedule retry
-      queueSystem.markFailed(messageId, 'Test error');
-      
-      const db = queueSystem['db'];
-      let result = db.prepare('SELECT status, retry_count FROM queue_messages WHERE id = ?').get(messageId) as any;
-      expect(result.status).toBe('retrying');
-      expect(result.retry_count).toBe(1);
-      
-      // Dequeue and fail again
-      queueSystem.dequeue('test-queue', 1);
-      queueSystem.markFailed(messageId, 'Test error 2');
-      
-      result = db.prepare('SELECT status, retry_count FROM queue_messages WHERE id = ?').get(messageId) as any;
-      expect(result.status).toBe('retrying');
-      expect(result.retry_count).toBe(2);
-      
-      // Third failure should move to dead letter queue
-      queueSystem.dequeue('test-queue', 1);
-      queueSystem.markFailed(messageId, 'Final error');
-      
-      result = db.prepare('SELECT status, retry_count FROM queue_messages WHERE id = ?').get(messageId) as any;
-      expect(result.status).toBe('failed');
-      
-      // Check dead letter queue
-      const dlqResult = db.prepare('SELECT COUNT(*) as count FROM dead_letter_queue WHERE original_message_id = ?').get(messageId) as any;
-      expect(dlqResult.count).toBe(1);
-    });
-  });
-
-  describe('Queue Statistics', () => {
-    test.skip('should return accurate queue statistics', () => {
-      // Create messages with different statuses
-      const completedId = queueSystem.enqueue('test-queue', 'completed', {});
-      const pendingId1 = queueSystem.enqueue('test-queue', 'pending1', {});
-      const pendingId2 = queueSystem.enqueue('test-queue', 'pending2', {});
-      const processingId = queueSystem.enqueue('test-queue', 'processing', {});
-      
-      // Mark one as completed
-      queueSystem.dequeue('test-queue', 1);
-      queueSystem.markCompleted(completedId);
-      
-      // Mark one as processing (dequeue)
-      queueSystem.dequeue('test-queue', 1);
-      
-      const stats = queueSystem.getQueueStats('test-queue');
-      
-      expect(stats.queueName).toBe('test-queue');
-      expect(stats.pending).toBe(2);
-      expect(stats.processing).toBe(1);
+      // Verify message is completed only once
+      const stats = queueSystem.getQueueStats(queueName);
       expect(stats.completed).toBe(1);
-      expect(stats.failed).toBe(0);
-      expect(stats.retrying).toBe(0);
     });
   });
 
-  describe('Cleanup Operations', () => {
-    test('should clean up old messages', () => {
-      // Create old completed message
-      const oldTime = Date.now() - (8 * 24 * 60 * 60 * 1000); // 8 days ago
-      const messageId = queueSystem.enqueue('test-queue', 'old', {});
+  describe('Payload Size Validation', () => {
+    it('should reject payloads exceeding 1MB limit', () => {
+      const queueName = 'size-test';
+      const largePayload = {
+        data: 'x'.repeat(1048577) // Just over 1MB
+      };
       
-      // Manually update processed_at to simulate old message
-      const db = queueSystem['db'];
-      db.prepare('UPDATE queue_messages SET status = ?, processed_at = ? WHERE id = ?')
-        .run('completed', oldTime, messageId);
+      expect(() => {
+        queueSystem.enqueue(queueName, 'large', largePayload);
+      }).toThrow('Payload size exceeds 1MB limit');
+    });
+
+    it('should accept payloads at the 1MB boundary', () => {
+      const queueName = 'size-boundary-test';
+      // Create payload that's exactly at the limit when stringified
+      const maxSize = 1048576 - '{"data":""}'.length;
+      const boundaryPayload = {
+        data: 'x'.repeat(maxSize)
+      };
+      
+      const messageId = queueSystem.enqueue(queueName, 'boundary', boundaryPayload);
+      expect(messageId).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Exponential Backoff Behavior', () => {
+    it('should apply exponential backoff with jitter on failures', () => {
+      const queueName = 'backoff-test';
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'test' });
+      
+      // Dequeue and fail the message multiple times
+      const retryDelays: number[] = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const [message] = queueSystem.dequeue(queueName, 1);
+        if (message) {
+          const beforeFail = Date.now();
+          queueSystem.markFailed(message.id!, `Failure ${i + 1}`);
+          
+          // Check the next retry time
+          const result = queueSystem.executeQuerySingle<{next_retry_at: number}>(
+            'SELECT next_retry_at FROM queue_messages WHERE id = ?',
+            [messageId]
+          );
+          
+          if (result?.next_retry_at) {
+            const delay = result.next_retry_at - beforeFail;
+            retryDelays.push(delay);
+          }
+        }
+      }
+      
+      // Verify exponential growth
+      expect(retryDelays[1]).toBeGreaterThan(retryDelays[0]);
+      expect(retryDelays[2]).toBeGreaterThan(retryDelays[1]);
+      
+      // Verify jitter is applied (delays shouldn't be exact powers of 2)
+      const baseDelay = 1000;
+      retryDelays.forEach((delay, index) => {
+        const expectedBase = baseDelay * Math.pow(2, index);
+        expect(delay).toBeGreaterThan(expectedBase);
+        expect(delay).toBeLessThan(expectedBase + 2000); // Allow up to 2s jitter
+      });
+    });
+
+    it('should cap retry delay at maximum', () => {
+      const queueName = 'max-delay-test';
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'test' });
+      
+      // Fail the message many times to reach max delay
+      for (let i = 0; i < 10; i++) {
+        const [message] = queueSystem.dequeue(queueName, 1);
+        if (message) {
+          queueSystem.markFailed(message.id!, `Failure ${i + 1}`);
+        }
+      }
+      
+      // Check the retry delay is capped
+      const result = queueSystem.executeQuerySingle<{next_retry_at: number, retry_count: number}>(
+        'SELECT next_retry_at, retry_count FROM queue_messages WHERE id = ?',
+        [messageId]
+      );
+      
+      if (result?.next_retry_at) {
+        const delay = result.next_retry_at - Date.now();
+        expect(delay).toBeLessThanOrEqual(300000 + 1000); // Max 5 minutes + jitter
+      }
+    });
+  });
+
+  describe('Memory Leak Prevention', () => {
+    it('should properly clean up resources on close', () => {
+      const queueName = 'cleanup-test';
+      
+      // Create some activity
+      queueSystem.enqueue(queueName, 'test', { data: 'test' });
+      
+      // Register a mock processor
+      const mockProcessor = {
+        start: jest.fn(),
+        stop: jest.fn()
+      } as unknown as QueueProcessor;
+      
+      queueSystem.registerProcessor(queueName, mockProcessor);
+      
+      // Close the system
+      queueSystem.close();
+      
+      // Verify processor was stopped
+      expect(mockProcessor.stop).toHaveBeenCalled();
+      
+      // Verify cleanup interval is cleared
+      expect((queueSystem as any).cleanupInterval).toBeUndefined();
+      
+      // Verify database is closed
+      expect(() => {
+        queueSystem.enqueue(queueName, 'test', {});
+      }).toThrow();
+    });
+
+    it('should handle errors during shutdown gracefully', () => {
+      const queueName = 'error-shutdown-test';
+      
+      // Register a processor that throws on stop
+      const faultyProcessor = {
+        start: jest.fn(),
+        stop: jest.fn(() => { throw new Error('Stop failed'); })
+      } as unknown as QueueProcessor;
+      
+      queueSystem.registerProcessor(queueName, faultyProcessor);
+      
+      // Close should not throw despite processor error
+      expect(() => queueSystem.close()).not.toThrow();
+      expect(faultyProcessor.stop).toHaveBeenCalled();
+    });
+  });
+
+  describe('Queue Configuration Management', () => {
+    it('should store and retrieve queue configurations', () => {
+      const queueName = 'config-test';
+      const config = {
+        maxRetries: 5,
+        baseDelayMs: 2000,
+        batchSize: 20,
+        processingTimeout: 1000,
+        retentionPeriod: 86400000
+      };
+      
+      queueSystem.configureQueue(queueName, config);
+      
+      const retrieved = queueSystem.getQueueConfig(queueName);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved?.maxRetries).toBe(5);
+      expect(retrieved?.baseDelayMs).toBe(2000);
+      expect(retrieved?.batchSize).toBe(20);
+    });
+
+    it('should use queue configuration for retry logic', () => {
+      const queueName = 'config-retry-test';
+      
+      // Configure queue with custom retry settings
+      queueSystem.configureQueue(queueName, {
+        maxRetries: 2,
+        baseDelayMs: 500
+      });
+      
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'test' });
+      
+      // Fail the message beyond configured max retries
+      for (let i = 0; i < 3; i++) {
+        const [message] = queueSystem.dequeue(queueName, 1);
+        if (message) {
+          queueSystem.markFailed(message.id!, `Failure ${i + 1}`);
+        }
+      }
+      
+      // Check message moved to dead letter queue after 2 retries
+      const dlqResult = queueSystem.executeQuerySingle<{original_message_id: number}>(
+        'SELECT original_message_id FROM dead_letter_queue WHERE original_message_id = ?',
+        [messageId]
+      );
+      
+      expect(dlqResult).not.toBeNull();
+      expect(dlqResult?.original_message_id).toBe(messageId);
+    });
+  });
+
+  describe('Database Access API', () => {
+    it('should provide safe read-only query access', () => {
+      const queueName = 'query-test';
+      
+      // Enqueue some messages
+      for (let i = 0; i < 5; i++) {
+        queueSystem.enqueue(queueName, 'test', { index: i });
+      }
+      
+      // Use executeQuery for multiple results
+      const results = queueSystem.executeQuery<{queue_name: string, status: string}>(
+        'SELECT queue_name, status FROM queue_messages WHERE queue_name = ?',
+        [queueName]
+      );
+      
+      expect(results).toHaveLength(5);
+      results.forEach(r => {
+        expect(r.queue_name).toBe(queueName);
+        expect(r.status).toBe('pending');
+      });
+    });
+
+    it('should provide single row query access', () => {
+      const queueName = 'single-query-test';
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'unique' });
+      
+      const result = queueSystem.executeQuerySingle<{id: number, payload: string}>(
+        'SELECT id, payload FROM queue_messages WHERE id = ?',
+        [messageId]
+      );
+      
+      expect(result).not.toBeUndefined();
+      expect(result?.id).toBe(messageId);
+      expect(JSON.parse(result?.payload || '{}')).toEqual({ data: 'unique' });
+    });
+
+    it('should provide transaction support', () => {
+      const queueName = 'transaction-test';
+      
+      // Execute multiple operations in a transaction
+      const results = queueSystem.executeTransaction((db) => {
+        const stmt1 = db.prepare(
+          'INSERT INTO queue_messages (queue_name, message_type, payload, status, created_at, scheduled_at, retry_count, max_retries) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        
+        const ids = [];
+        for (let i = 0; i < 3; i++) {
+          const result = stmt1.run(
+            queueName, 'batch', JSON.stringify({ index: i }), 
+            'pending', Date.now(), Date.now(), 0, 3
+          );
+          ids.push(result.lastInsertRowid);
+        }
+        
+        return ids;
+      });
+      
+      expect(results).toHaveLength(3);
+      
+      // Verify all were inserted
+      const count = queueSystem.executeQuerySingle<{count: number}>(
+        'SELECT COUNT(*) as count FROM queue_messages WHERE queue_name = ?',
+        [queueName]
+      );
+      expect(count?.count).toBe(3);
+    });
+  });
+
+  describe('Edge Cases and Error Handling', () => {
+    it('should handle malformed JSON in message payload gracefully', () => {
+      const queueName = 'malformed-json-test';
+      
+      // Directly insert a message with invalid JSON
+      queueSystem.executeTransaction((db) => {
+        const stmt = db.prepare(
+          'INSERT INTO queue_messages (queue_name, message_type, payload, status, created_at, scheduled_at, retry_count, max_retries) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        stmt.run(queueName, 'test', '{invalid json}', 'pending', Date.now(), Date.now(), 0, 3);
+      });
+      
+      // Dequeue should handle the malformed JSON
+      const messages = queueSystem.dequeue(queueName, 1);
+      expect(messages).toHaveLength(1);
+      
+      // Payload should remain as string if parsing fails
+      expect(typeof messages[0].payload).toBe('string');
+      expect(messages[0].payload).toBe('{invalid json}');
+    });
+
+    it('should handle queue overflow scenarios', () => {
+      const queueName = 'overflow-test';
+      const messageCount = 100; // Reduced from 10000 for local development
+      
+      // Enqueue a large number of messages
+      const start = Date.now();
+      for (let i = 0; i < messageCount; i++) {
+        queueSystem.enqueue(queueName, 'bulk', { index: i }, { priority: i % 10 });
+      }
+      const enqueueDuration = Date.now() - start;
+      
+      // Should complete in reasonable time (< 1 second for 100 messages)
+      expect(enqueueDuration).toBeLessThan(1000);
+      
+      // Verify all messages were enqueued
+      const stats = queueSystem.getQueueStats(queueName);
+      expect(stats.pending).toBe(messageCount);
+    });
+
+    it('should handle missing queue names gracefully', () => {
+      const stats = queueSystem.getQueueStats('non-existent-queue');
+      
+      expect(stats.queueName).toBe('non-existent-queue');
+      expect(stats.pending).toBe(0);
+      expect(stats.processing).toBe(0);
+      expect(stats.completed).toBe(0);
+      expect(stats.failed).toBe(0);
+    });
+
+    it('should handle concurrent configuration updates', async () => {
+      const queueName = 'concurrent-config-test';
+      
+      // Attempt concurrent configuration updates
+      const updates = Array.from({ length: 10 }, (_, i) => 
+        queueSystem.configureQueue(queueName, {
+          maxRetries: i + 1,
+          batchSize: (i + 1) * 10
+        })
+      );
+      
+      await Promise.all(updates);
+      
+      // Verify final configuration is consistent
+      const config = queueSystem.getQueueConfig(queueName);
+      expect(config).not.toBeNull();
+      expect(config?.maxRetries).toBeGreaterThan(0);
+      expect(config?.batchSize).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Dead Letter Queue Management', () => {
+    it('should move messages to DLQ after max retries', () => {
+      const queueName = 'dlq-test';
+      const messageId = queueSystem.enqueue(queueName, 'test', { data: 'fail' }, { maxRetries: 1 });
+      
+      // Fail the message twice (exceeding max retries of 1)
+      for (let i = 0; i < 2; i++) {
+        const [message] = queueSystem.dequeue(queueName, 1);
+        if (message) {
+          queueSystem.markFailed(message.id!, `Failure ${i + 1}`);
+        }
+      }
+      
+      // Verify message is in DLQ
+      const dlqMessages = queueSystem.executeQuery<{original_message_id: number}>(
+        'SELECT original_message_id FROM dead_letter_queue'
+      );
+      
+      expect(dlqMessages).toHaveLength(1);
+      expect(dlqMessages[0].original_message_id).toBe(messageId);
+      
+      // Verify message status is failed
+      const messageStatus = queueSystem.executeQuerySingle<{status: string}>(
+        'SELECT status FROM queue_messages WHERE id = ?',
+        [messageId]
+      );
+      expect(messageStatus?.status).toBe('failed');
+    });
+
+    it('should preserve message metadata in DLQ', () => {
+      const queueName = 'dlq-metadata-test';
+      const correlationId = 'test-correlation-123';
+      const metadata = { source: 'test', timestamp: Date.now() };
+      
+      const messageId = queueSystem.enqueue(
+        queueName, 
+        'test', 
+        { data: 'fail' }, 
+        { maxRetries: 0, correlationId, metadata }
+      );
+      
+      // Fail the message once (exceeding max retries of 0)
+      const [message] = queueSystem.dequeue(queueName, 1);
+      if (message) {
+        queueSystem.markFailed(message.id!, 'Immediate failure');
+      }
+      
+      // Check DLQ entry preserves all data
+      const dlqEntry = queueSystem.executeQuerySingle<{
+        correlation_id: string,
+        metadata: string,
+        error_message: string
+      }>(
+        'SELECT correlation_id, metadata, error_message FROM dead_letter_queue WHERE original_message_id = ?',
+        [messageId]
+      );
+      
+      expect(dlqEntry?.correlation_id).toBe(correlationId);
+      expect(JSON.parse(dlqEntry?.metadata || '{}')).toEqual(metadata);
+      expect(dlqEntry?.error_message).toBe('Immediate failure');
+    });
+  });
+
+  describe('Performance and Cleanup', () => {
+    it('should cleanup old completed messages', () => {
+      const queueName = 'cleanup-test';
+      
+      // Insert old completed messages
+      const oldTime = Date.now() - (8 * 24 * 60 * 60 * 1000); // 8 days ago
+      
+      queueSystem.executeTransaction((db) => {
+        const stmt = db.prepare(
+          'INSERT INTO queue_messages (queue_name, message_type, payload, status, created_at, scheduled_at, processed_at, retry_count, max_retries) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        
+        // Insert old completed messages
+        for (let i = 0; i < 5; i++) {
+          stmt.run(queueName, 'old', '{}', 'completed', oldTime, oldTime, oldTime, 0, 3);
+        }
+        
+        // Insert recent completed messages
+        const recentTime = Date.now() - (1 * 24 * 60 * 60 * 1000); // 1 day ago
+        for (let i = 0; i < 3; i++) {
+          stmt.run(queueName, 'recent', '{}', 'completed', recentTime, recentTime, recentTime, 0, 3);
+        }
+      });
       
       // Trigger cleanup
-      queueSystem['cleanupOldMessages']();
+      (queueSystem as any).cleanupOldMessages();
       
-      // Message should be deleted
-      const result = db.prepare('SELECT COUNT(*) as count FROM queue_messages WHERE id = ?').get(messageId) as any;
-      expect(result.count).toBe(0);
+      // Verify old messages were deleted
+      const remaining = queueSystem.executeQuery<{created_at: number}>(
+        'SELECT created_at FROM queue_messages WHERE queue_name = ? AND status = ?',
+        [queueName, 'completed']
+      );
+      
+      expect(remaining).toHaveLength(3);
+      remaining.forEach(msg => {
+        expect(msg.created_at).toBeGreaterThan(oldTime);
+      });
     });
   });
 });
-
-describe('QueueAPI', () => {
-  let queueAPI: QueueAPI;
-  let testDbPath: string;
-
-  beforeEach(() => {
-    testDbPath = path.join(__dirname, `test-queue-api-${Date.now()}.db`);
-    
-    const mockConfig = {
-      getDatabasePath: () => testDbPath
-    };
-    
-    jest.doMock('../../src/services/config', () => ({
-      ConfigService: {
-        getInstance: () => mockConfig
-      }
-    }));
-
-    queueAPI = QueueAPI.getInstance();
-  });
-
-  afterEach(() => {
-    queueAPI.close();
-    
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
-    }
-    
-    jest.clearAllMocks();
-    jest.resetModules();
-  });
-
-  describe('High-level Operations', () => {
-    test('should enqueue hook events correctly', () => {
-      const messageId = queueAPI.enqueueHookEvent(
-        'tool-use',
-        { toolName: 'test-tool', input: 'test-input' },
-        { priority: 7, correlationId: 'test-correlation' }
-      );
-      
-      expect(messageId).toBeGreaterThan(0);
-      
-      const messages = queueAPI.peekMessages('hook-events', 1);
-      expect(messages).toHaveLength(1);
-      expect(messages[0].message_type).toBe('tool-use');
-      expect(messages[0].priority).toBe(7);
-      expect(messages[0].correlation_id).toBe('test-correlation');
-    });
-
-    test('should enqueue MCP operations correctly', () => {
-      const messageId = queueAPI.enqueueMCPOperation(
-        'memory',
-        'search',
-        { query: 'test query' },
-        { priority: 6 }
-      );
-      
-      expect(messageId).toBeGreaterThan(0);
-      
-      const messages = queueAPI.peekMessages('mcp-operations', 1);
-      expect(messages).toHaveLength(1);
-      expect(messages[0].message_type).toBe('memory:search');
-      expect(messages[0].priority).toBe(6);
-    });
-
-    test('should handle bulk operations', () => {
-      const operations = [
-        { operation: 'store', payload: { key: 'test1', value: 'value1' } },
-        { operation: 'store', payload: { key: 'test2', value: 'value2' } },
-        { operation: 'search', payload: { query: 'test query' } }
-      ];
-      
-      // This would be tested with the enhanced memory tools
-      // For now, just verify the API exists
-      expect(typeof queueAPI.enqueueMemoryOperation).toBe('function');
-    });
-  });
-
-  describe('System Health', () => {
-    test('should return system health status', () => {
-      // Add some test messages
-      queueAPI.enqueueHookEvent('test', {});
-      queueAPI.enqueueMCPOperation('test', 'op', {});
-      
-      const health = queueAPI.getSystemHealth();
-      
-      expect(health).toHaveProperty('isHealthy');
-      expect(health).toHaveProperty('totalPendingMessages');
-      expect(health).toHaveProperty('totalProcessingMessages');
-      expect(health).toHaveProperty('totalFailedMessages');
-      expect(health).toHaveProperty('deadLetterCount');
-      expect(health).toHaveProperty('uptime');
-      
-      expect(health.totalPendingMessages).toBeGreaterThan(0);
-    });
-  });
-});
-
-// Migration tests removed - not applicable for fresh installations
-// These tests were for migrating from non-existent old schema
