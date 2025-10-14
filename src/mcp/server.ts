@@ -8,6 +8,9 @@ import { SessionManager } from './session-manager';
 import { RateLimiter } from './rate-limiter';
 import { MemoryCaptureMiddleware } from './memory-capture-middleware';
 import { QueueIntegrationService } from '../services/queue-integration';
+import { ResourcesHandler } from './resources-handler';
+import { PromptsHandler } from './prompts-handler';
+import { PreferenceAnalyzer } from '../services/preference-analyzer';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -54,6 +57,9 @@ export class MCPServer {
   private rateLimiter: RateLimiter;
   private memoryCaptureMiddleware: MemoryCaptureMiddleware;
   private queueIntegration: QueueIntegrationService;
+  private resourcesHandler: ResourcesHandler;
+  private promptsHandler: PromptsHandler;
+  private preferenceAnalyzer: PreferenceAnalyzer;
   private isInitialized = false;
 
   constructor() {
@@ -68,7 +74,14 @@ export class MCPServer {
     });
     this.memoryCaptureMiddleware = new MemoryCaptureMiddleware();
     this.queueIntegration = QueueIntegrationService.getInstance();
-    
+    this.resourcesHandler = new ResourcesHandler();
+    this.promptsHandler = new PromptsHandler();
+    this.preferenceAnalyzer = new PreferenceAnalyzer(
+      this.logger,
+      this.memoryService,
+      this.sessionManager
+    );
+
     this.setupRequestHandlers();
     this.registerTools();
   }
@@ -89,6 +102,18 @@ export class MCPServer {
             break;
           case 'notifications/initialized':
             response = await this.handleInitialized(request);
+            break;
+          case 'resources/list':
+            response = await this.resourcesHandler.handleResourcesList(request);
+            break;
+          case 'resources/read':
+            response = await this.resourcesHandler.handleResourcesRead(request);
+            break;
+          case 'prompts/list':
+            response = await this.promptsHandler.handlePromptsList(request);
+            break;
+          case 'prompts/get':
+            response = await this.promptsHandler.handlePromptsGet(request);
             break;
           case 'health/check':
             response = await this.handleHealthCheck(request);
@@ -156,9 +181,9 @@ export class MCPServer {
 
   private async handleInitialize(request: MCPRequest): Promise<MCPResponse> {
     const params = request.params || {};
-    
+
     this.logger.info('MCPServer', 'Initializing MCP server', params);
-    
+
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -166,6 +191,8 @@ export class MCPServer {
         protocolVersion: "2024-11-05",
         capabilities: {
           tools: {},
+          resources: {},
+          prompts: {},
           logging: {}
         },
         serverInfo: {
@@ -263,9 +290,12 @@ export class MCPServer {
       });
 
       const result = await tool.handler(toolArgs || {}, context);
-      
+
       // Record successful request for rate limiting
       this.rateLimiter.recordRequest(sessionId, true);
+
+      // Phase 2: Track conversation and detect preference signals
+      this.trackConversationTurn(sessionId, name, toolArgs, result);
 
       // Claude-flow pattern: Enhanced response format
       return {
@@ -338,6 +368,47 @@ export class MCPServer {
 
   private generateSessionId(): string {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Phase 2: Track conversation turns and detect preference signals
+   */
+  private trackConversationTurn(
+    sessionId: string,
+    toolName: string,
+    input: any,
+    output: any
+  ): void {
+    try {
+      // Detect preference signals in the conversation
+      const signals = this.preferenceAnalyzer.detectPreferenceSignals(input, output);
+      const hasSignals = signals.length > 0;
+
+      // Add turn to session history
+      this.sessionManager.addConversationTurn(
+        sessionId,
+        toolName,
+        input,
+        output,
+        hasSignals
+      );
+
+      // Check if we should suggest analysis
+      this.preferenceAnalyzer.checkAndSuggestAnalysis(sessionId)
+        .catch(err => {
+          this.logger.error('MCPServer', 'Failed to check analysis suggestion', err);
+        });
+
+      if (hasSignals) {
+        this.logger.debug('MCPServer', 'Preference signals detected', {
+          sessionId,
+          tool: toolName,
+          signalCount: signals.length
+        });
+      }
+    } catch (error) {
+      this.logger.error('MCPServer', 'Failed to track conversation turn', error);
+    }
   }
 
   private async handleHealthCheck(request: MCPRequest): Promise<MCPResponse> {

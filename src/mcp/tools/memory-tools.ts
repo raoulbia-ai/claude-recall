@@ -176,14 +176,43 @@ export class MemoryTools {
         inputSchema: {
           type: 'object',
           properties: {
-            confirm: { 
-              type: 'boolean', 
-              description: 'Confirmation to clear context' 
+            confirm: {
+              type: 'boolean',
+              description: 'Confirmation to clear context'
             }
           },
           required: ['confirm']
         },
         handler: this.handleClearContext.bind(this)
+      },
+      {
+        name: 'mcp__claude-recall__store_preferences',
+        description: 'Store extracted preferences from conversation analysis (Phase 2). Use this after analyzing conversation with analyze-for-preferences prompt.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            preferences: {
+              type: 'array',
+              description: 'Array of extracted preferences from Claude Code analysis',
+              items: {
+                type: 'object',
+                properties: {
+                  key: { type: 'string', description: 'Preference key (e.g., "test_location", "code_style")' },
+                  value: { description: 'Preference value (string or object)' },
+                  confidence: { type: 'number', description: 'Confidence score (0.0-1.0)' },
+                  reasoning: { type: 'string', description: 'Why this is a preference' }
+                },
+                required: ['key', 'value', 'confidence']
+              }
+            },
+            sessionId: {
+              type: 'string',
+              description: 'Session ID for the analyzed conversation'
+            }
+          },
+          required: ['preferences']
+        },
+        handler: this.handleStorePreferences.bind(this)
       }
     ];
   }
@@ -377,33 +406,110 @@ export class MemoryTools {
   private async handleClearContext(input: any, context: MCPContext): Promise<any> {
     try {
       const { confirm } = input;
-      
+
       if (!confirm) {
         return {
           cleared: false,
           message: 'Confirmation required to clear context'
         };
       }
-      
+
       // In a real implementation, we would clear session-specific data
       // For now, we'll just log the action
       this.logger.info('MemoryTools', 'Context cleared', {
         sessionId: context.sessionId,
         timestamp: context.timestamp
       });
-      
+
       return {
         cleared: true,
         count: 0, // In real implementation, return number of cleared items
         message: 'Session context cleared successfully'
       };
-      
+
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to clear context', error);
       throw error;
     }
   }
-  
+
+  /**
+   * Phase 2: Store batch preferences from Claude Code analysis
+   */
+  private async handleStorePreferences(input: any, context: MCPContext): Promise<any> {
+    try {
+      const { preferences, sessionId } = input;
+
+      if (!Array.isArray(preferences) || preferences.length === 0) {
+        throw new Error('Preferences must be a non-empty array');
+      }
+
+      // Validate each preference
+      for (const pref of preferences) {
+        if (!pref.key || typeof pref.key !== 'string') {
+          throw new Error('Each preference must have a string key');
+        }
+        if (pref.value === undefined) {
+          throw new Error('Each preference must have a value');
+        }
+        if (typeof pref.confidence !== 'number' || pref.confidence < 0 || pref.confidence > 1) {
+          throw new Error('Confidence must be a number between 0 and 1');
+        }
+      }
+
+      // Store each preference
+      const stored = [];
+      for (const pref of preferences) {
+        const memoryKey = `pref_${pref.key}_${Date.now()}`;
+
+        await this.memoryService.store({
+          key: memoryKey,
+          value: {
+            value: pref.value,
+            confidence: pref.confidence,
+            reasoning: pref.reasoning || '',
+            source: 'claude-analysis',
+            analyzedAt: Date.now(),
+            sessionId: sessionId || context.sessionId
+          },
+          type: 'preference',
+          context: {
+            sessionId: sessionId || context.sessionId,
+            timestamp: Date.now()
+          }
+        });
+
+        stored.push({
+          key: pref.key,
+          memoryId: memoryKey,
+          confidence: pref.confidence
+        });
+
+        this.logger.info('MemoryTools', 'Stored analyzed preference', {
+          key: pref.key,
+          confidence: pref.confidence,
+          sessionId: sessionId || context.sessionId
+        });
+      }
+
+      this.logger.info('MemoryTools', 'Batch preferences stored', {
+        count: stored.length,
+        sessionId: sessionId || context.sessionId
+      });
+
+      return {
+        success: true,
+        stored: stored.length,
+        preferences: stored,
+        message: `Successfully stored ${stored.length} preferences from analysis`
+      };
+
+    } catch (error) {
+      this.logger.error('MemoryTools', 'Failed to store preferences', error);
+      throw error;
+    }
+  }
+
   getTools(): MCPTool[] {
     return this.tools;
   }

@@ -3,12 +3,23 @@ import * as path from 'path';
 import * as os from 'os';
 import { LoggingService } from '../services/logging';
 
+export interface ConversationTurn {
+  timestamp: number;
+  tool: string;
+  input: any;
+  output: any;
+  hasPreferenceSignals?: boolean;
+}
+
 export interface SessionData {
   id: string;
   startTime: number;
   lastActivity: number;
   toolCalls: number;
   memories: string[];
+  conversationHistory?: ConversationTurn[];
+  lastAnalyzedTurn?: number;
+  preferenceSignalCount?: number;
   metadata?: Record<string, any>;
 }
 
@@ -43,14 +54,17 @@ export class SessionManager {
       startTime: Date.now(),
       lastActivity: Date.now(),
       toolCalls: 0,
-      memories: []
+      memories: [],
+      conversationHistory: [],
+      lastAnalyzedTurn: 0,
+      preferenceSignalCount: 0
     };
-    
+
     this.sessions.set(id, session);
     this.persistSessions();
-    
+
     this.logger.info('SessionManager', 'Session created', { sessionId: id });
-    
+
     return session;
   }
   
@@ -84,6 +98,124 @@ export class SessionManager {
       session.lastActivity = Date.now();
       this.persistSessions();
     }
+  }
+
+  /**
+   * Add a conversation turn to session history
+   * Phase 2: Track conversations for automatic preference analysis
+   */
+  addConversationTurn(
+    id: string,
+    tool: string,
+    input: any,
+    output: any,
+    hasPreferenceSignals?: boolean
+  ): void {
+    const session = this.sessions.get(id);
+    if (session) {
+      if (!session.conversationHistory) {
+        session.conversationHistory = [];
+      }
+
+      session.conversationHistory.push({
+        timestamp: Date.now(),
+        tool,
+        input,
+        output,
+        hasPreferenceSignals
+      });
+
+      if (hasPreferenceSignals) {
+        session.preferenceSignalCount = (session.preferenceSignalCount || 0) + 1;
+      }
+
+      session.lastActivity = Date.now();
+
+      // Keep only last 50 turns to avoid memory bloat
+      if (session.conversationHistory.length > 50) {
+        session.conversationHistory = session.conversationHistory.slice(-50);
+      }
+
+      this.persistSessions();
+
+      this.logger.debug('SessionManager', 'Conversation turn added', {
+        sessionId: id,
+        tool,
+        hasPreferenceSignals,
+        totalTurns: session.conversationHistory.length
+      });
+    }
+  }
+
+  /**
+   * Get conversation history for a session
+   */
+  getConversationHistory(id: string): ConversationTurn[] {
+    const session = this.sessions.get(id);
+    return session?.conversationHistory || [];
+  }
+
+  /**
+   * Get conversation history as formatted text for analysis
+   */
+  getConversationText(id: string, sinceTurn?: number): string {
+    const session = this.sessions.get(id);
+    if (!session?.conversationHistory) {
+      return '';
+    }
+
+    const startIndex = sinceTurn || 0;
+    const turns = session.conversationHistory.slice(startIndex);
+
+    return turns.map((turn, index) => {
+      const turnNumber = startIndex + index + 1;
+      return `Turn ${turnNumber}:\nTool: ${turn.tool}\nInput: ${JSON.stringify(turn.input, null, 2)}\nOutput: ${JSON.stringify(turn.output, null, 2)}`;
+    }).join('\n\n---\n\n');
+  }
+
+  /**
+   * Mark that analysis has been performed up to a certain turn
+   */
+  markAnalyzed(id: string, turnNumber: number): void {
+    const session = this.sessions.get(id);
+    if (session) {
+      session.lastAnalyzedTurn = turnNumber;
+      this.persistSessions();
+    }
+  }
+
+  /**
+   * Check if session should be analyzed for preferences
+   * Criteria:
+   * - At least 5 unanalyzed turns
+   * - OR at least 3 turns with preference signals
+   */
+  shouldAnalyzeSession(id: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session?.conversationHistory) {
+      return false;
+    }
+
+    const lastAnalyzed = session.lastAnalyzedTurn || 0;
+    const currentTurn = session.conversationHistory.length;
+    const unanalyzedTurns = currentTurn - lastAnalyzed;
+
+    // Check unanalyzed turns threshold
+    if (unanalyzedTurns >= 5) {
+      return true;
+    }
+
+    // Check preference signal count in unanalyzed turns
+    const unanalyzedTurnsWithSignals = session.conversationHistory
+      .slice(lastAnalyzed)
+      .filter(turn => turn.hasPreferenceSignals)
+      .length;
+
+    if (unanalyzedTurnsWithSignals >= 3) {
+      return true;
+    }
+
+    return false;
   }
   
   private loadSessions(): void {
