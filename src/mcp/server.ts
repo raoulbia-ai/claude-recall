@@ -11,6 +11,7 @@ import { QueueIntegrationService } from '../services/queue-integration';
 import { ResourcesHandler } from './resources-handler';
 import { PromptsHandler } from './prompts-handler';
 import { PreferenceAnalyzer } from '../services/preference-analyzer';
+import { ContextEnhancer } from '../services/context-enhancer';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -60,6 +61,7 @@ export class MCPServer {
   private resourcesHandler: ResourcesHandler;
   private promptsHandler: PromptsHandler;
   private preferenceAnalyzer: PreferenceAnalyzer;
+  private contextEnhancer: ContextEnhancer;
   private isInitialized = false;
 
   constructor() {
@@ -81,6 +83,7 @@ export class MCPServer {
       this.memoryService,
       this.sessionManager
     );
+    this.contextEnhancer = ContextEnhancer.getInstance();
 
     this.setupRequestHandlers();
     this.registerTools();
@@ -216,26 +219,34 @@ export class MCPServer {
   }
 
   private async handleToolsList(request: MCPRequest): Promise<MCPResponse> {
+    // Phase 3A: Get tool list with basic descriptions
     const toolList = Array.from(this.tools.values()).map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema
     }));
 
-    this.logger.debug('MCPServer', `Listing ${toolList.length} tools`);
+    // Phase 3A: Enhance tool descriptions with relevant memories
+    const sessionId = request.params?.sessionId || this.generateSessionId();
+    const enhancedTools = await this.contextEnhancer.enhanceToolsList(toolList, sessionId);
+
+    this.logger.debug('MCPServer', `Listing ${enhancedTools.length} tools (enhanced with memories)`);
 
     return {
       jsonrpc: "2.0",
       id: request.id,
       result: {
-        tools: toolList
+        tools: enhancedTools
       }
     };
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
+    // Phase 3B: Proactively inject relevant memories before tool execution
+    request = await this.memoryCaptureMiddleware.enhanceRequestWithMemories(request);
+
     const { name, arguments: toolArgs } = request.params || {};
-    
+
     if (!name || typeof name !== 'string') {
       return this.createErrorResponse(request.id, -32602, 'Invalid params: tool name required');
     }
