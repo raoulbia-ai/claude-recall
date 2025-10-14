@@ -252,12 +252,24 @@ class ClaudeRecallCLI {
   }
 }
 
+// Get version from package.json
+function getVersion(): string {
+  try {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')
+    );
+    return packageJson.version;
+  } catch (error) {
+    return '0.3.0'; // Fallback
+  }
+}
+
 // Setup CLI commands
 async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code via MCP')
-    .version('0.2.19')
+    .version(getVersion())
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 

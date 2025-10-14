@@ -1,0 +1,20 @@
+f49d60af7a4dceceeb3d4c4e2201fc8a
+"use strict";
+/**
+ * Jest Test Setup
+ *
+ * This file runs before all tests and sets up the test environment.
+ * It's configured in jest.config.js via setupFilesAfterEnv.
+ */
+// Set test timeout for all tests (can be overridden per test)
+jest.setTimeout(30000);
+// Suppress console.log in tests unless needed for debugging
+// Comment these out if you need to see console output during test development
+// global.console = {
+//   ...console,
+//   log: jest.fn(),
+//   debug: jest.fn(),
+//   info: jest.fn(),
+// };
+// Add custom matchers or global test utilities here if needed
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL21udC9jL1VzZXJzL2ViaWFyYW8vcmVwb3MvY2xhdWRlLXJlY2FsbC90ZXN0cy9jb25maWcvc2V0dXAudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7OztHQUtHO0FBRUgsOERBQThEO0FBQzlELElBQUksQ0FBQyxVQUFVLENBQUMsS0FBSyxDQUFDLENBQUM7QUFFdkIsNERBQTREO0FBQzVELDhFQUE4RTtBQUM5RSxxQkFBcUI7QUFDckIsZ0JBQWdCO0FBQ2hCLG9CQUFvQjtBQUNwQixzQkFBc0I7QUFDdEIscUJBQXFCO0FBQ3JCLEtBQUs7QUFFTCw4REFBOEQiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL21udC9jL1VzZXJzL2ViaWFyYW8vcmVwb3MvY2xhdWRlLXJlY2FsbC90ZXN0cy9jb25maWcvc2V0dXAudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBKZXN0IFRlc3QgU2V0dXBcbiAqXG4gKiBUaGlzIGZpbGUgcnVucyBiZWZvcmUgYWxsIHRlc3RzIGFuZCBzZXRzIHVwIHRoZSB0ZXN0IGVudmlyb25tZW50LlxuICogSXQncyBjb25maWd1cmVkIGluIGplc3QuY29uZmlnLmpzIHZpYSBzZXR1cEZpbGVzQWZ0ZXJFbnYuXG4gKi9cblxuLy8gU2V0IHRlc3QgdGltZW91dCBmb3IgYWxsIHRlc3RzIChjYW4gYmUgb3ZlcnJpZGRlbiBwZXIgdGVzdClcbmplc3Quc2V0VGltZW91dCgzMDAwMCk7XG5cbi8vIFN1cHByZXNzIGNvbnNvbGUubG9nIGluIHRlc3RzIHVubGVzcyBuZWVkZWQgZm9yIGRlYnVnZ2luZ1xuLy8gQ29tbWVudCB0aGVzZSBvdXQgaWYgeW91IG5lZWQgdG8gc2VlIGNvbnNvbGUgb3V0cHV0IGR1cmluZyB0ZXN0IGRldmVsb3BtZW50XG4vLyBnbG9iYWwuY29uc29sZSA9IHtcbi8vICAgLi4uY29uc29sZSxcbi8vICAgbG9nOiBqZXN0LmZuKCksXG4vLyAgIGRlYnVnOiBqZXN0LmZuKCksXG4vLyAgIGluZm86IGplc3QuZm4oKSxcbi8vIH07XG5cbi8vIEFkZCBjdXN0b20gbWF0Y2hlcnMgb3IgZ2xvYmFsIHRlc3QgdXRpbGl0aWVzIGhlcmUgaWYgbmVlZGVkXG4iXSwidmVyc2lvbiI6M30=
