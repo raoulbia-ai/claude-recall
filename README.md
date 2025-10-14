@@ -18,6 +18,14 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **Categorized storage** - Organizes memories by type (preferences, project knowledge, corrections)
 - **Priority-based** - More important or frequently used memories are prioritized
 
+### ⚡ Advanced Features (v0.3.0+)
+- **MCP Resources & Prompts** - Expose memories as subscribable resources and prompt templates
+- **Automatic preference detection** - Detects when you express preferences and suggests analysis
+- **Proactive memory injection** - Relevant memories automatically injected before tool execution
+- **Context-aware tool descriptions** - Tools show relevant preferences in their descriptions
+- **Duplicate detection** - Recognizes when you ask the same question multiple times
+- **Memory usage tracking** - Learns which memories are useful and adjusts relevance scores
+
 ### 🔒 Privacy & Security First
 - **100% Local** - All memories stored locally in SQLite (~/.claude-recall/)
 - **No cloud sync** - Your data never leaves your machine
