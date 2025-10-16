@@ -59,6 +59,68 @@ npm install -g claude-recall@latest
 
 After installation, verify with: `claude-recall --version` (or `npx claude-recall --version` for local installs)
 
+## Updating Claude Recall
+
+To update to the latest version and refresh the MCP server connection:
+
+```bash
+# 1. Update the package
+npm install -g claude-recall@latest
+
+# 2. Remove the old MCP server configuration
+claude mcp remove claude-recall
+
+# 3. Re-add the MCP server
+claude mcp add --transport stdio claude-recall -- claude-recall mcp start
+
+# 4. Verify it's configured
+claude mcp list
+
+# 5. Restart Claude Code to apply changes
+```
+
+**Note:** Always restart Claude Code after updating the MCP server configuration.
+
+## Verifying Claude Recall is Working
+
+To confirm claude-recall is active in your Claude Code session:
+
+**1. Check MCP Server Status**
+```bash
+claude mcp list
+```
+Should show `claude-recall` in the list of active servers.
+
+**2. Ask Claude to Search Memories**
+Simply ask: "Search my memories for [anything]" - Claude should be able to call the search tool.
+
+**3. Check Available MCP Tools**
+Ask Claude: "What MCP tools do you have access to?" - Claude should list tools starting with `mcp__claude-recall__` including:
+- `mcp__claude-recall__store_memory`
+- `mcp__claude-recall__retrieve_memory`
+- `mcp__claude-recall__search`
+
+**4. Store and Retrieve a Test Memory**
+```
+You: "Remember that I prefer testing with Jest"
+Claude: [Should call store_memory tool]
+
+You: "What testing framework do I prefer?"
+Claude: [Should search memories and find Jest]
+```
+
+**5. Check Stats via CLI**
+```bash
+claude-recall stats
+```
+This shows if memories are being stored.
+
+**6. Check Running Process**
+```bash
+ps aux | grep claude-recall
+```
+Should show the MCP server process running.
+
 ## How It Works
 
 When you chat with Claude, the system:
