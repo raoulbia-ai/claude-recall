@@ -35,6 +35,27 @@ try {
     console.log(`📁 Created database directory: ${dbDir}`);
   }
 
+  // Install auto-memory-recall hook
+  const hooksDir = path.join(dbDir, 'hooks');
+  if (!fs.existsSync(hooksDir)) {
+    fs.mkdirSync(hooksDir, { recursive: true });
+  }
+
+  // Copy hook file
+  const hookSource = path.join(__dirname, '..', 'src', 'hooks', 'auto-memory-recall.js');
+  const hookDest = path.join(hooksDir, 'auto-memory-recall.js');
+
+  if (fs.existsSync(hookSource)) {
+    fs.copyFileSync(hookSource, hookDest);
+    // Make it executable (Unix-like systems)
+    try {
+      fs.chmodSync(hookDest, 0o755);
+    } catch (chmodError) {
+      // Windows doesn't support chmod, ignore
+    }
+    console.log(`🪝 Installed auto-memory-recall hook: ${hookDest}`);
+  }
+
   // Add or update claude-recall configuration
   // Remove env variables since we're hardcoding the path to ~/.claude-recall/claude-recall.db
   config.mcpServers['claude-recall'] = {
@@ -58,9 +79,19 @@ try {
   
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
-  console.log('   Restart Claude Code to activate the memory system.');
+  console.log('   Restart your terminal to activate the memory system.');
   console.log('\n💡 Tip: Claude Recall works automatically in the background.');
-  console.log('   Your memories are captured and retrieved seamlessly.\n');
+  console.log('   Your memories are captured and retrieved seamlessly.');
+
+  console.log('\n🎯 OPTIONAL: Enable Automatic Memory Recall');
+  console.log('   Automatically inject relevant memories into every message:');
+  console.log('\n   Add this to ~/.claude/config.yaml:');
+  console.log('   ');
+  console.log('   hooks:');
+  console.log('     user-prompt-submit: ~/.claude-recall/hooks/auto-memory-recall.js');
+  console.log('   ');
+  console.log('   Then restart your terminal.');
+  console.log('\n   See docs/AUTOMATIC-MEMORY-RECALL.md for details.\n');
 
 } catch (error) {
   console.error('❌ Error updating ~/.claude.json:', error.message);

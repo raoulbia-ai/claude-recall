@@ -8,6 +8,7 @@
   },
   "files": [
     "dist/",
+    "src/hooks/",
     "scripts/postinstall.js",
     "scripts/postinstall-claude-md.js",
     "README.md",
