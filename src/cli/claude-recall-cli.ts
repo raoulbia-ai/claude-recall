@@ -255,6 +255,58 @@ class ClaudeRecallCLI {
     this.logger.info('CLI', 'Status displayed');
   }
 
+  /**
+   * Store a memory directly from CLI
+   */
+  async store(content: string, options: { type?: string; confidence?: number; metadata?: string }): Promise<void> {
+    try {
+      const type = options.type || 'preference';
+      const confidence = options.confidence || 0.8;
+
+      // Parse metadata if provided
+      let metadata = {};
+      if (options.metadata) {
+        try {
+          metadata = JSON.parse(options.metadata);
+        } catch (error) {
+          console.error('❌ Invalid metadata JSON');
+          process.exit(1);
+        }
+      }
+
+      // Generate unique key
+      const key = `cli_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Store memory
+      this.memoryService.store({
+        key,
+        value: {
+          content,
+          confidence,
+          source: 'cli',
+          ...metadata,
+          timestamp: Date.now()
+        },
+        type,
+        context: {
+          timestamp: Date.now()
+        },
+        relevanceScore: confidence
+      });
+
+      console.log(`✅ Memory stored successfully`);
+      console.log(`   ID: ${key}`);
+      console.log(`   Type: ${type}`);
+      console.log(`   Confidence: ${confidence}`);
+
+      this.logger.info('CLI', 'Memory stored', { key, type, confidence });
+    } catch (error) {
+      console.error('❌ Store failed:', error);
+      this.logger.error('CLI', 'Store failed', error);
+      process.exit(1);
+    }
+  }
+
   private truncateContent(content: any): string {
     const str = typeof content === 'string' ? content : JSON.stringify(content);
     const maxLength = 100;
@@ -424,6 +476,23 @@ async function main() {
     .action(async () => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.status();
+      process.exit(0);
+    });
+
+  // Store command
+  program
+    .command('store <content>')
+    .description('Store a memory directly')
+    .option('-t, --type <type>', 'Memory type (default: preference)', 'preference')
+    .option('-c, --confidence <score>', 'Confidence score 0.0-1.0 (default: 0.8)', '0.8')
+    .option('-m, --metadata <json>', 'Additional metadata as JSON string')
+    .action(async (content, options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.store(content, {
+        type: options.type,
+        confidence: parseFloat(options.confidence),
+        metadata: options.metadata
+      });
       process.exit(0);
     });
 

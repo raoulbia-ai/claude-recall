@@ -68,6 +68,146 @@ function extractKeywords(message) {
 }
 
 /**
+ * Detect memory-worthy patterns in user message
+ * Returns array of detected patterns with confidence scores
+ */
+function detectMemoryPatterns(message) {
+  const patterns = [];
+  const lowerMessage = message.toLowerCase();
+
+  // Skip very short messages
+  if (message.split(/\s+/).length < 3) {
+    return patterns;
+  }
+
+  // Skip questions (likely not preferences)
+  if (/^(what|how|why|when|where|who|which|can|could|would|should|do|does|is|are)\b/i.test(message.trim())) {
+    return patterns;
+  }
+
+  // PRIORITY 1: Explicit "remember" commands (confidence: 1.0)
+  const rememberRegex = /(?:remember|Remember)(?:\s+that)?\s+(.+?)(?:[.!?]|$)/gi;
+  let match;
+  while ((match = rememberRegex.exec(message)) !== null) {
+    const content = match[1].trim();
+    if (content.length > 5) {
+      patterns.push({
+        content: content,
+        type: 'preference',
+        confidence: 1.0,
+        source: 'explicit_remember'
+      });
+    }
+  }
+
+  // PRIORITY 2: Strong negatives - "never", "don't", "do not" (confidence: 0.9)
+  if (/\b(never|don't|do not|avoid)\b/i.test(lowerMessage)) {
+    // Extract the full instruction
+    const neverRegex = /(never|don't|do not|avoid)\s+(.+?)(?:[.!?]|$)/gi;
+    while ((match = neverRegex.exec(message)) !== null) {
+      const content = match[0].trim();
+      if (content.length > 10) {
+        patterns.push({
+          content: content,
+          type: 'preference',
+          confidence: 0.9,
+          source: 'negative_instruction'
+        });
+      }
+    }
+  }
+
+  // PRIORITY 3: Strong positives - "always", "must" (confidence: 0.9)
+  if (/\b(always|must)\b/i.test(lowerMessage)) {
+    const alwaysRegex = /(always|must)\s+(.+?)(?:[.!?]|$)/gi;
+    while ((match = alwaysRegex.exec(message)) !== null) {
+      const content = match[0].trim();
+      if (content.length > 10) {
+        patterns.push({
+          content: content,
+          type: 'preference',
+          confidence: 0.9,
+          source: 'positive_instruction'
+        });
+      }
+    }
+  }
+
+  // PRIORITY 4: Conditional instructions - "only when", "only if" (confidence: 0.8)
+  if (/\b(only when|only if|only)\b/i.test(lowerMessage)) {
+    const onlyRegex = /(only\s+(?:when|if|create|do|use|make)[^.!?]+)/gi;
+    while ((match = onlyRegex.exec(message)) !== null) {
+      const content = match[0].trim();
+      if (content.length > 15) {
+        patterns.push({
+          content: content,
+          type: 'preference',
+          confidence: 0.8,
+          source: 'conditional_instruction'
+        });
+      }
+    }
+  }
+
+  // PRIORITY 5: Preferences - "prefer", "should" (confidence: 0.8)
+  if (/\b(prefer|should|ought to)\b/i.test(lowerMessage)) {
+    const preferRegex = /(prefer|should|ought to)\s+(.+?)(?:[.!?]|$)/gi;
+    while ((match = preferRegex.exec(message)) !== null) {
+      const content = match[0].trim();
+      if (content.length > 10) {
+        patterns.push({
+          content: content,
+          type: 'preference',
+          confidence: 0.8,
+          source: 'preference_statement'
+        });
+      }
+    }
+  }
+
+  log('Pattern detection', {
+    message: message.substring(0, 50),
+    patternsFound: patterns.length,
+    patterns: patterns.map(p => ({ content: p.content.substring(0, 30), confidence: p.confidence }))
+  });
+
+  return patterns;
+}
+
+/**
+ * Store detected patterns using claude-recall CLI
+ */
+function storeDetectedPatterns(patterns) {
+  for (const pattern of patterns) {
+    try {
+      // Escape quotes in content for shell command
+      const escapedContent = pattern.content.replace(/"/g, '\\"');
+
+      // Use claude-recall CLI store command
+      const command = `npx --no claude-recall store "${escapedContent}" --type ${pattern.type} --confidence ${pattern.confidence} 2>/dev/null`;
+
+      execSync(command, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: 'ignore' // Suppress output
+      });
+
+      log('Stored pattern', {
+        content: pattern.content.substring(0, 50),
+        type: pattern.type,
+        confidence: pattern.confidence
+      });
+    } catch (error) {
+      log('Failed to store pattern', {
+        error: error.message,
+        pattern: pattern.content.substring(0, 30)
+      });
+      // Don't fail the hook if storage fails
+    }
+  }
+}
+
+/**
  * Search claude-recall for relevant memories
  */
 function searchMemories(query) {
@@ -265,6 +405,12 @@ function main() {
     }
 
     log('Processing message', { length: userMessage.length });
+
+    // Detect and store memory-worthy patterns first
+    const detectedPatterns = detectMemoryPatterns(userMessage);
+    if (detectedPatterns.length > 0) {
+      storeDetectedPatterns(detectedPatterns);
+    }
 
     // Extract keywords for search
     const keywords = extractKeywords(userMessage);
