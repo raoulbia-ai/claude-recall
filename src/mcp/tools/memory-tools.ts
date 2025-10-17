@@ -108,21 +108,26 @@ export class MemoryTools {
       },
       {
         name: 'mcp__claude-recall__retrieve_memory',
-        description: 'Get relevant memories by ID or query',
+        description: 'Get relevant memories by ID, query, or recency. Use sortBy="timestamp" for most recent memories.',
         inputSchema: {
           type: 'object',
           properties: {
-            query: { 
-              type: 'string', 
-              description: 'Search query to find relevant memories' 
+            query: {
+              type: 'string',
+              description: 'Search query to find relevant memories'
             },
-            id: { 
-              type: 'string', 
-              description: 'Specific memory ID to retrieve' 
+            id: {
+              type: 'string',
+              description: 'Specific memory ID to retrieve'
             },
-            limit: { 
-              type: 'number', 
-              description: 'Maximum number of memories to return (default: 10)' 
+            limit: {
+              type: 'number',
+              description: 'Maximum number of memories to return (default: 10)'
+            },
+            sortBy: {
+              type: 'string',
+              enum: ['relevance', 'timestamp'],
+              description: 'Sort order: "relevance" (default, keyword-based) or "timestamp" (newest first)'
             }
           }
         },
@@ -261,12 +266,27 @@ export class MemoryTools {
   
   private async handleRetrieveMemory(input: any, context: MCPContext): Promise<any> {
     try {
-      const { query, id, limit = 10 } = input;
-      
+      let { query, id, limit = 10, sortBy } = input;
+
+      // Smart detection: Auto-detect timestamp sorting from query keywords
+      if (!sortBy && query) {
+        const timeKeywords = ['recent', 'latest', 'newest', 'last', 'new'];
+        const lowerQuery = query.toLowerCase();
+        if (timeKeywords.some(kw => lowerQuery.includes(kw))) {
+          sortBy = 'timestamp';
+          this.logger.debug('MemoryTools', 'Auto-detected timestamp sorting', { query });
+        }
+      }
+
+      // Default to relevance sorting
+      if (!sortBy) {
+        sortBy = 'relevance';
+      }
+
       if (id) {
         // Retrieve specific memory by ID
         const memory = this.memoryService.retrieve(id);
-        
+
         if (!memory) {
           return {
             memories: [],
@@ -274,45 +294,47 @@ export class MemoryTools {
             message: `Memory with ID ${id} not found`
           };
         }
-        
+
         return {
           memories: [memory],
           count: 1
         };
       }
-      
+
       if (query) {
-        // Search for relevant memories
-        const results = this.memoryService.search(query);
+        // Search for relevant memories with sort option
+        const results = this.memoryService.search(query, sortBy);
         const limitedResults = results.slice(0, limit);
-        
+
         return {
           memories: limitedResults.map(r => ({
             ...r,
             relevanceScore: r.score
           })),
           count: limitedResults.length,
-          totalFound: results.length
+          totalFound: results.length,
+          sortBy
         };
       }
-      
+
       // Get recent memories from context
       const contextResults = this.memoryService.findRelevant({
         sessionId: context.sessionId,
         projectId: context.projectId,
         timestamp: context.timestamp
-      });
-      
+      }, sortBy);
+
       const limitedResults = contextResults.slice(0, limit);
-      
+
       return {
         memories: limitedResults.map(r => ({
           ...r,
           relevanceScore: r.score
         })),
-        count: limitedResults.length
+        count: limitedResults.length,
+        sortBy
       };
-      
+
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to retrieve memory', error);
       throw error;

@@ -111,7 +111,7 @@ export class MemoryService {
   /**
    * Find relevant memories based on context
    */
-  findRelevant(context: MemoryServiceContext): ScoredMemory[] {
+  findRelevant(context: MemoryServiceContext, sortBy: 'relevance' | 'timestamp' = 'relevance'): ScoredMemory[] {
     try {
       const retrievalContext: Context = {
         project_id: context.projectId || this.config.getProjectId(),
@@ -122,9 +122,9 @@ export class MemoryService {
         query: context.query,
         keywords: context.keywords
       };
-      
-      const memories = this.retrieval.findRelevant(retrievalContext);
-      
+
+      const memories = this.retrieval.findRelevant(retrievalContext, sortBy);
+
       this.logger.logRetrieval(
         context.query || 'context-based',
         memories.length,
@@ -132,10 +132,11 @@ export class MemoryService {
           projectId: retrievalContext.project_id,
           filePath: retrievalContext.file_path,
           tool: retrievalContext.tool,
-          keywords: retrievalContext.keywords
+          keywords: retrievalContext.keywords,
+          sortBy
         }
       );
-      
+
       return memories;
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'findRelevant', error as Error, context);
@@ -146,20 +147,21 @@ export class MemoryService {
   /**
    * Search memories by keyword
    */
-  search(query: string): ScoredMemory[] {
+  search(query: string, sortBy: 'relevance' | 'timestamp' = 'relevance'): ScoredMemory[] {
     try {
       // Use findRelevant with query context for better semantic matching
       const context = {
         query: query,
         timestamp: Date.now()
       };
-      
-      const results = this.retrieval.findRelevant(context);
-      
+
+      const results = this.retrieval.findRelevant(context, sortBy);
+
       this.logger.logRetrieval(query, results.length, {
-        searchType: 'contextual'
+        searchType: 'contextual',
+        sortBy
       });
-      
+
       return results;
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'search', error as Error, { query });
