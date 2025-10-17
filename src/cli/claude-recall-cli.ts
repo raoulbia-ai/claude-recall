@@ -72,19 +72,30 @@ class ClaudeRecallCLI {
     const limit = options.limit || 10;
     const results = this.memoryService.search(query);
     const topResults = results.slice(0, limit);
-    
+
     if (options.json) {
-      console.log(JSON.stringify(topResults, null, 2));
+      // Format for hook consumption - include relevance_score field
+      const formattedResults = topResults.map((result: any) => ({
+        key: result.key,
+        value: result.value,
+        type: result.type,
+        timestamp: result.timestamp,
+        relevance_score: result.score, // Rename score to relevance_score for hooks
+        access_count: result.access_count,
+        project_id: result.project_id,
+        file_path: result.file_path
+      }));
+      console.log(JSON.stringify(formattedResults, null, 2));
       return;
     }
-    
+
     if (topResults.length === 0) {
       console.log('\nNo memories found matching your query.\n');
       return;
     }
-    
+
     console.log(`\n🔍 Found ${results.length} memories (showing top ${topResults.length}):\n`);
-    
+
     topResults.forEach((result: any, index: number) => {
       console.log(`${index + 1}. [${result.type}] Score: ${result.score.toFixed(3)}`);
       console.log(`   Content: ${this.truncateContent(result.value)}`);
@@ -92,7 +103,7 @@ class ClaudeRecallCLI {
       console.log(`   Time: ${new Date(result.timestamp || 0).toLocaleString()}`);
       console.log('');
     });
-    
+
     this.logger.info('CLI', 'Search completed', { query, resultCount: results.length });
   }
 
