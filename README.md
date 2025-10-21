@@ -37,48 +37,74 @@ Every time you start a new conversation with Claude, you're starting from scratc
 
 ## Quick Start
 
-### Option 1: Local Project Installation (Recommended)
-For automatic CLAUDE.md integration in your project:
+### Recommended: Local Project Installation
+
+**Install in each project where you want Claude Recall:**
+
 ```bash
 cd your-project
 npm install claude-recall
 ```
-This automatically adds Claude Recall instructions to your project's CLAUDE.md file.
 
-### Option 2: Global Installation
-For CLI access from anywhere:
+**What this does:**
+- ✅ Creates `.claude/` directory with memory-first workflow instructions
+- ✅ Configures MCP server in `~/.claude.json` (global, works everywhere)
+- ✅ Adds to `package.json` (team members get it automatically)
+- ✅ CLI available via `npx claude-recall stats`
+
+**After installation, verify:**
 ```bash
-npm install -g claude-recall@latest
+npx claude-recall --version   # Should show 0.3.3 or later
 ```
 
-**Note:** You can have both installations. Installation automatically includes:
-- `.claude/agents/context-manager.md` - Optional agent for complex workflows
-- `.claude/CLAUDE.md` - Memory-first workflow with direct MCP search instructions
-- MCP server configuration in `~/.claude.json`
+### Why Local Over Global?
 
-After installation, verify with: `claude-recall --version` (or `npx claude-recall --version` for local installs)
+**Local installation (`npm install claude-recall`):**
+- ✅ `.claude/CLAUDE.md` auto-created in your project
+- ✅ `.claude/agents/` available for Claude Code
+- ✅ Team members get it via `package.json`
+- ✅ Use `npx claude-recall` for CLI
+- ✅ MCP server still works globally
+
+**Global installation (`npm install -g`):**
+- ❌ `.claude/` directory NOT auto-created
+- ❌ Must manually copy integration files to each project
+- ❌ Harder to share with team
+- ✅ CLI available without `npx`
+
+**Bottom line:** Install locally in each project. The MCP server (`~/.claude.json`) and database (`~/.claude-recall/`) are shared globally anyway, so you get the best of both worlds.
+
+### If You Have Global Installation
+
+**Remove it:**
+```bash
+npm uninstall -g claude-recall
+```
+
+**Then install locally in each project** as shown above. Your memories in `~/.claude-recall/claude-recall.db` are preserved!
 
 ## Updating Claude Recall
 
-To update to the latest version and refresh the MCP server connection:
+**For local installations (recommended):**
 
 ```bash
-# 1. Update the package
-npm install -g claude-recall@latest
+# 1. Update in your project
+cd your-project
+npm install claude-recall@latest
 
-# 2. Remove the old MCP server configuration
-claude mcp remove claude-recall
-
-# 3. Re-add the MCP server
-claude mcp add --transport stdio claude-recall -- claude-recall mcp start
-
-# 4. Verify it's configured
-claude mcp list
-
-# 5. Restart Claude Code to apply changes
+# 2. Restart Claude Code
 ```
 
-**Note:** Always restart Claude Code after updating the MCP server configuration.
+**For global installations (not recommended):**
+
+```bash
+# 1. Update globally
+npm install -g claude-recall@latest
+
+# 2. Restart Claude Code
+```
+
+**Note:** MCP server configuration in `~/.claude.json` persists across updates. You only need to update the package.
 
 ## Verifying Claude Recall is Working
 
