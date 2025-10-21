@@ -83,6 +83,14 @@ npm uninstall -g claude-recall
 
 **Then install locally in each project** as shown above. Your memories in `~/.claude-recall/claude-recall.db` are preserved!
 
+### Cross-Platform Compatibility
+
+Claude Recall works on **Windows, Linux, and macOS**. Native binaries (SQLite) compile automatically for your platform during `npm install`.
+
+**WSL Users:** Use local installation only. Global installation on Windows + WSL usage causes binary conflicts ("invalid ELF header" errors).
+
+**Everyone else:** Both local and global work, but local is still recommended for the benefits above.
+
 ## Updating Claude Recall
 
 **For local installations (recommended):**
