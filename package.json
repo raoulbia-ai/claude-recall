@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Persistent memory for Claude Code with automatic capture via hooks and MCP server",
   "main": "dist/index.js",
   "bin": {
@@ -8,7 +8,7 @@
   },
   "files": [
     "dist/",
-    "src/hooks/",
+    ".claude/",
     "scripts/postinstall.js",
     "scripts/postinstall-claude-md.js",
     "README.md",

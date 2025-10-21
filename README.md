@@ -8,23 +8,25 @@ Every time you start a new conversation with Claude, you're starting from scratc
 
 ## Key Features
 
-### 🧠 Automatic Memory System
-- **No manual commands needed** - Claude automatically searches for relevant memories based on your prompts
-- **Context-aware** - Retrieves memories that are semantically related to your current conversation
-- **Persistent across restarts** - Your preferences and context survive Claude Code restarts
+### 🧠 Intelligent Learning Loop
+- **Never repeat yourself** - State preferences once, Claude remembers forever
+- **Learn from outcomes** - Automatically captures what worked and what didn't
+- **Direct MCP search** - Fast, simple memory lookup (milliseconds, no agent overhead)
+- **Automatic application** - Preferences and successful patterns applied without asking
+- **Persistent across restarts** - Your learnings survive Claude Code restarts
 
 ### 📝 Intelligent Capture
 - **Automatic extraction** - Captures preferences, patterns, and important information from conversations
 - **Categorized storage** - Organizes memories by type (preferences, project knowledge, corrections)
 - **Priority-based** - More important or frequently used memories are prioritized
 
-### ⚡ Advanced Features (v0.3.0+)
-- **MCP Resources & Prompts** - Expose memories as subscribable resources and prompt templates
-- **Automatic preference detection** - Detects when you express preferences and suggests analysis
-- **Proactive memory injection** - Relevant memories automatically injected before tool execution
-- **Context-aware tool descriptions** - Tools show relevant preferences in their descriptions
-- **Duplicate detection** - Recognizes when you ask the same question multiple times
-- **Memory usage tracking** - Learns which memories are useful and adjusts relevance scores
+### ⚡ Advanced Features (v0.3.2+)
+- **Direct MCP calls** - Fast memory search without agent overhead (milliseconds)
+- **Comprehensive search** - Single search finds preferences, successes, failures, and corrections
+- **Outcome capture** - Stores what worked and what didn't for future learning
+- **Learning loop** - Pre-action search → Execute → Post-action outcome → Future tasks apply learnings
+- **Optional agent** - Advanced context-manager agent available for complex workflows
+- **Correction priority** - User corrections given highest priority (never repeat mistakes)
 
 ### 🔒 Privacy & Security First
 - **100% Local** - All memories stored locally in SQLite (~/.claude-recall/)
@@ -49,13 +51,10 @@ For CLI access from anywhere:
 npm install -g claude-recall@latest
 ```
 
-**Note:** You can have both installations. For global installations, manually add this to your `~/.claude/CLAUDE.md`:
-```markdown
-## Claude Recall Integration
-- IMPORTANT: Always search memories before creating new files or making decisions
-- Use `mcp__claude-recall__search_memory` to check for stored preferences and project knowledge
-- Memories include: coding preferences, file locations, project patterns, and team conventions
-```
+**Note:** You can have both installations. Installation automatically includes:
+- `.claude/agents/context-manager.md` - Optional agent for complex workflows
+- `.claude/CLAUDE.md` - Memory-first workflow with direct MCP search instructions
+- MCP server configuration in `~/.claude.json`
 
 After installation, verify with: `claude-recall --version` (or `npx claude-recall --version` for local installs)
 
@@ -123,46 +122,84 @@ Should show the MCP server process running.
 
 ## How It Works
 
-When you chat with Claude, the system:
-1. **Captures** your preferences and important information
-2. **Stores** them locally in SQLite (`~/.claude-recall/claude-recall.db`)
-3. **Retrieves** relevant memories when you start new conversations
-4. **Injects** context so Claude remembers your preferences
+Claude Recall implements an **intelligent learning loop** that ensures you never repeat yourself:
 
-### Example
+### The Learning Loop
+
+1. **Store Preferences**: When you express preferences, they're stored in SQLite
+2. **Pre-Action Search**: Before tasks, Claude searches memories directly (fast MCP call)
+3. **Find Context**: Search finds preferences + successes + failures + corrections automatically
+4. **Execute with Context**: Claude applies what was learned
+5. **Capture Outcome**: After task, Claude stores success/failure/correction
+6. **Future Application**: Next similar task automatically applies learnings
+
+### Complete Example: Never Repeat Yourself
+
 ```
-You: "I prefer TypeScript with strict mode for all my projects"
-[Claude Recall automatically stores this preference]
+=== First Time: State Preference ===
+You: "I prefer Python for scripts"
+[Claude stores preference via MCP]
 
---- Later, in a new session ---
+=== Second Time: First Use ===
+You: "Create a test script"
+[Claude searches: mcp__claude-recall__search("scripts python test")]
+[Search finds: "I prefer Python for scripts"]
+[Claude creates test.py using Python]
+You: "Perfect!"
+[Claude stores: "Created test script with Python - SUCCESS"]
 
-You: "Create a new module for user authentication"
-[Claude Recall retrieves your TypeScript preference]
-Claude: "I'll create a TypeScript module with strict mode enabled..."
+=== Third Time: Automatic Application ===
+You: "Create a build script"
+[Claude searches: mcp__claude-recall__search("scripts build python")]
+[Search finds: "I prefer Python" + "test.py SUCCESS"]
+[Claude creates build.py automatically - learned pattern!]
+You: *Don't have to repeat preference - it was learned!*
+
+=== Correction Loop ===
+You: "No, put scripts in scripts/ directory not root"
+[Claude stores: "CORRECTION: Scripts in scripts/ directory" (highest priority)]
+[Claude moves file immediately]
+Next time: Search finds correction and applies automatically
 ```
 
 ## Memory Types
 
-### Preferences
+Claude Recall stores different types of memories (sorted by priority):
+
+### 1. Corrections (Highest Priority)
+- User explicitly said "No, do this instead"
+- Fixes to mistakes Claude made
+- Override previous approaches
+- **Example**: "CORRECTION: Tests in __tests__/ not tests/"
+
+### 2. Preferences
 - Coding style preferences (languages, frameworks, patterns)
 - Tool preferences (testing frameworks, build tools)
 - Workflow preferences (git conventions, file structures)
+- **Example**: "I prefer TypeScript with strict mode"
 
-### Project Knowledge
+### 3. Successes
+- What worked in past tasks
+- Approaches that user approved
+- Validated patterns
+- **Example**: "Created auth module with JWT tokens - SUCCESS"
+
+### 4. Failures
+- What didn't work and should be avoided
+- Approaches that failed or were rejected
+- Deprecated approaches
+- **Example**: "Session-based auth failed, use JWT instead"
+
+### 5. Project Knowledge
 - Database configurations
 - API patterns and endpoints
 - Architecture decisions
 - Dependencies and versions
 
-### Context
-- Current tasks and work in progress
-- Recent decisions and changes
-- Team conventions
-
-### Corrections
-- Learned from mistakes
-- Updated patterns
-- Deprecated approaches to avoid
+### 6. Tool Use
+- Historical tool execution
+- Command patterns
+- Workflow steps
 
 ## CLI Commands
 
@@ -275,9 +312,12 @@ npm --version
 ## Best Practices
 
 1. **Be explicit about preferences** - Clear statements like "Always use..." or "Never..." are captured better
-2. **Correct mistakes** - When Claude gets something wrong, the correction is remembered
-3. **Review periodically** - Use `claude-recall stats` to see what's being remembered
-4. **Export important memories** - Backup critical preferences with `claude-recall export`
+2. **Approve or correct** - Say "Good!" or "No, do this" after tasks to build the learning loop
+3. **Trust the learning loop** - Direct MCP search finds preferences, successes, and failures instantly
+4. **Correct mistakes immediately** - Corrections get highest priority and won't be repeated
+5. **Review periodically** - Use `claude-recall stats` to see what's being remembered
+6. **Export important memories** - Backup critical preferences with `claude-recall export`
+7. **Fast and simple** - Direct MCP calls work great for most tasks (agent is optional)
 
 ## Acknowledgements
 
