@@ -218,6 +218,20 @@ export class MemoryTools {
           required: ['preferences']
         },
         handler: this.handleStorePreferences.bind(this)
+      },
+      {
+        name: 'mcp__claude-recall__get_recent_captures',
+        description: 'Get information about memories that were automatically captured in this session. Use this to see what information has already been stored.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: 'Maximum number of recent captures to return (default: 5)'
+            }
+          }
+        },
+        handler: this.handleGetRecentCaptures.bind(this)
       }
     ];
   }
@@ -530,6 +544,111 @@ export class MemoryTools {
       this.logger.error('MemoryTools', 'Failed to store preferences', error);
       throw error;
     }
+  }
+
+  /**
+   * Get recently automatically-captured memories for this session
+   */
+  private async handleGetRecentCaptures(input: any, context: MCPContext): Promise<any> {
+    try {
+      const { limit = 5 } = input;
+
+      // Search for recent auto-captured memories
+      // We look for memories with keys starting with "auto_" or having auto_capture context
+      const allMemories = this.memoryService.search('');
+
+      // Filter to auto-captured memories from recent sessions
+      const autoCaptures = allMemories
+        .filter(m => {
+          // Check if it's an auto-captured memory
+          if (m.key && (m.key.startsWith('auto_') || m.key.startsWith('pref_'))) {
+            return true;
+          }
+          // Check value for auto_capture indicator
+          if (m.value && typeof m.value === 'object') {
+            const val = m.value as any;
+            if (val.source === 'auto_capture' || val.type === 'auto_capture') {
+              return true;
+            }
+          }
+          return false;
+        })
+        .slice(0, limit * 2); // Get more than needed, then filter by time
+
+      // Sort by timestamp (newest first)
+      const sorted = autoCaptures.sort((a, b) => {
+        const timeA = a.timestamp || 0;
+        const timeB = b.timestamp || 0;
+        return timeB - timeA;
+      });
+
+      const recentCaptures = sorted.slice(0, limit);
+
+      // Format for display
+      const formatted = recentCaptures.map(m => ({
+        type: m.type,
+        content: this.extractCaptureContent(m),
+        confidence: this.extractConfidence(m),
+        timestamp: m.timestamp,
+        key: m.key
+      }));
+
+      this.logger.info('MemoryTools', 'Retrieved recent captures', {
+        count: formatted.length,
+        sessionId: context.sessionId
+      });
+
+      return {
+        captures: formatted,
+        count: formatted.length,
+        message: formatted.length > 0
+          ? `Found ${formatted.length} automatically captured memories`
+          : 'No automatic captures yet in this session',
+        tip: formatted.length === 0
+          ? 'Memories are captured automatically when you state preferences, provide project info, or make decisions.'
+          : 'Consider manually storing additional project details that were mentioned.'
+      };
+
+    } catch (error) {
+      this.logger.error('MemoryTools', 'Failed to get recent captures', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract human-readable content from captured memory
+   */
+  private extractCaptureContent(memory: any): string {
+    if (typeof memory.value === 'string') {
+      return memory.value;
+    }
+
+    if (typeof memory.value === 'object' && memory.value !== null) {
+      const val = memory.value as any;
+      if (val.raw) return val.raw;
+      if (val.content) return val.content;
+      if (val.message) return val.message;
+      if (val.key && val.value) {
+        return `${val.key}: ${typeof val.value === 'object' ? JSON.stringify(val.value) : val.value}`;
+      }
+      // Fallback: stringify the object
+      return JSON.stringify(val);
+    }
+
+    return memory.key || 'Unknown content';
+  }
+
+  /**
+   * Extract confidence score from memory
+   */
+  private extractConfidence(memory: any): number {
+    if (typeof memory.value === 'object' && memory.value !== null) {
+      const val = memory.value as any;
+      if (typeof val.confidence === 'number') {
+        return val.confidence;
+      }
+    }
+    return 0.5; // Default confidence
   }
 
   getTools(): MCPTool[] {

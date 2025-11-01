@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Persistent memory for Claude Code with automatic capture via hooks and MCP server",
   "main": "dist/index.js",
   "bin": {
@@ -89,7 +89,7 @@
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
-    "claude-recall": "^0.3.2",
+    "claude-recall": "^0.3.3",
     "commander": "^12.1.0"
   }
 }

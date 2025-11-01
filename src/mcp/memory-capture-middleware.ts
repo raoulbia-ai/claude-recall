@@ -95,7 +95,7 @@ export class MemoryCaptureMiddleware {
         futureTense: ["will", "going to", "from now on"]
       },
       captureSettings: {
-        minConfidence: 0.7,
+        minConfidence: 0.5,
         requireExplicitConfirmation: false,
         batchProcessingDelay: 1000,
         maxMemoriesPerSession: 50,
@@ -322,13 +322,86 @@ export class MemoryCaptureMiddleware {
   }
 
   /**
+   * Get hints about recently captured memories (for LLM context injection)
+   * This helps the LLM be aware of what has been automatically stored
+   */
+  getCaptureHints(sessionId: string, maxCount: number = 5): string | null {
+    try {
+      // Get recent captures for this session
+      const sessionCount = this.sessionMemoryCount.get(sessionId) || 0;
+
+      if (sessionCount === 0) {
+        return null; // No captures yet
+      }
+
+      // Search for recent memories from this session
+      // Use timestamp sorting to get most recent
+      const recentMemories = this.memoryService.search('', 'timestamp').slice(0, maxCount);
+
+      if (recentMemories.length === 0) {
+        return null;
+      }
+
+      // Format as system hint
+      const lines: string[] = [
+        `[System: ${recentMemories.length} memories automatically captured in this session:]`
+      ];
+
+      for (const memory of recentMemories) {
+        const formatted = this.formatMemoryForHint(memory);
+        if (formatted) {
+          lines.push(`  - ${formatted}`);
+        }
+      }
+
+      lines.push('[Tip: Consider storing additional project details mentioned by the user]');
+
+      return lines.join('\n');
+    } catch (error) {
+      this.logger.error('MemoryCaptureMiddleware', 'Failed to generate capture hints', error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Format a memory for hint display
+   */
+  private formatMemoryForHint(memory: any): string | null {
+    try {
+      const value = memory.value;
+
+      // Handle different value formats
+      if (typeof value === 'string') {
+        return `${memory.type}: ${value}`;
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        // Extract meaningful information
+        if (value.raw) return `${memory.type}: ${value.raw}`;
+        if (value.content) return `${memory.type}: ${value.content}`;
+        if (value.message) return `${memory.type}: ${value.message}`;
+        if (value.key && value.value) {
+          return `${memory.type}: ${value.key} = ${typeof value.value === 'object' ? JSON.stringify(value.value) : value.value}`;
+        }
+
+        // Fallback: show memory key
+        return `${memory.type}: ${memory.key}`;
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * Clean up old session data
    */
   cleanupSessions(): void {
     // Clean up old captures
     const now = Date.now();
     const cutoff = now - this.config.captureSettings.deduplicationWindow;
-    
+
     for (const [key, timestamp] of this.recentCaptures) {
       if (timestamp < cutoff) {
         this.recentCaptures.delete(key);
@@ -386,13 +459,23 @@ export class MemoryCaptureMiddleware {
       // Format memories as context
       const memoryContext = this.formatMemoriesForContext(topMemories);
 
+      // Add capture hints to help LLM be aware of what was stored
+      const sessionId = request.params?.sessionId || 'unknown';
+      const captureHints = this.getCaptureHints(sessionId, 3);
+
+      // Combine memory context and capture hints
+      let fullContext = memoryContext;
+      if (captureHints) {
+        fullContext += '\n\n' + captureHints;
+      }
+
       // Inject into request
       // Store in a special field that tools can access
       if (!request.params) {
         request.params = {};
       }
 
-      request.params._memoryContext = memoryContext;
+      request.params._memoryContext = fullContext;
       request.params._injectedMemories = topMemories.map(m => ({
         key: m.key,
         type: m.type,
@@ -400,7 +483,6 @@ export class MemoryCaptureMiddleware {
       }));
 
       // Phase 3C: Track memory injections
-      const sessionId = request.params?.sessionId || 'unknown';
       for (const memory of topMemories) {
         this.usageTracker.recordInjection(memory.key, request.params.name, sessionId);
       }

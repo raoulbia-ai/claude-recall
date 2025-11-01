@@ -196,6 +196,52 @@ You: "No, put scripts in scripts/ directory not root"
 Next time: Search finds correction and applies automatically
 ```
 
+## How Memory Capture Works
+
+**You don't need to say "remember"** - Claude Recall automatically captures preferences when you speak naturally.
+
+### Automatic Trigger Words
+
+Claude Recall uses a **three-tier priority system** to capture memories:
+
+#### Priority 1: Explicit "Remember" Commands (100% Confidence)
+```
+"Remember that I prefer TypeScript with strict mode"
+```
+
+#### Priority 2 & 3: Automatic Pattern Detection (60%+ Confidence)
+
+**Strong indicators** (boost confidence):
+- `prefer`, `always`, `never`
+- `from now on`, `moving forward`, `going forward`
+
+**General indicators**:
+- `use`, `should`, `want`, `like`, `love`
+- `save`, `store`, `put`, `place`, `create`, `make`
+
+### Examples That Work WITHOUT "Remember"
+
+| What You Say | Automatically Captured? | Confidence |
+|--------------|------------------------|------------|
+| "I prefer TypeScript with strict mode" | ✅ YES | High (80%+) |
+| "Always use Jest for testing" | ✅ YES | High (80%+) |
+| "Never put tests in the root directory" | ✅ YES | High (80%+) |
+| "From now on, use 4 spaces for indentation" | ✅ YES | High (85%+) |
+| "I want scripts in the scripts/ folder" | ✅ YES | Medium (70%+) |
+| "Use Axios for HTTP requests" | ✅ YES | Medium (70%+) |
+| "Tests should go in __tests__/" | ✅ YES | Medium (70%+) |
+| "Create files with .ts extension" | ✅ YES | Medium (65%+) |
+| "Maybe use React" | ❌ NO | Low (< 60%) |
+
+### Confidence Threshold
+
+- **Minimum confidence**: 60% required for automatic capture
+- **"Remember" keyword**: Ensures 100% confidence capture (but not required)
+- **Stronger language**: "prefer", "always", "never" boost confidence
+- **Override signals**: "from now on", "actually", "instead" boost confidence
+
+**Bottom line**: Speak naturally about your preferences - Claude Recall captures them automatically. Use "remember" only when you want to ensure something is captured with absolute certainty.
+
 ## Memory Types
 
 Claude Recall stores different types of memories (sorted by priority):

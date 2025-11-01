@@ -48,6 +48,27 @@ export class PreferenceExtractor {
     file_organization: {
       triggers: ["save", "store", "put", "place", "create", "organize"],
       types: ["config", "configs", "configuration", "assets", "images", "styles", "components"]
+    },
+    project_info: {
+      // Generic key-value patterns for project information (IDs, endpoints, URLs, etc.)
+      // Broad triggers - these are words commonly used when providing project details
+      triggers: ["id", "endpoint", "api", "url", "configured", "our", "using", "is", ":", "have"],
+      patterns: [
+        // Pattern: "X ID is Y" or "X ID: Y"
+        { pattern: /([\w\s]+)\s*(?:ID|id)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "X endpoint is Y" or "X endpoint: Y"
+        { pattern: /([\w\s]+)\s*(?:endpoint|api)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "X URL is Y" or "X URL: Y"
+        { pattern: /([\w\s]+)\s*(?:URL|url)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "configured to X" or "configured as X"
+        { pattern: /configured\s+(?:to|as)\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "configuration" },
+        // Pattern: "our X is Y"
+        { pattern: /our\s+([\w\s]+)\s+(?:is|:)\s+([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "we're using X for Y" or "we use X"
+        { pattern: /we(?:'re| are)?\s+using\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "tool" },
+        // Pattern: "X: Y" (generic key-value)
+        { pattern: /([\w\s]{3,20}):\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 }
+      ]
     }
   };
 
@@ -62,7 +83,7 @@ export class PreferenceExtractor {
       for (const sentence of sentences) {
         if (this.indicatesPreference(sentence)) {
           const preference = this.extractPreferenceFromSentence(sentence);
-          if (preference && preference.confidence > 0.6) { // Only high-confidence extractions
+          if (preference && preference.confidence >= 0.5) { // Lowered threshold for broader capture
             preferences.push(preference);
             
             this.logger.debug('PreferenceExtractor', `Extracted preference: ${preference.key} = ${preference.value}`, {
@@ -91,7 +112,10 @@ export class PreferenceExtractor {
     const preferenceIndicators = [
       "prefer", "use", "save", "store", "put", "place", "create", "make",
       "should", "want", "like", "love", "always", "never", "from now on",
-      "moving forward", "going forward", "henceforth"
+      "moving forward", "going forward", "henceforth",
+      // Team/project context
+      "our", "we're using", "we have", "we use", "configured", "set up",
+      "using", "enabled", "installed", "established"
     ];
     
     return preferenceIndicators.some(indicator => lower.includes(indicator));
@@ -140,6 +164,8 @@ export class PreferenceExtractor {
       case 'file_organization':
         value = this.extractFileOrganization(sentence, pattern);
         break;
+      case 'project_info':
+        return this.extractProjectInfo(sentence, pattern);
     }
     
     if (!value) return null;
@@ -231,7 +257,7 @@ export class PreferenceExtractor {
    */
   private extractFileOrganization(sentence: string, pattern: any): string | null {
     const lower = sentence.toLowerCase();
-    
+
     // Look for file type + location pattern
     for (const type of pattern.types) {
       if (lower.includes(type)) {
@@ -241,7 +267,71 @@ export class PreferenceExtractor {
         }
       }
     }
-    
+
+    return null;
+  }
+
+  /**
+   * Extract generic project information (IDs, endpoints, URLs, configurations)
+   */
+  private extractProjectInfo(sentence: string, pattern: any): ExtractedPreference | null {
+    // Try each pattern
+    for (const infoPattern of pattern.patterns) {
+      const match = sentence.match(infoPattern.pattern);
+      if (match) {
+        let key: string;
+        let value: string;
+
+        // Extract key based on pattern configuration
+        if (infoPattern.keyIndex > 0 && match[infoPattern.keyIndex]) {
+          key = match[infoPattern.keyIndex].trim().toLowerCase().replace(/\s+/g, '_');
+        } else if (infoPattern.keyDefault) {
+          key = infoPattern.keyDefault;
+        } else {
+          continue; // Skip if no key found
+        }
+
+        // Extract value
+        if (match[infoPattern.valueIndex]) {
+          value = match[infoPattern.valueIndex].trim();
+        } else {
+          continue; // Skip if no value found
+        }
+
+        // Detect override intent
+        const overrideSignals = this.detectOverrideSignals(sentence);
+        const isOverride = overrideSignals.length > 0;
+
+        // Set confidence based on pattern specificity
+        let confidence = 0.6; // Base confidence for project info
+
+        // Boost confidence for explicit patterns (ID, endpoint, URL)
+        const lower = sentence.toLowerCase();
+        if (lower.includes(' id') || lower.includes('endpoint') || lower.includes('url')) {
+          confidence += 0.15;
+        }
+
+        // Boost confidence for team context ("our", "we")
+        if (lower.includes('our ') || lower.includes('we')) {
+          confidence += 0.1;
+        }
+
+        // Boost confidence for override signals
+        if (isOverride) {
+          confidence += 0.1;
+        }
+
+        return {
+          key,
+          value,
+          confidence: Math.min(confidence, 1.0),
+          raw: sentence.trim(),
+          isOverride,
+          overrideSignals
+        };
+      }
+    }
+
     return null;
   }
 
