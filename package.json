@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Persistent memory for Claude Code with automatic capture via hooks and MCP server",
   "main": "dist/index.js",
   "bin": {

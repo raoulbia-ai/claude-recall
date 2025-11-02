@@ -169,10 +169,41 @@ export class MemoryCaptureMiddleware {
   private async analyzeContent(content: string, sessionId: string): Promise<any[]> {
     const memories: any[] = [];
 
+    // PRIORITY 0: Extract DevOps patterns (HIGHEST - project-specific workflows)
+    const devopsPreferences = this.preferenceExtractor.extractPreferences(content)
+      .filter(pref => pref.key.startsWith('devops_'));
+
+    for (const devops of devopsPreferences) {
+      if (devops.confidence >= this.config.captureSettings.minConfidence) {
+        // Handle both string and object value types
+        const data = typeof devops.value === 'object'
+          ? {
+              ...devops.value,
+              key: devops.key,
+              confidence: devops.confidence,
+              isOverride: devops.isOverride
+            }
+          : {
+              value: devops.value,
+              key: devops.key,
+              confidence: devops.confidence,
+              isOverride: devops.isOverride
+            };
+
+        memories.push({
+          type: 'devops',
+          content: devops.raw,
+          data,
+          confidence: devops.confidence,
+          priority: 0  // HIGHEST priority
+        });
+      }
+    }
+
     // PRIORITY 1: Check for explicit "remember" commands
     const rememberRegex = /(?:remember|Remember)\s+(?:that\s+)?(.+?)(?:[.!?]|$)/gi;
     const rememberMatches = content.matchAll(rememberRegex);
-    
+
     for (const match of rememberMatches) {
       const memoryContent = match[1].trim();
       if (memoryContent) {
@@ -185,7 +216,7 @@ export class MemoryCaptureMiddleware {
             confidence: 1.0
           },
           confidence: 1.0,  // Always highest confidence
-          priority: 1  // Highest priority
+          priority: 1  // Second highest priority
         });
       }
     }
@@ -194,11 +225,11 @@ export class MemoryCaptureMiddleware {
     for (const pattern of this.config.preferencePatterns) {
       const regex = new RegExp(pattern.pattern, 'gi');
       const matches = content.matchAll(regex);
-      
+
       for (const match of matches) {
         // Skip if this was already captured as explicit memory
         if (match[0].toLowerCase().includes('remember')) continue;
-        
+
         memories.push({
           type: pattern.type,
           content: match[0],
@@ -214,13 +245,15 @@ export class MemoryCaptureMiddleware {
       }
     }
 
-    // PRIORITY 3: Use existing PreferenceExtractor
-    const preferences = this.preferenceExtractor.extractPreferences(content);
+    // PRIORITY 3: Use existing PreferenceExtractor (non-devops preferences)
+    const preferences = this.preferenceExtractor.extractPreferences(content)
+      .filter(pref => !pref.key.startsWith('devops_')); // Skip devops, already handled
+
     for (const pref of preferences) {
       if (pref.confidence >= this.config.captureSettings.minConfidence) {
-        // Skip if already captured as explicit memory
+        // Skip if already captured as explicit memory or devops
         if (pref.raw.toLowerCase().includes('remember')) continue;
-        
+
         memories.push({
           type: 'preference',
           content: pref.raw,

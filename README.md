@@ -196,6 +196,75 @@ You: "No, put scripts in scripts/ directory not root"
 Next time: Search finds correction and applies automatically
 ```
 
+## Claude Code Skills Integration (v0.5.0+)
+
+Claude Recall now integrates with **Claude Code Skills** for better LLM compliance and automatic memory management.
+
+### What Are Skills?
+
+Skills are structured task modules that teach Claude how to perform specific workflows. Unlike `.claude/CLAUDE.md` (which are passive instructions), Skills are recognized by Claude Code's runtime and loaded intelligently.
+
+**Benefits:**
+- ✅ **Better compliance**: Skills are runtime-integrated, not just text instructions
+- ✅ **Progressive disclosure**: Only load detailed instructions when needed
+- ✅ **Structured format**: YAML frontmatter makes parsing more reliable
+- ✅ **Tool teaching**: Explicitly teaches WHEN and HOW to use MCP tools
+
+### Memory Management Skill
+
+**Location:** `.claude/skills/memory-management/SKILL.md`
+
+This Skill teaches Claude to:
+1. **Search memories before tasks** - Automatic search before file operations
+2. **Store memories after outcomes** - Success/failure/correction capture
+3. **Apply learned patterns** - Use devops workflows, preferences automatically
+4. **Check what's captured** - Verify automatic capture worked
+
+**Created automatically** when you install Claude Recall in a project.
+
+### Skill Structure
+
+```
+.claude/
+├── CLAUDE.md                     # Backward compatibility
+├── agents/                       # Optional context-manager agent
+└── skills/
+    └── memory-management/
+        ├── SKILL.md              # Main skill definition
+        └── references/
+            ├── devops-patterns.md      # DevOps capture examples
+            ├── capture-examples.md     # Manual storage templates
+            └── troubleshooting.md      # Common issues & fixes
+```
+
+### How Skills Work
+
+1. **Metadata loaded first** - Claude reads skill name/description (fast)
+2. **Full instructions when needed** - Detailed workflow loaded on-demand
+3. **References as needed** - Examples and patterns loaded if required
+
+**Example:**
+```
+User: "Create authentication module"
+
+Claude:
+1. Loads memory-management Skill metadata
+2. Reads SKILL.md instructions → "Search before tasks"
+3. Searches: mcp__claude-recall__search("authentication devops testing")
+4. Finds: "Always use JWT" + "Tests in __tests__/" + "TDD approach"
+5. Creates auth module following learned patterns
+6. Loads references/capture-examples.md for success storage template
+7. Stores: "Created auth with JWT - SUCCESS"
+```
+
+### Backward Compatibility
+
+**Both work together:**
+- **CLAUDE.md** - General instructions for Claude Code
+- **SKILL.md** - Specific memory management workflow
+
+Skills take precedence when both exist, but CLAUDE.md provides fallback for users without Skills support.
+
 ## How Memory Capture Works
 
 **You don't need to say "remember"** - Claude Recall automatically captures preferences when you speak naturally.
@@ -246,37 +315,49 @@ Claude Recall uses a **three-tier priority system** to capture memories:
 
 Claude Recall stores different types of memories (sorted by priority):
 
-### 1. Corrections (Highest Priority)
+### 1. DevOps (Highest Priority - v0.5.0+)
+- **Project-specific workflows** that are critical to how you work
+- Git conventions, testing approaches, build processes
+- Development environment setup (WSL, Docker, etc.)
+- Architecture decisions, tech stack choices
+- **Automatically captured** when you describe your workflow
+- **Example**: "We use TDD for all new features"
+- **Example**: "Always create feature branches from main"
+- **Example**: "This is a teleprompter tool for interviews"
+
+### 2. Corrections
 - User explicitly said "No, do this instead"
 - Fixes to mistakes Claude made
 - Override previous approaches
 - **Example**: "CORRECTION: Tests in __tests__/ not tests/"
 
-### 2. Preferences
+### 3. Preferences
 - Coding style preferences (languages, frameworks, patterns)
 - Tool preferences (testing frameworks, build tools)
-- Workflow preferences (git conventions, file structures)
+- File organization, naming conventions
 - **Example**: "I prefer TypeScript with strict mode"
 
-### 3. Successes
+### 4. Successes
 - What worked in past tasks
 - Approaches that user approved
 - Validated patterns
 - **Example**: "Created auth module with JWT tokens - SUCCESS"
 
-### 4. Failures
+### 5. Failures
 - What didn't work and should be avoided
 - Approaches that failed or were rejected
 - Deprecated approaches
 - **Example**: "Session-based auth failed, use JWT instead"
 
-### 5. Project Knowledge
+### 6. Project Knowledge
 - Database configurations
 - API patterns and endpoints
-- Architecture decisions
+- Infrastructure details (tenant IDs, endpoints)
 - Dependencies and versions
+- **Example**: "Tenant ID is abc-123"
+- **Example**: "API endpoint: https://api.example.com"
 
-### 6. Tool Use
+### 7. Tool Use
 - Historical tool execution
 - Command patterns
 - Workflow steps
