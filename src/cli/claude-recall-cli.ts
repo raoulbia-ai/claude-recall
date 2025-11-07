@@ -43,26 +43,103 @@ class ClaudeRecallCLI {
     const config = configService.getConfig();
     const maxMemories = config.database.compaction?.maxMemories || 10000;
     const usagePercent = (stats.total / maxMemories) * 100;
-    
+
     console.log('\n📊 Claude Recall Statistics\n');
     console.log(`Total Memories: ${stats.total}/${maxMemories} (${usagePercent.toFixed(1)}%)`);
-    
+
     // Simple status indicator
     if (usagePercent >= 90) {
       console.log('⚠️  WARNING: Approaching memory limit - pruning will occur soon');
     } else if (usagePercent >= 80) {
       console.log('⚠️  Note: Memory usage is high');
     }
-    
+
     if (stats.byType && Object.keys(stats.byType).length > 0) {
       console.log('\nMemories by type:');
       for (const [type, count] of Object.entries(stats.byType)) {
         console.log(`  ${type}: ${count}`);
       }
     }
-    
+
+    // Skills Evolution: Show DevOps breakdown
+    this.showSkillsEvolution();
+
+    // Token Savings Estimate
+    this.showTokenSavings(stats);
+
     console.log('\n');
     this.logger.info('CLI', 'Stats displayed', stats);
+  }
+
+  /**
+   * Show skills evolution breakdown
+   */
+  private showSkillsEvolution(): void {
+    const allMemories = this.memoryService.search('');
+    const devopsMemories = allMemories.filter(m => m.type === 'devops');
+
+    if (devopsMemories.length === 0) {
+      return;
+    }
+
+    console.log('\n🚀 Skills Evolution (DevOps Workflows):');
+
+    // Count by category
+    const categoryCounts: Record<string, number> = {};
+    for (const memory of devopsMemories) {
+      try {
+        const data = typeof memory.value === 'string' ? JSON.parse(memory.value) : memory.value;
+        const category = data.category || 'unknown';
+        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+      } catch {
+        categoryCounts['unknown'] = (categoryCounts['unknown'] || 0) + 1;
+      }
+    }
+
+    // Display categories with friendly names
+    const categoryNames: Record<string, string> = {
+      'project_purpose': 'Project Identity',
+      'tech_stack': 'Tech Stack Choices',
+      'dev_environment': 'Dev Environment Setup',
+      'workflow_rule': 'Workflow Rules',
+      'git_workflow': 'Git Patterns',
+      'testing_approach': 'Testing Strategies',
+      'architecture': 'Architecture Decisions',
+      'dependency': 'Dependencies',
+      'build_deploy': 'Build & Deploy'
+    };
+
+    const sortedCategories = Object.entries(categoryCounts)
+      .sort(([, a], [, b]) => b - a);
+
+    for (const [category, count] of sortedCategories) {
+      const friendlyName = categoryNames[category] || category;
+      console.log(`  ${friendlyName}: ${count} pattern${count > 1 ? 's' : ''}`);
+    }
+  }
+
+  /**
+   * Show estimated token savings
+   */
+  private showTokenSavings(stats: any): void {
+    if (stats.total === 0) {
+      return;
+    }
+
+    // Rough estimation:
+    // - Each memory saves ~200 tokens (vs repeating to LLM)
+    // - DevOps memories save ~1,500 tokens each (vs loading reference files)
+    const allMemories = this.memoryService.search('');
+    const devopsCount = allMemories.filter(m => m.type === 'devops').length;
+    const otherCount = stats.total - devopsCount;
+
+    const devopsSavings = devopsCount * 1500;
+    const otherSavings = otherCount * 200;
+    const totalSavings = devopsSavings + otherSavings;
+
+    console.log('\n💰 Estimated Token Savings:');
+    console.log(`  Total saved: ~${totalSavings.toLocaleString()} tokens`);
+    console.log(`  (vs repeating preferences or loading all reference files)`);
   }
 
   /**

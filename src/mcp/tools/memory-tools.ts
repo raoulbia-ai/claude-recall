@@ -235,7 +235,52 @@ export class MemoryTools {
       }
     ];
   }
-  
+
+  /**
+   * Estimate tokens in search results
+   * Uses rough approximation: 1 token ≈ 4 characters
+   */
+  private estimateTokens(results: any[]): number {
+    let totalChars = 0;
+    for (const result of results) {
+      const content = typeof result.value === 'string' ? result.value : JSON.stringify(result.value);
+      totalChars += content.length;
+    }
+    // Rough token estimate: 1 token ≈ 4 characters
+    return Math.ceil(totalChars / 4);
+  }
+
+  /**
+   * Estimate tokens saved by using search vs alternatives
+   * - Loading all reference files: ~8,000 tokens
+   * - Repeating preferences in context: ~200 tokens per preference
+   */
+  private estimateTokenSavings(resultsCount: number, query: string): number {
+    if (resultsCount === 0) {
+      return 0;
+    }
+
+    // Detect what type of search this is based on query keywords
+    const lowerQuery = query.toLowerCase();
+    const isDevOpsSearch = ['git', 'test', 'deploy', 'build', 'docker', 'ci', 'cd', 'workflow'].some(kw => lowerQuery.includes(kw));
+    const isPreferenceSearch = ['prefer', 'style', 'convention', 'always', 'never'].some(kw => lowerQuery.includes(kw));
+
+    let baselineCost = 0;
+
+    if (isDevOpsSearch) {
+      // Alternative: Loading devops reference files (1,500 tokens each × 6 files)
+      baselineCost = 9000;
+    } else if (isPreferenceSearch) {
+      // Alternative: User repeating preferences (200 tokens each)
+      baselineCost = resultsCount * 200;
+    } else {
+      // Generic search - alternative is asking user to repeat (300 tokens per item)
+      baselineCost = resultsCount * 300;
+    }
+
+    return baselineCost;
+  }
+
   private async handleStoreMemory(input: any, context: MCPContext): Promise<any> {
     try {
       const { content, metadata } = input;
@@ -380,23 +425,28 @@ export class MemoryTools {
       }
       
       const limitedResults = filteredResults.slice(0, limit);
-      
+
+      // Calculate token metrics
+      const resultTokens = this.estimateTokens(limitedResults);
+      const tokensSaved = this.estimateTokenSavings(limitedResults.length, query);
+
       // Record the search for monitoring
       this.searchMonitor.recordSearch(
         query,
         limitedResults.length,
         context.sessionId,
         'mcp',
-        { filters, totalResults: results.length }
+        { filters, totalResults: results.length, tokenMetrics: { resultTokens, tokensSaved } }
       );
-      
+
       this.logger.info('MemoryTools', 'Search completed', {
         query,
         totalResults: results.length,
         filteredResults: filteredResults.length,
-        returnedResults: limitedResults.length
+        returnedResults: limitedResults.length,
+        tokenMetrics: { resultTokens, tokensSaved }
       });
-      
+
       return {
         results: limitedResults.map(r => ({
           id: r.key,
@@ -408,7 +458,12 @@ export class MemoryTools {
           filePath: r.file_path
         })),
         total: filteredResults.length,
-        query
+        query,
+        tokenMetrics: {
+          estimatedTokens: resultTokens,
+          estimatedTokensSaved: tokensSaved,
+          efficiency: tokensSaved > 0 ? `${Math.round((tokensSaved / (tokensSaved + resultTokens)) * 100)}%` : '0%'
+        }
       };
       
     } catch (error) {

@@ -2,8 +2,9 @@
 name: "claude-recall-memory-management"
 description: "Automatic memory capture and retrieval for Claude Recall MCP - ensures you never repeat yourself"
 allowed-tools: "mcp__claude-recall__*"
-version: "0.5.0"
+version: "0.6.0"
 priority: "highest"
+search-first: true
 license: "MIT"
 ---
 
@@ -34,13 +35,22 @@ This Skill teaches Claude Code how to use Claude Recall's persistent memory syst
    - Successful implementations to repeat
    - Failed approaches to avoid
 
-## When to Search Memories (BEFORE ANY TASK)
+## Phase 1: Search Memories (REQUIRED FIRST STEP)
 
-**CRITICAL**: Before file operations, decisions, or implementations, ALWAYS search memories:
+**CRITICAL - ALWAYS SEARCH FIRST**: Before file operations, decisions, or implementations, search memories to find existing context:
 
 ```
 mcp__claude-recall__search("[task keywords] devops preferences success failure correction")
 ```
+
+**Search-First Benefits** (from MCP code execution article):
+- ✅ **Context efficiency**: Only load what you need (not all reference files)
+- ✅ **Token savings**: Search results use fewer tokens than loading all patterns
+- ✅ **Progressive disclosure**: Discover tools/patterns on-demand, not upfront
+
+**When to load references:**
+- ✅ If search found relevant memories → **Skip references**, use memories instead
+- ✅ If search found nothing → Load appropriate reference file from `references/`
 
 ### Search Examples:
 
@@ -120,6 +130,36 @@ mcp__claude-recall__store_memory({
 })
 ```
 
+## Privacy & Security: What NOT to Store
+
+**NEVER store sensitive data in memories:**
+
+❌ **Secrets**:
+- API keys, access tokens, passwords
+- Environment variables with `API_KEY`, `SECRET`, `PASSWORD`, `TOKEN`
+- Private keys, certificates, credentials
+
+❌ **Personal Identifiable Information (PII)**:
+- Email addresses (personal or customer)
+- Phone numbers
+- Social Security Numbers, Tax IDs
+- Credit card numbers, payment info
+
+❌ **Sensitive Configuration**:
+- Production database connection strings with passwords
+- OAuth client secrets
+- Webhook secrets, signing keys
+
+✅ **Safe to store**:
+- General architecture patterns ("We use JWT for auth")
+- Tool choices ("We prefer PostgreSQL")
+- Workflow rules ("Always run tests before commit")
+- Non-sensitive configuration ("API base URL: https://api.example.com")
+
+**Why this matters**: Memories are stored locally but could be exported or synced. Following privacy-by-default prevents accidental leaks.
+
+**See** `references/privacy.md` for detailed examples and automatic filtering patterns.
+
 ## Check What's Captured
 
 To see what memories have been automatically captured:
@@ -198,11 +238,17 @@ User doesn't have to repeat preferences! ✓
 1. Use manual storage for that specific item
 2. The pattern may not have matched - broader trigger words help
 
-**For more examples:**
-- Load `references/devops-patterns.md` for DevOps memory examples
-- Load `references/capture-examples.md` for manual storage templates
-- Load `references/troubleshooting.md` for common issues
+**For more examples (ONLY if search didn't help):**
+- **Search first**, then load references only if needed
+- `references/devops/` - Topic-specific DevOps patterns (git, testing, architecture, etc.)
+- `references/capture-examples.md` - Manual storage templates
+- `references/troubleshooting.md` - Common issues
+- `references/privacy.md` - What NOT to store (secrets, PII)
 
 ---
 
-**Remember**: This Skill ensures the learning loop works automatically. Your job is to search memories BEFORE tasks and trust the automatic capture for most cases.
+**Remember**:
+1. **ALWAYS search first** - Most efficient use of context
+2. **Skip references if search succeeded** - Memories are more relevant than examples
+3. **Trust automatic capture** - Handles most patterns
+4. **The learning loop works best when you search before every task**
