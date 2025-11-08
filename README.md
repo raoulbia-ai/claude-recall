@@ -28,6 +28,13 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **Optional agent** - Advanced context-manager agent available for complex workflows
 - **Correction priority** - User corrections given highest priority (never repeat mistakes)
 
+### 🧠 Intelligence & Evolution (v0.7.0+)
+- **Sophistication tracking** - Measures agent progression from basic tool use to compositional reasoning
+- **Failure learning** - Captures what failed, why it failed, and what should be done instead (counterfactual reasoning)
+- **Evolution metrics** - View progression score, confidence trends, and failure rates over time
+- **Structured memories** - Rich Title/Description/Content format for better human readability
+- **Automatic classification** - Memories auto-classified by sophistication level (L1-L4)
+
 ### 🔒 Privacy & Security First
 - **100% Local** - All memories stored locally in SQLite (~/.claude-recall/)
 - **No cloud sync** - Your data never leaves your machine
@@ -385,6 +392,64 @@ claude-recall clear --force               # Clear everything
 # Test memory capture (for debugging)
 claude-recall capture user-prompt '{"content":"your message here"}'
 ```
+
+### Intelligence & Evolution Commands (v0.7.0+)
+
+```bash
+# View memory evolution and sophistication metrics
+claude-recall evolution
+claude-recall evolution --days 60           # Analyze last 60 days
+claude-recall evolution --project my-app    # Filter by project
+
+# View failure memories with counterfactual learning
+claude-recall failures
+claude-recall failures --limit 20           # Show 20 most recent
+claude-recall failures --project my-app     # Filter by project
+```
+
+**Example `evolution` output:**
+```
+📈 Memory Evolution
+
+Analysis Period: Last 30 days
+Total Memories: 145
+Progression Score: 67/100
+
+Sophistication Breakdown:
+  Procedural (L1):      45 ( 31.0%)
+  Self-Reflection (L2): 38 ( 26.2%)
+  Adaptive (L3):        52 ( 35.9%)
+  Compositional (L4):   10 (  6.9%)
+
+Average Confidence: 0.78 ↗
+Failure Rate: 12.4% ↘
+
+○ Agent developing adaptive patterns
+```
+
+**Example `failures` output:**
+```
+❌ Failure Memories (Counterfactual Learning)
+
+1. Avoid: Reading file without existence check
+   What Failed: Attempted to read config.json directly
+   Why Failed: File does not exist at expected location
+   Should Do: Verify file path exists before reading. Use fs.existsSync()
+   Preventative Checks:
+     - Verify file exists before reading (fs.existsSync)
+     - Handle ENOENT errors gracefully
+
+2. Avoid: Session-based authentication
+   What Failed: Session-based auth implementation
+   Why Failed: User reported: Doesn't scale across multiple servers
+   Should Do: Use JWT tokens instead
+```
+
+**Sophistication Levels:**
+- **L1 Procedural**: Basic tool use, simple actions
+- **L2 Self-Reflection**: Error checking, corrections, learning from failures
+- **L3 Adaptive**: Systematic workflows, devops patterns
+- **L4 Compositional**: Multi-constraint reasoning, complex decision-making
 
 ## Memory Management
 

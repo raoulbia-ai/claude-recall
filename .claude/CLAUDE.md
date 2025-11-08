@@ -84,6 +84,58 @@ Claude Recall provides these MCP tools (access via `mcp__claude-recall__*`):
 - **`mcp__claude-recall__get_stats`**: View memory statistics
 - **`mcp__claude-recall__clear_context`**: Clear session context
 
+## Intelligence & Evolution (v0.7.0+)
+
+### Automatic Failure Learning
+
+Claude Recall now **automatically captures failures with counterfactual reasoning**:
+- **What failed**: The approach or action that didn't work
+- **Why it failed**: Root cause analysis (file not found, permission denied, etc.)
+- **What should be done instead**: Counterfactual suggestion (the right approach)
+- **Preventative checks**: Steps to prevent the failure from recurring
+
+**No manual storage needed** - failures are auto-detected from:
+- Error messages and exceptions
+- User corrections ("That didn't work", "Failed", "Error")
+
+### Sophistication Tracking
+
+Every memory is **automatically classified by sophistication level**:
+- **L1 Procedural**: Basic tool use, simple actions
+- **L2 Self-Reflection**: Error checking, corrections, learning from failures
+- **L3 Adaptive**: Systematic workflows, devops patterns
+- **L4 Compositional**: Multi-constraint reasoning, complex decision-making
+
+View your agent's evolution: `npx claude-recall evolution`
+
+### New CLI Commands (v0.7.0+)
+
+**View memory evolution metrics:**
+```bash
+npx claude-recall evolution                    # Last 30 days
+npx claude-recall evolution --days 60          # Last 60 days
+npx claude-recall evolution --project my-app   # Filter by project
+```
+
+Shows:
+- Progression score (0-100)
+- Sophistication breakdown (L1-L4 percentages)
+- Confidence trends (improving/stable/declining)
+- Failure rate trends (improving/stable/worsening)
+
+**View failure memories with counterfactual learning:**
+```bash
+npx claude-recall failures                     # Last 10 failures
+npx claude-recall failures --limit 20          # Show 20 most recent
+npx claude-recall failures --project my-app    # Filter by project
+```
+
+Shows:
+- What failed and why
+- What should have been done instead
+- Preventative checks to avoid recurrence
+- Alternative approaches to consider
+
 ## Memory Types
 
 Memories are categorized by type (sorted by priority):
