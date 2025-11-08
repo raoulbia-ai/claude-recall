@@ -13,6 +13,9 @@ import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
 import { LiveTestCommand } from './commands/live-test';
 import { QueueIntegrationService } from '../services/queue-integration';
+import { MemoryEvolution, SophisticationLevel } from '../services/memory-evolution';
+import { FailureExtractor } from '../services/failure-extractor';
+import { MCPCommands } from './commands/mcp-commands';
 
 const program = new Command();
 
@@ -37,54 +40,315 @@ class ClaudeRecallCLI {
   /**
    * Show memory statistics
    */
-  showStats(): void {
-    const stats = this.memoryService.getStats();
+  showStats(options?: { project?: string; global?: boolean }): void {
+    let stats;
     const configService = ConfigService.getInstance();
     const config = configService.getConfig();
     const maxMemories = config.database.compaction?.maxMemories || 10000;
+
+    if (options?.global) {
+      // Show stats for all memories
+      stats = this.memoryService.getStats();
+      console.log('\n📊 Claude Recall Statistics (All Projects)\n');
+    } else if (options?.project) {
+      // Show stats for specific project + universal
+      stats = this.getProjectStats(options.project);
+      console.log(`\n📊 Claude Recall Statistics (Project: ${options.project})\n`);
+    } else {
+      // Show stats for current project + universal
+      const projectId = configService.getProjectId();
+      stats = this.getProjectStats(projectId);
+      console.log(`\n📊 Claude Recall Statistics (Project: ${projectId})\n`);
+    }
+
     const usagePercent = (stats.total / maxMemories) * 100;
-    
-    console.log('\n📊 Claude Recall Statistics\n');
     console.log(`Total Memories: ${stats.total}/${maxMemories} (${usagePercent.toFixed(1)}%)`);
-    
+
     // Simple status indicator
     if (usagePercent >= 90) {
       console.log('⚠️  WARNING: Approaching memory limit - pruning will occur soon');
     } else if (usagePercent >= 80) {
       console.log('⚠️  Note: Memory usage is high');
     }
-    
+
     if (stats.byType && Object.keys(stats.byType).length > 0) {
       console.log('\nMemories by type:');
       for (const [type, count] of Object.entries(stats.byType)) {
         console.log(`  ${type}: ${count}`);
       }
     }
-    
+
+    // Skills Evolution: Show DevOps breakdown
+    this.showSkillsEvolution();
+
+    // Token Savings Estimate
+    this.showTokenSavings(stats);
+
     console.log('\n');
     this.logger.info('CLI', 'Stats displayed', stats);
   }
 
   /**
-   * Search memories by query
+   * Get stats for a specific project (includes universal and unscoped memories)
    */
-  search(query: string, options: { limit?: number; json?: boolean }): void {
-    const limit = options.limit || 10;
-    const results = this.memoryService.search(query);
-    const topResults = results.slice(0, limit);
-    
-    if (options.json) {
-      console.log(JSON.stringify(topResults, null, 2));
+  private getProjectStats(projectId: string): any {
+    const allMemories = this.memoryService.search('');
+    const projectMemories = allMemories.filter(m =>
+      m.project_id === projectId ||
+      m.scope === 'universal' ||
+      m.project_id === null
+    );
+
+    // Calculate byType breakdown
+    const byType: Record<string, number> = {};
+    for (const mem of projectMemories) {
+      byType[mem.type] = (byType[mem.type] || 0) + 1;
+    }
+
+    return {
+      total: projectMemories.length,
+      byType
+    };
+  }
+
+  /**
+   * Show skills evolution breakdown
+   */
+  private showSkillsEvolution(): void {
+    const allMemories = this.memoryService.search('');
+    const devopsMemories = allMemories.filter(m => m.type === 'devops');
+
+    if (devopsMemories.length === 0) {
       return;
     }
-    
+
+    console.log('\n🚀 Skills Evolution (DevOps Workflows):');
+
+    // Count by category
+    const categoryCounts: Record<string, number> = {};
+    for (const memory of devopsMemories) {
+      try {
+        const data = typeof memory.value === 'string' ? JSON.parse(memory.value) : memory.value;
+        const category = data.category || 'unknown';
+        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+      } catch {
+        categoryCounts['unknown'] = (categoryCounts['unknown'] || 0) + 1;
+      }
+    }
+
+    // Display categories with friendly names
+    const categoryNames: Record<string, string> = {
+      'project_purpose': 'Project Identity',
+      'tech_stack': 'Tech Stack Choices',
+      'dev_environment': 'Dev Environment Setup',
+      'workflow_rule': 'Workflow Rules',
+      'git_workflow': 'Git Patterns',
+      'testing_approach': 'Testing Strategies',
+      'architecture': 'Architecture Decisions',
+      'dependency': 'Dependencies',
+      'build_deploy': 'Build & Deploy'
+    };
+
+    const sortedCategories = Object.entries(categoryCounts)
+      .sort(([, a], [, b]) => b - a);
+
+    for (const [category, count] of sortedCategories) {
+      const friendlyName = categoryNames[category] || category;
+      console.log(`  ${friendlyName}: ${count} pattern${count > 1 ? 's' : ''}`);
+    }
+  }
+
+  /**
+   * Show estimated token savings
+   */
+  private showTokenSavings(stats: any): void {
+    if (stats.total === 0) {
+      return;
+    }
+
+    // Rough estimation:
+    // - Each memory saves ~200 tokens (vs repeating to LLM)
+    // - DevOps memories save ~1,500 tokens each (vs loading reference files)
+    const allMemories = this.memoryService.search('');
+    const devopsCount = allMemories.filter(m => m.type === 'devops').length;
+    const otherCount = stats.total - devopsCount;
+
+    const devopsSavings = devopsCount * 1500;
+    const otherSavings = otherCount * 200;
+    const totalSavings = devopsSavings + otherSavings;
+
+    console.log('\n💰 Estimated Token Savings:');
+    console.log(`  Total saved: ~${totalSavings.toLocaleString()} tokens`);
+    console.log(`  (vs repeating preferences or loading all reference files)`);
+  }
+
+  /**
+   * Show memory evolution metrics (v0.7.0)
+   */
+  showEvolution(options: { project?: string; days?: number }): void {
+    const evolution = MemoryEvolution.getInstance();
+    const metrics = evolution.getEvolutionMetrics(
+      options.project,
+      options.days || 30
+    );
+
+    console.log('\n📈 Memory Evolution\n');
+    console.log(`Analysis Period: Last ${options.days || 30} days`);
+    if (options.project) {
+      console.log(`Project: ${options.project}`);
+    }
+    console.log(`Total Memories: ${metrics.totalMemories}`);
+    console.log(`Progression Score: ${metrics.progressionScore}/100\n`);
+
+    if (metrics.totalMemories === 0) {
+      console.log('No memories found for this period.\n');
+      return;
+    }
+
+    console.log('Sophistication Breakdown:');
+    const total = metrics.totalMemories;
+    const levels = [
+      { level: 1, name: 'Procedural (L1)' },
+      { level: 2, name: 'Self-Reflection (L2)' },
+      { level: 3, name: 'Adaptive (L3)' },
+      { level: 4, name: 'Compositional (L4)' }
+    ];
+
+    for (const { level, name } of levels) {
+      const count = metrics.sophisticationBreakdown[level as SophisticationLevel];
+      const pct = ((count / total) * 100).toFixed(1);
+      console.log(`  ${name}: ${count.toString().padStart(3)} (${pct.padStart(5)}%)`);
+    }
+
+    console.log('');
+
+    // Confidence trend
+    const confidenceArrow = metrics.confidenceTrend === 'improving' ? '↗' :
+                            metrics.confidenceTrend === 'declining' ? '↘' : '→';
+    console.log(`Average Confidence: ${metrics.averageConfidence.toFixed(2)} ${confidenceArrow}`);
+
+    // Failure trend
+    const failureArrow = metrics.failureTrend === 'improving' ? '↗ Better' :
+                         metrics.failureTrend === 'worsening' ? '↘ Worse' : '→';
+    console.log(`Failure Rate: ${metrics.failureRate.toFixed(1)}% ${failureArrow}\n`);
+
+    // Interpretation
+    if (metrics.progressionScore >= 75) {
+      console.log('✓ Agent demonstrating sophisticated reasoning');
+    } else if (metrics.progressionScore >= 50) {
+      console.log('○ Agent developing adaptive patterns');
+    } else {
+      console.log('◌ Agent in early learning phase');
+    }
+
+    console.log('');
+    this.logger.info('CLI', 'Evolution metrics displayed', metrics);
+  }
+
+  /**
+   * Show failure memories (v0.7.0)
+   */
+  showFailures(options: { limit?: number; project?: string }): void {
+    const allMemories = this.memoryService.search('');
+    let failures = allMemories.filter(m => m.type === 'failure');
+
+    if (options.project) {
+      failures = failures.filter(m => m.project_id === options.project);
+    }
+
+    // Sort by timestamp (newest first)
+    failures.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // Limit results
+    const limit = options.limit || 10;
+    const displayFailures = failures.slice(0, limit);
+
+    console.log('\n❌ Failure Memories (Counterfactual Learning)\n');
+    console.log(`Found ${failures.length} failures (showing ${displayFailures.length})\n`);
+
+    if (displayFailures.length === 0) {
+      console.log('No failure memories found.\n');
+      return;
+    }
+
+    displayFailures.forEach((failure, index) => {
+      const value = typeof failure.value === 'string'
+        ? JSON.parse(failure.value)
+        : failure.value;
+
+      const content = value.content || value;
+
+      console.log(`${index + 1}. ${value.title || 'Untitled Failure'}`);
+      console.log(`   What Failed: ${content.what_failed || 'Unknown'}`);
+      console.log(`   Why Failed: ${content.why_failed || 'Unknown'}`);
+      console.log(`   Should Do: ${content.what_should_do || 'Unknown'}`);
+
+      if (content.preventative_checks && content.preventative_checks.length > 0) {
+        console.log(`   Preventative Checks:`);
+        content.preventative_checks.forEach((check: string) => {
+          console.log(`     - ${check}`);
+        });
+      }
+
+      console.log(`   Context: ${content.context || 'Unknown'}`);
+      console.log(`   When: ${new Date(failure.timestamp || 0).toLocaleString()}`);
+      console.log('');
+    });
+
+    this.logger.info('CLI', 'Failures displayed', { count: displayFailures.length });
+  }
+
+  /**
+   * Search memories by query
+   */
+  search(query: string, options: { limit?: number; json?: boolean; project?: string; global?: boolean }): void {
+    const limit = options.limit || 10;
+
+    // Determine search scope
+    let results;
+    if (options.global) {
+      // Global search: all memories
+      results = this.memoryService.search(query);
+    } else if (options.project) {
+      // Project-specific search: project + universal
+      results = this.memoryService.findRelevant({
+        query,
+        projectId: options.project
+      });
+    } else {
+      // Default: current project + universal
+      const config = ConfigService.getInstance();
+      results = this.memoryService.findRelevant({
+        query,
+        projectId: config.getProjectId()
+      });
+    }
+
+    const topResults = results.slice(0, limit);
+
+    if (options.json) {
+      // Format for hook consumption - include relevance_score field
+      const formattedResults = topResults.map((result: any) => ({
+        key: result.key,
+        value: result.value,
+        type: result.type,
+        timestamp: result.timestamp,
+        relevance_score: result.score, // Rename score to relevance_score for hooks
+        access_count: result.access_count,
+        project_id: result.project_id,
+        file_path: result.file_path
+      }));
+      console.log(JSON.stringify(formattedResults, null, 2));
+      return;
+    }
+
     if (topResults.length === 0) {
       console.log('\nNo memories found matching your query.\n');
       return;
     }
-    
+
     console.log(`\n🔍 Found ${results.length} memories (showing top ${topResults.length}):\n`);
-    
+
     topResults.forEach((result: any, index: number) => {
       console.log(`${index + 1}. [${result.type}] Score: ${result.score.toFixed(3)}`);
       console.log(`   Content: ${this.truncateContent(result.value)}`);
@@ -92,7 +356,7 @@ class ClaudeRecallCLI {
       console.log(`   Time: ${new Date(result.timestamp || 0).toLocaleString()}`);
       console.log('');
     });
-    
+
     this.logger.info('CLI', 'Search completed', { query, resultCount: results.length });
   }
 
@@ -244,6 +508,58 @@ class ClaudeRecallCLI {
     this.logger.info('CLI', 'Status displayed');
   }
 
+  /**
+   * Store a memory directly from CLI
+   */
+  async store(content: string, options: { type?: string; confidence?: number; metadata?: string }): Promise<void> {
+    try {
+      const type = options.type || 'preference';
+      const confidence = options.confidence || 0.8;
+
+      // Parse metadata if provided
+      let metadata = {};
+      if (options.metadata) {
+        try {
+          metadata = JSON.parse(options.metadata);
+        } catch (error) {
+          console.error('❌ Invalid metadata JSON');
+          process.exit(1);
+        }
+      }
+
+      // Generate unique key
+      const key = `cli_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Store memory
+      this.memoryService.store({
+        key,
+        value: {
+          content,
+          confidence,
+          source: 'cli',
+          ...metadata,
+          timestamp: Date.now()
+        },
+        type,
+        context: {
+          timestamp: Date.now()
+        },
+        relevanceScore: confidence
+      });
+
+      console.log(`✅ Memory stored successfully`);
+      console.log(`   ID: ${key}`);
+      console.log(`   Type: ${type}`);
+      console.log(`   Confidence: ${confidence}`);
+
+      this.logger.info('CLI', 'Memory stored', { key, type, confidence });
+    } catch (error) {
+      console.error('❌ Store failed:', error);
+      this.logger.error('CLI', 'Store failed', error);
+      process.exit(1);
+    }
+  }
+
   private truncateContent(content: any): string {
     const str = typeof content === 'string' ? content : JSON.stringify(content);
     const maxLength = 100;
@@ -252,20 +568,32 @@ class ClaudeRecallCLI {
   }
 }
 
+// Get version from package.json
+function getVersion(): string {
+  try {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')
+    );
+    return packageJson.version;
+  } catch (error) {
+    return '0.3.0'; // Fallback
+  }
+}
+
 // Setup CLI commands
 async function main() {
   program
     .name('claude-recall')
     .description('Memory-enhanced Claude Code via MCP')
-    .version('0.2.19')
+    .version(getVersion())
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
   // MCP command
   const mcpCmd = program
     .command('mcp')
-    .description('MCP server commands');
-    
+    .description('MCP server commands (start, stop, status, cleanup, ps, restart)');
+
   mcpCmd
     .command('start')
     .description('Start Claude Recall as an MCP server')
@@ -274,7 +602,7 @@ async function main() {
         // Initialize queue integration service for background processing
         const queueIntegration = QueueIntegrationService.getInstance();
         await queueIntegration.initialize();
-        
+
         const server = new MCPServer();
         server.setupSignalHandlers();
         await server.start();
@@ -284,19 +612,19 @@ async function main() {
         process.exit(1);
       }
     });
-    
+
   mcpCmd
     .command('test')
     .description('Test MCP server functionality')
     .action(async () => {
       console.log('🧪 Testing Claude Recall MCP Server...\n');
-      
+
       // Check if configured in Claude
       const fs = require('fs');
       const path = require('path');
       const os = require('os');
       const claudeConfig = path.join(os.homedir(), '.claude.json');
-      
+
       try {
         if (fs.existsSync(claudeConfig)) {
           const config = JSON.parse(fs.readFileSync(claudeConfig, 'utf-8'));
@@ -311,24 +639,27 @@ async function main() {
         } else {
           console.log('❌ ~/.claude.json not found');
         }
-        
+
         // Test database connection
         const configService = ConfigService.getInstance();
         const dbPath = configService.getDatabasePath();
         console.log('\n✅ Database configured at:', dbPath);
-        
+
         // Test basic MCP protocol
         console.log('\n✅ MCP server is ready to start');
         console.log('\nTo use with Claude Code:');
         console.log('1. Ensure Claude Code is not running');
         console.log('2. Start Claude Code');
         console.log('3. Use MCP tools like mcp__claude-recall__store_memory');
-        
+
       } catch (error) {
         console.error('❌ Test failed:', error);
         process.exit(1);
       }
     });
+
+  // Register MCP process management commands
+  MCPCommands.register(mcpCmd);
 
   // Migration commands
   MigrateCommand.register(program);
@@ -342,11 +673,15 @@ async function main() {
     .description('Search memories by query')
     .option('-l, --limit <number>', 'Maximum results to show', '10')
     .option('--json', 'Output as JSON')
+    .option('--project <id>', 'Filter by project ID (includes universal memories)')
+    .option('--global', 'Search all projects and memories')
     .action((query, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.search(query, {
         limit: parseInt(options.limit),
-        json: options.json
+        json: options.json,
+        project: options.project,
+        global: options.global
       });
       process.exit(0);
     });
@@ -355,9 +690,44 @@ async function main() {
   program
     .command('stats')
     .description('Show memory statistics')
-    .action(() => {
+    .option('--project <id>', 'Filter by project ID')
+    .option('--global', 'Show all memories across all projects')
+    .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
-      cli.showStats();
+      cli.showStats({
+        project: options.project,
+        global: options.global
+      });
+      process.exit(0);
+    });
+
+  // Evolution command
+  program
+    .command('evolution')
+    .description('View memory evolution and sophistication metrics')
+    .option('--project <id>', 'Filter by project ID')
+    .option('--days <number>', 'Number of days to analyze', '30')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showEvolution({
+        project: options.project,
+        days: parseInt(options.days)
+      });
+      process.exit(0);
+    });
+
+  // Failures command
+  program
+    .command('failures')
+    .description('View failure memories with counterfactual learning')
+    .option('--limit <number>', 'Maximum failures to show', '10')
+    .option('--project <id>', 'Filter by project ID')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showFailures({
+        limit: parseInt(options.limit),
+        project: options.project
+      });
       process.exit(0);
     });
 
@@ -401,6 +771,23 @@ async function main() {
     .action(async () => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.status();
+      process.exit(0);
+    });
+
+  // Store command
+  program
+    .command('store <content>')
+    .description('Store a memory directly')
+    .option('-t, --type <type>', 'Memory type (default: preference)', 'preference')
+    .option('-c, --confidence <score>', 'Confidence score 0.0-1.0 (default: 0.8)', '0.8')
+    .option('-m, --metadata <json>', 'Additional metadata as JSON string')
+    .action(async (content, options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.store(content, {
+        type: options.type,
+        confidence: parseFloat(options.confidence),
+        metadata: options.metadata
+      });
       process.exit(0);
     });
 

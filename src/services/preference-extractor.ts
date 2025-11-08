@@ -2,7 +2,7 @@ import { LoggingService } from './logging';
 
 export interface ExtractedPreference {
   key: string;           // e.g., "test_location", "code_style"
-  value: string;         // e.g., "tests-arlo", "4_spaces"
+  value: string | { category: string; value: string; raw: string; };         // e.g., "tests-arlo", "4_spaces", or devops object
   confidence: number;    // 0.0-1.0 confidence score
   raw: string;           // Original text
   isOverride: boolean;   // True if this updates existing preference
@@ -48,6 +48,78 @@ export class PreferenceExtractor {
     file_organization: {
       triggers: ["save", "store", "put", "place", "create", "organize"],
       types: ["config", "configs", "configuration", "assets", "images", "styles", "components"]
+    },
+    project_info: {
+      // Generic key-value patterns for project information (IDs, endpoints, URLs, etc.)
+      // Broad triggers - these are words commonly used when providing project details
+      triggers: ["id", "endpoint", "api", "url", "configured", "our", "using", "is", ":", "have"],
+      patterns: [
+        // Pattern: "X ID is Y" or "X ID: Y"
+        { pattern: /([\w\s]+)\s*(?:ID|id)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "X endpoint is Y" or "X endpoint: Y"
+        { pattern: /([\w\s]+)\s*(?:endpoint|api)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "X URL is Y" or "X URL: Y"
+        { pattern: /([\w\s]+)\s*(?:URL|url)\s*(?:is|:)\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "configured to X" or "configured as X"
+        { pattern: /configured\s+(?:to|as)\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "configuration" },
+        // Pattern: "our X is Y"
+        { pattern: /our\s+([\w\s]+)\s+(?:is|:)\s+([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
+        // Pattern: "we're using X for Y" or "we use X"
+        { pattern: /we(?:'re| are)?\s+using\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "tool" },
+        // Pattern: "X: Y" (generic key-value)
+        { pattern: /([\w\s]{3,20}):\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 }
+      ]
+    },
+    devops: {
+      // DevOps workflows, development practices, git conventions, testing approaches
+      // All patterns are generic and work across any project domain
+      triggers: [
+        "this is", "built with", "uses", "requires", "depends on",
+        "develop on", "test on", "deploy", "workflow", "always", "must", "never",
+        "architecture", "approach", "strategy", "git", "commit", "branch",
+        "tdd", "testing", "build", "environment"
+      ],
+      patterns: [
+        // Project identity patterns
+        { pattern: /this\s+(?:is|will be)\s+(?:a|an)\s+(.+?)(?:\.|$)/i, category: "project_purpose" },
+        { pattern: /(?:building|creating)\s+(?:a|an)\s+(.+?)(?:\.|$)/i, category: "project_purpose" },
+
+        // Tech stack patterns
+        { pattern: /built\s+with\s+(.+?)(?:\.|,|and|$)/i, category: "tech_stack" },
+        { pattern: /uses?\s+([\w\s+]+?)\s+(?:for|as|to)/i, category: "tech_stack" },
+        { pattern: /(?:frontend|backend|database|framework).*?(?:is|uses?)\s+(.+?)(?:\.|,|$)/i, category: "tech_stack" },
+
+        // Dev environment patterns
+        { pattern: /(?:develop|code|work)\s+(?:on|in|with)\s+(.+?)(?:\.|,|for|$)/i, category: "dev_environment" },
+        { pattern: /use\s+(WSL|Windows|Linux|Mac|macOS|Docker).*?for\s+(.+?)(?:\.|,|$)/i, category: "dev_environment" },
+
+        // Workflow rule patterns
+        { pattern: /always\s+(.+?)\s+before\s+(.+?)(?:\.|$)/i, category: "workflow_rule" },
+        { pattern: /must\s+(.+?)(?:\.|,|before|after)/i, category: "workflow_rule" },
+        { pattern: /never\s+(.+?)(?:\.|,|$)/i, category: "workflow_rule" },
+
+        // Git workflow patterns
+        { pattern: /(?:create|use|make)\s+.*?branch.*?(?:from|for)\s+(.+?)(?:\.|$)/i, category: "git_workflow" },
+        { pattern: /commit.*?(?:format|style|convention).*?(?:is|uses?)\s+(.+?)(?:\.|$)/i, category: "git_workflow" },
+        { pattern: /(?:merge|squash|rebase).*?(?:before|after|into)\s+(.+?)(?:\.|$)/i, category: "git_workflow" },
+
+        // Testing approach patterns
+        { pattern: /(?:use|follow|practice)\s+(TDD|test[- ]driven|BDD|behavior[- ]driven)/i, category: "testing_approach" },
+        { pattern: /tests?\s+(?:go|belong|are|live)\s+in\s+(.+?)(?:\.|$)/i, category: "testing_approach" },
+        { pattern: /(?:write|run)\s+tests?\s+(?:before|after|for)\s+(.+?)(?:\.|$)/i, category: "testing_approach" },
+
+        // Architecture patterns
+        { pattern: /(?:uses?|follows?)\s+(.+?)\s+(?:architecture|pattern|design)(?:\.|$)/i, category: "architecture" },
+        { pattern: /(?:microservices?|monolith|serverless|event[- ]driven)/i, category: "architecture" },
+
+        // Dependency patterns
+        { pattern: /requires?\s+(.+?)(?:\.|,|for)/i, category: "dependency" },
+        { pattern: /depends?\s+on\s+(.+?)(?:\.|$)/i, category: "dependency" },
+
+        // Build/deploy patterns
+        { pattern: /(?:build|deploy|run)\s+(?:with|using)\s+(.+?)(?:\.|$)/i, category: "build_deploy" },
+        { pattern: /(?:docker|container|kubernetes|k8s)/i, category: "build_deploy" }
+      ]
     }
   };
 
@@ -62,7 +134,7 @@ export class PreferenceExtractor {
       for (const sentence of sentences) {
         if (this.indicatesPreference(sentence)) {
           const preference = this.extractPreferenceFromSentence(sentence);
-          if (preference && preference.confidence > 0.6) { // Only high-confidence extractions
+          if (preference && preference.confidence >= 0.5) { // Lowered threshold for broader capture
             preferences.push(preference);
             
             this.logger.debug('PreferenceExtractor', `Extracted preference: ${preference.key} = ${preference.value}`, {
@@ -91,7 +163,10 @@ export class PreferenceExtractor {
     const preferenceIndicators = [
       "prefer", "use", "save", "store", "put", "place", "create", "make",
       "should", "want", "like", "love", "always", "never", "from now on",
-      "moving forward", "going forward", "henceforth"
+      "moving forward", "going forward", "henceforth",
+      // Team/project context
+      "our", "we're using", "we have", "we use", "configured", "set up",
+      "using", "enabled", "installed", "established"
     ];
     
     return preferenceIndicators.some(indicator => lower.includes(indicator));
@@ -140,6 +215,10 @@ export class PreferenceExtractor {
       case 'file_organization':
         value = this.extractFileOrganization(sentence, pattern);
         break;
+      case 'project_info':
+        return this.extractProjectInfo(sentence, pattern);
+      case 'devops':
+        return this.extractDevOps(sentence, pattern);
     }
     
     if (!value) return null;
@@ -231,7 +310,7 @@ export class PreferenceExtractor {
    */
   private extractFileOrganization(sentence: string, pattern: any): string | null {
     const lower = sentence.toLowerCase();
-    
+
     // Look for file type + location pattern
     for (const type of pattern.types) {
       if (lower.includes(type)) {
@@ -241,7 +320,144 @@ export class PreferenceExtractor {
         }
       }
     }
-    
+
+    return null;
+  }
+
+  /**
+   * Extract generic project information (IDs, endpoints, URLs, configurations)
+   */
+  private extractProjectInfo(sentence: string, pattern: any): ExtractedPreference | null {
+    // Try each pattern
+    for (const infoPattern of pattern.patterns) {
+      const match = sentence.match(infoPattern.pattern);
+      if (match) {
+        let key: string;
+        let value: string;
+
+        // Extract key based on pattern configuration
+        if (infoPattern.keyIndex > 0 && match[infoPattern.keyIndex]) {
+          key = match[infoPattern.keyIndex].trim().toLowerCase().replace(/\s+/g, '_');
+        } else if (infoPattern.keyDefault) {
+          key = infoPattern.keyDefault;
+        } else {
+          continue; // Skip if no key found
+        }
+
+        // Extract value
+        if (match[infoPattern.valueIndex]) {
+          value = match[infoPattern.valueIndex].trim();
+        } else {
+          continue; // Skip if no value found
+        }
+
+        // Detect override intent
+        const overrideSignals = this.detectOverrideSignals(sentence);
+        const isOverride = overrideSignals.length > 0;
+
+        // Set confidence based on pattern specificity
+        let confidence = 0.6; // Base confidence for project info
+
+        // Boost confidence for explicit patterns (ID, endpoint, URL)
+        const lower = sentence.toLowerCase();
+        if (lower.includes(' id') || lower.includes('endpoint') || lower.includes('url')) {
+          confidence += 0.15;
+        }
+
+        // Boost confidence for team context ("our", "we")
+        if (lower.includes('our ') || lower.includes('we')) {
+          confidence += 0.1;
+        }
+
+        // Boost confidence for override signals
+        if (isOverride) {
+          confidence += 0.1;
+        }
+
+        return {
+          key,
+          value,
+          confidence: Math.min(confidence, 1.0),
+          raw: sentence.trim(),
+          isOverride,
+          overrideSignals
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract DevOps workflow patterns (git, testing, build, environment)
+   */
+  private extractDevOps(sentence: string, pattern: any): ExtractedPreference | null {
+    const lower = sentence.toLowerCase();
+
+    // Try each devops pattern
+    for (const devopsPattern of pattern.patterns) {
+      const match = sentence.match(devopsPattern.pattern);
+      if (match) {
+        // Extract matched content
+        const matchedText = match[0];
+        const category = devopsPattern.category;
+
+        // Determine key based on category
+        let key = category;
+        let value = matchedText.trim();
+
+        // Extract more specific value if captured group exists
+        if (match[1]) {
+          value = match[1].trim();
+        }
+
+        // Detect override intent
+        const overrideSignals = this.detectOverrideSignals(sentence);
+        const isOverride = overrideSignals.length > 0;
+
+        // Set confidence based on pattern type and keywords
+        let confidence = 0.7; // Base confidence for devops
+
+        // Boost confidence for strong keywords
+        if (lower.includes('always') || lower.includes('never') || lower.includes('must')) {
+          confidence += 0.2;
+        }
+
+        // Boost confidence for specific categories
+        if (category === 'workflow_rule' || category === 'git_workflow') {
+          confidence += 0.1;
+        }
+
+        // Boost confidence for explicit practices
+        if (lower.includes('tdd') || lower.includes('test-driven') || lower.includes('ci/cd')) {
+          confidence += 0.15;
+        }
+
+        // Boost confidence for team context
+        if (lower.includes('our ') || lower.includes('we ') || lower.includes('team')) {
+          confidence += 0.1;
+        }
+
+        // Boost confidence for override signals
+        if (isOverride) {
+          confidence += 0.1;
+        }
+
+        return {
+          key: `devops_${category}`,
+          value: {
+            category,
+            value,
+            raw: matchedText
+          },
+          confidence: Math.min(confidence, 1.0),
+          raw: sentence.trim(),
+          isOverride,
+          overrideSignals
+        };
+      }
+    }
+
     return null;
   }
 

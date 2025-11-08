@@ -42,15 +42,29 @@ export class MemoryRetrieval {
     return [...new Set([...keywords, ...words])];
   }
   
-  findRelevant(context: Context): ScoredMemory[] {
+  findRelevant(context: Context, sortBy: 'relevance' | 'timestamp' = 'relevance'): ScoredMemory[] {
     // Extract keywords from query if provided
     if (context.query && !context.keywords) {
       context.keywords = this.extractKeywords(context.query);
     }
-    
+
     // Use enhanced search that looks for keywords in memory values
     const candidates = this.storage.searchByContext(context);
-    
+
+    if (sortBy === 'timestamp') {
+      // Sort by timestamp DESC (newest first)
+      const sorted = candidates
+        .map(memory => ({
+          ...memory,
+          score: 1.0 // Placeholder score for timestamp sorting
+        }))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      // Return top results (no limit applied here, caller controls via slice)
+      return sorted;
+    }
+
+    // Default: relevance sorting
     // Score and prioritize by memory type
     const scored = candidates
       .map(memory => ({
@@ -62,15 +76,15 @@ export class MemoryRetrieval {
         const typeOrder: Record<string, number> = { 'project-knowledge': 3, 'preference': 2, 'tool-use': 1 };
         const aTypeScore = typeOrder[a.type] || 0;
         const bTypeScore = typeOrder[b.type] || 0;
-        
+
         if (aTypeScore !== bTypeScore) {
           return bTypeScore - aTypeScore;
         }
-        
+
         // Second priority: relevance score
         return b.score - a.score;
       });
-    
+
     // Return top 5 most relevant memories
     return scored.slice(0, 5);
   }

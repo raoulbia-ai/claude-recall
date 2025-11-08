@@ -8,115 +8,607 @@ Every time you start a new conversation with Claude, you're starting from scratc
 
 ## Key Features
 
-### 🧠 Automatic Memory System
-- **No manual commands needed** - Claude automatically searches for relevant memories based on your prompts
-- **Context-aware** - Retrieves memories that are semantically related to your current conversation
-- **Persistent across restarts** - Your preferences and context survive Claude Code restarts
+### 🧠 Intelligent Learning Loop
+- **Never repeat yourself** - State preferences once, Claude remembers forever
+- **Learn from outcomes** - Automatically captures what worked and what didn't
+- **Direct MCP search** - Fast, simple memory lookup (milliseconds, no agent overhead)
+- **Automatic application** - Preferences and successful patterns applied without asking
+- **Persistent across restarts** - Your learnings survive Claude Code restarts
 
 ### 📝 Intelligent Capture
 - **Automatic extraction** - Captures preferences, patterns, and important information from conversations
 - **Categorized storage** - Organizes memories by type (preferences, project knowledge, corrections)
 - **Priority-based** - More important or frequently used memories are prioritized
 
+### ⚡ Advanced Features (v0.3.2+)
+- **Direct MCP calls** - Fast memory search without agent overhead (milliseconds)
+- **Comprehensive search** - Single search finds preferences, successes, failures, and corrections
+- **Outcome capture** - Stores what worked and what didn't for future learning
+- **Learning loop** - Pre-action search → Execute → Post-action outcome → Future tasks apply learnings
+- **Optional agent** - Advanced context-manager agent available for complex workflows
+- **Correction priority** - User corrections given highest priority (never repeat mistakes)
+
+### 🧠 Intelligence & Evolution (v0.7.0+)
+- **Sophistication tracking** - Measures agent progression from basic tool use to compositional reasoning
+- **Failure learning** - Captures what failed, why it failed, and what should be done instead (counterfactual reasoning)
+- **Evolution metrics** - View progression score, confidence trends, and failure rates over time
+- **Structured memories** - Rich Title/Description/Content format for better human readability
+- **Automatic classification** - Memories auto-classified by sophistication level (L1-L4)
+
 ### 🔒 Privacy & Security First
 - **100% Local** - All memories stored locally in SQLite (~/.claude-recall/)
 - **No cloud sync** - Your data never leaves your machine
 - **You own your data** - Export, view, or delete memories at any time
 - **Zero telemetry** - No data collection or phone-home behavior
-- **Security Audited** - Reviewed by Claude Code using `/security-review` command: No exposed secrets, SQL injection protection, 0 npm vulnerabilities
+- **Security audited** - Reviewed using `/security-review` command: No exposed secrets, SQL injection protection, 0 npm vulnerabilities
 
 ## Quick Start
 
-### Option 1: Local Project Installation (Recommended)
-For automatic CLAUDE.md integration in your project:
+### Recommended: Local Project Installation
+
+**Install in each project where you want Claude Recall:**
+
 ```bash
 cd your-project
 npm install claude-recall
 ```
-This automatically adds Claude Recall instructions to your project's CLAUDE.md file.
 
-### Option 2: Global Installation
-For CLI access from anywhere:
+**What this does:**
+- ✅ Creates `.claude/` directory with memory-first workflow instructions
+- ✅ Configures MCP server in `~/.claude.json` (global, works everywhere)
+- ✅ Adds to `package.json` (team members get it automatically)
+- ✅ CLI available via `npx claude-recall stats`
+
+**After installation, verify:**
 ```bash
+npx claude-recall --version   # Should show 0.3.3 or later
+```
+
+### Why Local Over Global?
+
+**Local installation (`npm install claude-recall`):**
+- ✅ `.claude/CLAUDE.md` auto-created in your project
+- ✅ `.claude/agents/` available for Claude Code
+- ✅ Team members get it via `package.json`
+- ✅ Use `npx claude-recall` for CLI
+- ✅ MCP server still works globally
+
+**Global installation (`npm install -g`):**
+- ❌ `.claude/` directory NOT auto-created
+- ❌ Must manually copy integration files to each project
+- ❌ Harder to share with team
+- ✅ CLI available without `npx`
+
+**Bottom line:** Install locally in each project. The MCP server (`~/.claude.json`) and database (`~/.claude-recall/`) are shared globally anyway, so you get the best of both worlds.
+
+### If You Have Global Installation
+
+**Remove it:**
+```bash
+npm uninstall -g claude-recall
+```
+
+**Then install locally in each project** as shown above. Your memories in `~/.claude-recall/claude-recall.db` are preserved!
+
+### Cross-Platform Compatibility
+
+Claude Recall works on **Windows, Linux, and macOS**. Native binaries (SQLite) compile automatically for your platform during `npm install`.
+
+**WSL Users:** Use local installation only. Global installation on Windows + WSL usage causes binary conflicts ("invalid ELF header" errors).
+
+**Everyone else:** Both local and global work, but local is still recommended for the benefits above.
+
+## Updating Claude Recall
+
+**For local installations (recommended):**
+
+```bash
+# 1. Update in your project
+cd your-project
+npm install claude-recall@latest
+
+# 2. Restart Claude Code
+```
+
+**For global installations (not recommended):**
+
+```bash
+# 1. Update globally
 npm install -g claude-recall@latest
+
+# 2. Restart Claude Code
 ```
 
-**Note:** You can have both installations. For global installations, manually add this to your `~/.claude/CLAUDE.md`:
-```markdown
-## Claude Recall Integration
-- IMPORTANT: Always search memories before creating new files or making decisions
-- Use `mcp__claude-recall__search_memory` to check for stored preferences and project knowledge
-- Memories include: coding preferences, file locations, project patterns, and team conventions
+**Note:** MCP server configuration in `~/.claude.json` persists across updates. You only need to update the package.
+
+## Verifying Claude Recall is Working
+
+To confirm claude-recall is active in your Claude Code session:
+
+**1. Check MCP Server Status**
+```bash
+claude mcp list
+```
+Should show `claude-recall` in the list of active servers.
+
+**2. Ask Claude to Search Memories**
+Simply ask: "Search my memories for [anything]" - Claude should be able to call the search tool.
+
+**3. Check Available MCP Tools**
+Ask Claude: "What MCP tools do you have access to?" - Claude should list tools starting with `mcp__claude-recall__` including:
+- `mcp__claude-recall__store_memory`
+- `mcp__claude-recall__retrieve_memory`
+- `mcp__claude-recall__search`
+
+**4. Store and Retrieve a Test Memory**
+```
+You: "Remember that I prefer testing with Jest"
+Claude: [Should call store_memory tool]
+
+You: "What testing framework do I prefer?"
+Claude: [Should search memories and find Jest]
 ```
 
-After installation, verify with: `claude-recall --version` (or `npx claude-recall --version` for local installs)
+**5. Check Stats via CLI**
+```bash
+claude-recall stats
+```
+This shows if memories are being stored.
+
+**6. Check Running Process**
+```bash
+ps aux | grep claude-recall
+```
+Should show the MCP server process running.
 
 ## How It Works
 
-When you chat with Claude, the system:
-1. **Captures** your preferences and important information
-2. **Stores** them locally in SQLite (`~/.claude-recall/claude-recall.db`)
-3. **Retrieves** relevant memories when you start new conversations
-4. **Injects** context so Claude remembers your preferences
+Claude Recall implements an **intelligent learning loop** that ensures you never repeat yourself:
 
-### Example
+### The Learning Loop
+
+1. **Store Preferences**: When you express preferences, they're stored in SQLite
+2. **Pre-Action Search**: Before tasks, Claude searches memories directly (fast MCP call)
+3. **Find Context**: Search finds preferences + successes + failures + corrections automatically
+4. **Execute with Context**: Claude applies what was learned
+5. **Capture Outcome**: After task, Claude stores success/failure/correction
+6. **Future Application**: Next similar task automatically applies learnings
+
+### Complete Example: Never Repeat Yourself
+
 ```
-You: "I prefer TypeScript with strict mode for all my projects"
-[Claude Recall automatically stores this preference]
+=== First Time: State Preference ===
+You: "I prefer Python for scripts"
+[Claude stores preference via MCP]
 
---- Later, in a new session ---
+=== Second Time: First Use ===
+You: "Create a test script"
+[Claude searches: mcp__claude-recall__search("scripts python test")]
+[Search finds: "I prefer Python for scripts"]
+[Claude creates test.py using Python]
+You: "Perfect!"
+[Claude stores: "Created test script with Python - SUCCESS"]
 
-You: "Create a new module for user authentication"
-[Claude Recall retrieves your TypeScript preference]
-Claude: "I'll create a TypeScript module with strict mode enabled..."
+=== Third Time: Automatic Application ===
+You: "Create a build script"
+[Claude searches: mcp__claude-recall__search("scripts build python")]
+[Search finds: "I prefer Python" + "test.py SUCCESS"]
+[Claude creates build.py automatically - learned pattern!]
+You: *Don't have to repeat preference - it was learned!*
+
+=== Correction Loop ===
+You: "No, put scripts in scripts/ directory not root"
+[Claude stores: "CORRECTION: Scripts in scripts/ directory" (highest priority)]
+[Claude moves file immediately]
+Next time: Search finds correction and applies automatically
 ```
+
+## Claude Code Skills Integration (v0.5.0+)
+
+Claude Recall now integrates with **Claude Code Skills** for better LLM compliance and automatic memory management.
+
+### What Are Skills?
+
+Skills are structured task modules that teach Claude how to perform specific workflows. Unlike `.claude/CLAUDE.md` (which are passive instructions), Skills are recognized by Claude Code's runtime and loaded intelligently.
+
+**Benefits:**
+- ✅ **Better compliance**: Skills are runtime-integrated, not just text instructions
+- ✅ **Progressive disclosure**: Only load detailed instructions when needed
+- ✅ **Structured format**: YAML frontmatter makes parsing more reliable
+- ✅ **Tool teaching**: Explicitly teaches WHEN and HOW to use MCP tools
+
+### Memory Management Skill
+
+**Location:** `.claude/skills/memory-management/SKILL.md`
+
+This Skill teaches Claude to:
+1. **Search memories before tasks** - Automatic search before file operations
+2. **Store memories after outcomes** - Success/failure/correction capture
+3. **Apply learned patterns** - Use devops workflows, preferences automatically
+4. **Check what's captured** - Verify automatic capture worked
+
+**Created automatically** when you install Claude Recall in a project.
+
+### Skill Structure
+
+```
+.claude/
+├── CLAUDE.md                     # Backward compatibility
+├── agents/                       # Optional context-manager agent
+└── skills/
+    └── memory-management/
+        ├── SKILL.md              # Main skill definition
+        └── references/
+            ├── devops-patterns.md      # DevOps capture examples
+            ├── capture-examples.md     # Manual storage templates
+            └── troubleshooting.md      # Common issues & fixes
+```
+
+### How Skills Work
+
+1. **Metadata loaded first** - Claude reads skill name/description (fast)
+2. **Full instructions when needed** - Detailed workflow loaded on-demand
+3. **References as needed** - Examples and patterns loaded if required
+
+**Example:**
+```
+User: "Create authentication module"
+
+Claude:
+1. Loads memory-management Skill metadata
+2. Reads SKILL.md instructions → "Search before tasks"
+3. Searches: mcp__claude-recall__search("authentication devops testing")
+4. Finds: "Always use JWT" + "Tests in __tests__/" + "TDD approach"
+5. Creates auth module following learned patterns
+6. Loads references/capture-examples.md for success storage template
+7. Stores: "Created auth with JWT - SUCCESS"
+```
+
+### Backward Compatibility
+
+**Both work together:**
+- **CLAUDE.md** - General instructions for Claude Code
+- **SKILL.md** - Specific memory management workflow
+
+Skills take precedence when both exist, but CLAUDE.md provides fallback for users without Skills support.
+
+## How Memory Capture Works
+
+**You don't need to say "remember"** - Claude Recall automatically captures preferences when you speak naturally.
+
+### Automatic Trigger Words
+
+Claude Recall uses a **three-tier priority system** to capture memories:
+
+#### Priority 1: Explicit "Remember" Commands (100% Confidence)
+```
+"Remember that I prefer TypeScript with strict mode"
+```
+
+#### Priority 2 & 3: Automatic Pattern Detection (60%+ Confidence)
+
+**Strong indicators** (boost confidence):
+- `prefer`, `always`, `never`
+- `from now on`, `moving forward`, `going forward`
+
+**General indicators**:
+- `use`, `should`, `want`, `like`, `love`
+- `save`, `store`, `put`, `place`, `create`, `make`
+
+### Examples That Work WITHOUT "Remember"
+
+| What You Say | Automatically Captured? | Confidence |
+|--------------|------------------------|------------|
+| "I prefer TypeScript with strict mode" | ✅ YES | High (80%+) |
+| "Always use Jest for testing" | ✅ YES | High (80%+) |
+| "Never put tests in the root directory" | ✅ YES | High (80%+) |
+| "From now on, use 4 spaces for indentation" | ✅ YES | High (85%+) |
+| "I want scripts in the scripts/ folder" | ✅ YES | Medium (70%+) |
+| "Use Axios for HTTP requests" | ✅ YES | Medium (70%+) |
+| "Tests should go in __tests__/" | ✅ YES | Medium (70%+) |
+| "Create files with .ts extension" | ✅ YES | Medium (65%+) |
+| "Maybe use React" | ❌ NO | Low (< 60%) |
+
+### Confidence Threshold
+
+- **Minimum confidence**: 60% required for automatic capture
+- **"Remember" keyword**: Ensures 100% confidence capture (but not required)
+- **Stronger language**: "prefer", "always", "never" boost confidence
+- **Override signals**: "from now on", "actually", "instead" boost confidence
+
+**Bottom line**: Speak naturally about your preferences - Claude Recall captures them automatically. Use "remember" only when you want to ensure something is captured with absolute certainty.
 
 ## Memory Types
 
-### Preferences
+Claude Recall stores different types of memories (sorted by priority):
+
+### 1. DevOps (Highest Priority - v0.5.0+)
+- **Project-specific workflows** that are critical to how you work
+- Git conventions, testing approaches, build processes
+- Development environment setup (WSL, Docker, etc.)
+- Architecture decisions, tech stack choices
+- **Automatically captured** when you describe your workflow
+- **Example**: "We use TDD for all new features"
+- **Example**: "Always create feature branches from main"
+- **Example**: "This is a teleprompter tool for interviews"
+
+### 2. Corrections
+- User explicitly said "No, do this instead"
+- Fixes to mistakes Claude made
+- Override previous approaches
+- **Example**: "CORRECTION: Tests in __tests__/ not tests/"
+
+### 3. Preferences
 - Coding style preferences (languages, frameworks, patterns)
 - Tool preferences (testing frameworks, build tools)
-- Workflow preferences (git conventions, file structures)
+- File organization, naming conventions
+- **Example**: "I prefer TypeScript with strict mode"
 
-### Project Knowledge
+### 4. Successes
+- What worked in past tasks
+- Approaches that user approved
+- Validated patterns
+- **Example**: "Created auth module with JWT tokens - SUCCESS"
+
+### 5. Failures
+- What didn't work and should be avoided
+- Approaches that failed or were rejected
+- Deprecated approaches
+- **Example**: "Session-based auth failed, use JWT instead"
+
+### 6. Project Knowledge
 - Database configurations
 - API patterns and endpoints
-- Architecture decisions
+- Infrastructure details (tenant IDs, endpoints)
 - Dependencies and versions
+- **Example**: "Tenant ID is abc-123"
+- **Example**: "API endpoint: https://api.example.com"
 
-### Context
-- Current tasks and work in progress
-- Recent decisions and changes
-- Team conventions
-
-### Corrections
-- Learned from mistakes
-- Updated patterns
-- Deprecated approaches to avoid
+### 7. Tool Use
+- Historical tool execution
+- Command patterns
+- Workflow steps
 
 ## CLI Commands
 
-### Essential Commands
+All commands can be run from your terminal or **within Claude Code sessions** (Claude can execute them using the Bash tool).
+
+### Memory Operations
+
+**Search memories:**
 ```bash
-# View statistics
-claude-recall stats
-
-# Search memories
-claude-recall search "database configuration"
-
-# Export memories
-claude-recall export memories.json
-
-# Import memories
-claude-recall import memories.json
-
-# Clear memories (use with caution)
-claude-recall clear --type preferences  # Clear only preferences
-claude-recall clear --force               # Clear everything
-
-# Test memory capture (for debugging)
-claude-recall capture user-prompt '{"content":"your message here"}'
+npx claude-recall search "database"
+npx claude-recall search "auth" --limit 20           # Show up to 20 results
+npx claude-recall search "config" --project my-app   # Filter by project + universal
+npx claude-recall search "testing" --global          # Search all projects
+npx claude-recall search "api" --json                # Output as JSON
 ```
+
+**View statistics:**
+```bash
+npx claude-recall stats                    # Current project + universal + unscoped
+npx claude-recall stats --project my-app   # Specific project + universal
+npx claude-recall stats --global           # All projects
+```
+
+**Store memory directly:**
+```bash
+npx claude-recall store "I prefer TypeScript with strict mode"
+npx claude-recall store "Use PostgreSQL" --type project-knowledge
+```
+
+### Intelligence & Evolution (v0.7.0+)
+
+**View memory evolution and sophistication metrics:**
+```bash
+npx claude-recall evolution                    # Last 30 days
+npx claude-recall evolution --days 60          # Last 60 days
+npx claude-recall evolution --project my-app   # Filter by project
+```
+
+**Example `evolution` output:**
+```
+📈 Memory Evolution
+
+Analysis Period: Last 30 days
+Total Memories: 145
+Progression Score: 67/100
+
+Sophistication Breakdown:
+  Procedural (L1):      45 ( 31.0%)
+  Self-Reflection (L2): 38 ( 26.2%)
+  Adaptive (L3):        52 ( 35.9%)
+  Compositional (L4):   10 (  6.9%)
+
+Average Confidence: 0.78 ↗
+Failure Rate: 12.4% ↘
+
+○ Agent developing adaptive patterns
+```
+
+**Sophistication Levels:**
+- **L1 Procedural**: Basic tool use, simple actions
+- **L2 Self-Reflection**: Error checking, corrections, learning from failures
+- **L3 Adaptive**: Systematic workflows, devops patterns
+- **L4 Compositional**: Multi-constraint reasoning, complex decision-making
+
+**View failure memories with counterfactual learning:**
+```bash
+npx claude-recall failures                    # Last 10 failures
+npx claude-recall failures --limit 20         # Show 20 most recent
+npx claude-recall failures --project my-app   # Filter by project
+```
+
+**Example `failures` output:**
+```
+❌ Failure Memories (Counterfactual Learning)
+
+1. Avoid: Reading file without existence check
+   What Failed: Attempted to read config.json directly
+   Why Failed: File does not exist at expected location
+   Should Do: Verify file path exists before reading. Use fs.existsSync()
+   Preventative Checks:
+     - Verify file exists before reading (fs.existsSync)
+     - Handle ENOENT errors gracefully
+
+2. Avoid: Session-based authentication
+   What Failed: Session-based auth implementation
+   Why Failed: User reported: Doesn't scale across multiple servers
+   Should Do: Use JWT tokens instead
+```
+
+### Data Management
+
+**Export/import memories:**
+```bash
+npx claude-recall export memories.json          # Export all memories
+npx claude-recall export backup.json --json     # Export as JSON
+npx claude-recall import memories.json          # Import memories
+```
+
+**Clear memories (use with caution):**
+```bash
+npx claude-recall clear --force                 # Clear everything (requires --force)
+```
+
+### MCP Server Commands
+
+**What are MCP commands?**
+The MCP (Model Context Protocol) server is how Claude Code communicates with Claude Recall. When you install claude-recall, it automatically configures `~/.claude.json` to start the MCP server.
+
+**Process Management (v0.7.4+):**
+```bash
+# Start/stop
+npx claude-recall mcp start              # Start MCP server (auto-started by Claude Code)
+npx claude-recall mcp stop               # Stop running server gracefully
+npx claude-recall mcp restart            # Restart server
+npx claude-recall mcp test               # Test MCP server functionality
+
+# Monitoring
+npx claude-recall mcp status             # Show server status for current project
+npx claude-recall mcp ps                 # List all running MCP servers (all projects)
+
+# Cleanup
+npx claude-recall mcp cleanup            # Remove stale PID files and processes
+npx claude-recall mcp cleanup --dry-run  # Preview cleanup actions
+npx claude-recall mcp cleanup --all      # Stop all MCP servers (all projects)
+```
+
+**When to use:**
+- **Auto-started**: Claude Code automatically starts the MCP server on launch
+- **Manual management**: Stop, restart, or cleanup stale servers as needed
+- **Troubleshooting**: Use `mcp ps` to see running servers, `mcp cleanup` to remove zombies
+- **Testing**: Use `mcp test` to verify the server responds correctly
+
+### Utilities
+
+**Check installation status:**
+```bash
+npx claude-recall status        # Show installation and system status
+npx claude-recall --version     # Show version
+```
+
+**Monitoring (advanced):**
+```bash
+npx claude-recall monitor                      # View search monitoring stats
+npx claude-recall test-memory-search           # Test if Claude searches before file creation
+```
+
+**Migration (if upgrading from old versions):**
+```bash
+npx claude-recall migrate       # Migrate from file-watcher to MCP architecture
+```
+
+### Global Options
+
+All commands support:
+- `--verbose` - Enable verbose logging
+- `--config <path>` - Use custom config file
+- `-h, --help` - Show help for any command
+
+## Project Scoping (v0.7.2+)
+
+Claude Recall now supports **project-specific memory isolation** while keeping universal preferences available everywhere.
+
+### How It Works
+
+- **Single global database**: `~/.claude-recall/claude-recall.db`
+- **Three memory scopes**:
+  - **Universal**: Available in all projects (coding preferences, tools)
+  - **Project**: Only available in the specific project
+  - **Unscoped** (default): Available everywhere (backward compatible)
+- **Project ID**: Automatically detected from directory name
+
+### Storing Memories
+
+**Universal memories** (available everywhere):
+```
+User: "Remember everywhere: I prefer TypeScript with strict mode"
+Claude: [Stores with scope='universal']
+```
+
+**Project-specific memories**:
+```
+User: "For this project, we use SQLite for the database"
+Claude: [Stores with scope='project', project_id='my-app']
+```
+
+**Default** (unscoped, works like before):
+```
+User: "I prefer Jest for testing"
+Claude: [Stores with scope=null, available everywhere]
+```
+
+### Searching with Scopes
+
+**Default** (current project + universal):
+```bash
+npx claude-recall search "database"
+# Returns: Current project memories + universal memories + unscoped
+```
+
+**Specific project**:
+```bash
+npx claude-recall search "database" --project my-app
+# Returns: my-app memories + universal memories + unscoped
+```
+
+**All projects**:
+```bash
+npx claude-recall search "database" --global
+# Returns: All memories from all projects
+```
+
+### Stats with Scopes
+
+**Current project**:
+```bash
+npx claude-recall stats
+# Shows: Memories for current project (claude-recall) + universal + unscoped
+```
+
+**All projects**:
+```bash
+npx claude-recall stats --global
+# Shows: All memories across all projects
+```
+
+### Use Cases
+
+**Universal memories** (scope='universal'):
+- Coding style preferences: "Always use TypeScript with strict mode"
+- Tool preferences: "Prefer Jest for testing"
+- File naming conventions: "Name markdown files with lowercase-dash-case"
+
+**Project-specific memories** (scope='project'):
+- Database choice: "This project uses PostgreSQL"
+- API endpoints: "API base URL is https://api.example.com"
+- Build commands: "Run npm run build:prod for production"
+
+**Unscoped memories** (scope=null, default):
+- Backward compatible
+- Works like v0.7.1 and earlier
+- Available everywhere unless you explicitly scope them
 
 ## Memory Management
 
@@ -205,9 +697,12 @@ npm --version
 ## Best Practices
 
 1. **Be explicit about preferences** - Clear statements like "Always use..." or "Never..." are captured better
-2. **Correct mistakes** - When Claude gets something wrong, the correction is remembered
-3. **Review periodically** - Use `claude-recall stats` to see what's being remembered
-4. **Export important memories** - Backup critical preferences with `claude-recall export`
+2. **Approve or correct** - Say "Good!" or "No, do this" after tasks to build the learning loop
+3. **Trust the learning loop** - Direct MCP search finds preferences, successes, and failures instantly
+4. **Correct mistakes immediately** - Corrections get highest priority and won't be repeated
+5. **Review periodically** - Use `claude-recall stats` to see what's being remembered
+6. **Export important memories** - Backup critical preferences with `claude-recall export`
+7. **Fast and simple** - Direct MCP calls work great for most tasks (agent is optional)
 
 ## Acknowledgements
 

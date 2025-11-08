@@ -172,7 +172,12 @@ export class ConfigService {
   }
   
   getProjectId(): string {
-    return this.config.project.id || this.config.project.rootDir;
+    if (this.config.project.id) {
+      return this.config.project.id;
+    }
+    // Use directory name (basename) instead of full path
+    const rootDir = this.config.project.rootDir;
+    return path.basename(rootDir);
   }
   
   updateConfig(updates: Partial<ClaudeRecallConfig>): void {

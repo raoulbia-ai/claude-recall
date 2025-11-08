@@ -58,9 +58,13 @@ try {
   
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
-  console.log('   Restart Claude Code to activate the memory system.');
-  console.log('\n💡 Tip: Claude Recall works automatically in the background.');
-  console.log('   Your memories are captured and retrieved seamlessly.\n');
+  console.log('   Restart your terminal to activate the memory system.');
+  console.log('\n💡 Tip: Claude Recall works automatically with the memory-researcher agent.');
+  console.log('   Claude Code will search memories before file operations and decisions.');
+  console.log('\n🎯 Agent Integration:');
+  console.log('   The memory-researcher agent is available in .claude/agents/');
+  console.log('   Claude Code reads .claude/CLAUDE.md for memory-first instructions.');
+  console.log('\n   Your memories persist across conversations and restarts.\n');
 
 } catch (error) {
   console.error('❌ Error updating ~/.claude.json:', error.message);

@@ -13,12 +13,16 @@ CREATE TABLE IF NOT EXISTS memories (
   is_active BOOLEAN DEFAULT 1,
   superseded_by TEXT,
   superseded_at INTEGER,
-  confidence_score REAL
+  confidence_score REAL,
+  sophistication_level INTEGER DEFAULT 1,
+  scope TEXT CHECK(scope IN ('universal', 'project', NULL))
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
+CREATE INDEX IF NOT EXISTS idx_memories_scope_project ON memories(scope, project_id);
 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
 CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
 CREATE INDEX IF NOT EXISTS idx_memories_preference_key ON memories(preference_key, is_active);
 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(is_active);
 CREATE INDEX IF NOT EXISTS idx_memories_superseded ON memories(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_memories_sophistication ON memories(sophistication_level);

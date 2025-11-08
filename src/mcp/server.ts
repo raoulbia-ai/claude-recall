@@ -8,6 +8,13 @@ import { SessionManager } from './session-manager';
 import { RateLimiter } from './rate-limiter';
 import { MemoryCaptureMiddleware } from './memory-capture-middleware';
 import { QueueIntegrationService } from '../services/queue-integration';
+import { ResourcesHandler } from './resources-handler';
+import { PromptsHandler } from './prompts-handler';
+import { PreferenceAnalyzer } from '../services/preference-analyzer';
+import { ContextEnhancer } from '../services/context-enhancer';
+import { ConversationContextManager } from '../services/conversation-context-manager';
+import { ProcessManager } from '../services/process-manager';
+import { ConfigService } from '../services/config';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -54,6 +61,13 @@ export class MCPServer {
   private rateLimiter: RateLimiter;
   private memoryCaptureMiddleware: MemoryCaptureMiddleware;
   private queueIntegration: QueueIntegrationService;
+  private resourcesHandler: ResourcesHandler;
+  private promptsHandler: PromptsHandler;
+  private preferenceAnalyzer: PreferenceAnalyzer;
+  private contextEnhancer: ContextEnhancer;
+  private conversationContext: ConversationContextManager;
+  private processManager: ProcessManager;
+  private config: ConfigService;
   private isInitialized = false;
 
   constructor() {
@@ -68,7 +82,18 @@ export class MCPServer {
     });
     this.memoryCaptureMiddleware = new MemoryCaptureMiddleware();
     this.queueIntegration = QueueIntegrationService.getInstance();
-    
+    this.resourcesHandler = new ResourcesHandler();
+    this.promptsHandler = new PromptsHandler();
+    this.preferenceAnalyzer = new PreferenceAnalyzer(
+      this.logger,
+      this.memoryService,
+      this.sessionManager
+    );
+    this.contextEnhancer = ContextEnhancer.getInstance();
+    this.conversationContext = ConversationContextManager.getInstance();
+    this.processManager = ProcessManager.getInstance();
+    this.config = ConfigService.getInstance();
+
     this.setupRequestHandlers();
     this.registerTools();
   }
@@ -89,6 +114,18 @@ export class MCPServer {
             break;
           case 'notifications/initialized':
             response = await this.handleInitialized(request);
+            break;
+          case 'resources/list':
+            response = await this.resourcesHandler.handleResourcesList(request);
+            break;
+          case 'resources/read':
+            response = await this.resourcesHandler.handleResourcesRead(request);
+            break;
+          case 'prompts/list':
+            response = await this.promptsHandler.handlePromptsList(request);
+            break;
+          case 'prompts/get':
+            response = await this.promptsHandler.handlePromptsGet(request);
             break;
           case 'health/check':
             response = await this.handleHealthCheck(request);
@@ -156,9 +193,9 @@ export class MCPServer {
 
   private async handleInitialize(request: MCPRequest): Promise<MCPResponse> {
     const params = request.params || {};
-    
+
     this.logger.info('MCPServer', 'Initializing MCP server', params);
-    
+
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -166,6 +203,8 @@ export class MCPServer {
         protocolVersion: "2024-11-05",
         capabilities: {
           tools: {},
+          resources: {},
+          prompts: {},
           logging: {}
         },
         serverInfo: {
@@ -189,26 +228,34 @@ export class MCPServer {
   }
 
   private async handleToolsList(request: MCPRequest): Promise<MCPResponse> {
+    // Phase 3A: Get tool list with basic descriptions
     const toolList = Array.from(this.tools.values()).map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema
     }));
 
-    this.logger.debug('MCPServer', `Listing ${toolList.length} tools`);
+    // Phase 3A: Enhance tool descriptions with relevant memories
+    const sessionId = request.params?.sessionId || this.generateSessionId();
+    const enhancedTools = await this.contextEnhancer.enhanceToolsList(toolList, sessionId);
+
+    this.logger.debug('MCPServer', `Listing ${enhancedTools.length} tools (enhanced with memories)`);
 
     return {
       jsonrpc: "2.0",
       id: request.id,
       result: {
-        tools: toolList
+        tools: enhancedTools
       }
     };
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
+    // Phase 3B: Proactively inject relevant memories before tool execution
+    request = await this.memoryCaptureMiddleware.enhanceRequestWithMemories(request);
+
     const { name, arguments: toolArgs } = request.params || {};
-    
+
     if (!name || typeof name !== 'string') {
       return this.createErrorResponse(request.id, -32602, 'Invalid params: tool name required');
     }
@@ -223,6 +270,43 @@ export class MCPServer {
     try {
       // Create or get session context
       const sessionId = toolArgs?.sessionId || this.generateSessionId();
+
+      // Phase 4: Check for duplicate requests
+      const duplicateCheck = this.conversationContext.checkForDuplicate(
+        sessionId,
+        name,
+        toolArgs
+      );
+
+      if (duplicateCheck.isDuplicate && duplicateCheck.previousAction) {
+        this.logger.info('MCPServer', 'Duplicate request detected', {
+          sessionId,
+          tool: name,
+          turnsSince: duplicateCheck.turnsSince
+        });
+
+        // Return helpful response instead of re-executing
+        return {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            content: [
+              {
+                type: "text",
+                text: `${duplicateCheck.suggestion}\n\nPrevious result:\n${JSON.stringify(duplicateCheck.previousAction.result, null, 2)}`
+              }
+            ],
+            isError: false,
+            metadata: {
+              toolName: name,
+              duration: Date.now() - startTime,
+              sessionId,
+              wasDuplicate: true,
+              previousTimestamp: duplicateCheck.previousAction.timestamp
+            }
+          }
+        };
+      }
       
       // Get or create session
       let session = this.sessionManager.getSession(sessionId);
@@ -263,9 +347,15 @@ export class MCPServer {
       });
 
       const result = await tool.handler(toolArgs || {}, context);
-      
+
       // Record successful request for rate limiting
       this.rateLimiter.recordRequest(sessionId, true);
+
+      // Phase 2: Track conversation and detect preference signals
+      this.trackConversationTurn(sessionId, name, toolArgs, result);
+
+      // Phase 4: Record action for duplicate detection
+      this.conversationContext.recordAction(sessionId, name, toolArgs, result);
 
       // Claude-flow pattern: Enhanced response format
       return {
@@ -340,9 +430,51 @@ export class MCPServer {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  /**
+   * Phase 2: Track conversation turns and detect preference signals
+   */
+  private trackConversationTurn(
+    sessionId: string,
+    toolName: string,
+    input: any,
+    output: any
+  ): void {
+    try {
+      // Detect preference signals in the conversation
+      const signals = this.preferenceAnalyzer.detectPreferenceSignals(input, output);
+      const hasSignals = signals.length > 0;
+
+      // Add turn to session history
+      this.sessionManager.addConversationTurn(
+        sessionId,
+        toolName,
+        input,
+        output,
+        hasSignals
+      );
+
+      // Check if we should suggest analysis
+      this.preferenceAnalyzer.checkAndSuggestAnalysis(sessionId)
+        .catch(err => {
+          this.logger.error('MCPServer', 'Failed to check analysis suggestion', err);
+        });
+
+      if (hasSignals) {
+        this.logger.debug('MCPServer', 'Preference signals detected', {
+          sessionId,
+          tool: toolName,
+          signalCount: signals.length
+        });
+      }
+    } catch (error) {
+      this.logger.error('MCPServer', 'Failed to track conversation turn', error);
+    }
+  }
+
   private async handleHealthCheck(request: MCPRequest): Promise<MCPResponse> {
     const rateLimiterStats = this.rateLimiter.getStats();
-    
+    const conversationStats = this.conversationContext.getStats();
+
     const health = {
       status: 'healthy',
       version: '0.2.0',
@@ -358,11 +490,16 @@ export class MCPServer {
         activeSessions: rateLimiterStats.activeSessions,
         totalRequests: rateLimiterStats.totalRequests,
         topSessions: rateLimiterStats.topSessions
+      },
+      conversationContext: {
+        activeSessions: conversationStats.activeSessions,
+        totalActions: conversationStats.totalActions,
+        averageActionsPerSession: conversationStats.averageActionsPerSession
       }
     };
-    
+
     this.logger.info('MCPServer', 'Health check performed', health);
-    
+
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -373,13 +510,47 @@ export class MCPServer {
   async start(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Starting Claude Recall MCP server...');
-      
+
+      // Get project ID for PID tracking
+      const projectId = this.config.getProjectId();
+
+      // Check for existing MCP server process
+      const existingPid = this.processManager.readPidFile(projectId);
+
+      if (existingPid) {
+        // Validate if process is actually running
+        if (this.processManager.isProcessRunning(existingPid)) {
+          // Check environment variable for auto-cleanup behavior
+          const autoCleanup = process.env.CLAUDE_RECALL_AUTO_CLEANUP === 'true';
+
+          if (autoCleanup) {
+            this.logger.warn('MCPServer', `Killing stale MCP server (PID: ${existingPid}) before starting...`);
+            this.processManager.killProcess(existingPid, false);
+            this.processManager.removePidFile(projectId);
+            // Give it a moment to shut down
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            throw new Error(
+              `MCP server already running for project "${projectId}" (PID: ${existingPid}). ` +
+              `Stop it first with: npx claude-recall mcp stop`
+            );
+          }
+        } else {
+          // Clean up stale PID file
+          this.logger.info('MCPServer', 'Removing stale PID file...');
+          this.processManager.removePidFile(projectId);
+        }
+      }
+
       // Initialize queue integration for background processing
       await this.queueIntegration.initialize();
       this.logger.info('MCPServer', 'Queue integration initialized');
-      
+
       await this.transport.start();
-      this.logger.info('MCPServer', 'MCP server started successfully');
+
+      // Write PID file after successful startup
+      this.processManager.writePidFile(projectId, process.pid);
+      this.logger.info('MCPServer', `MCP server started successfully (PID: ${process.pid}, Project: ${projectId})`);
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);
       throw error;
@@ -389,21 +560,29 @@ export class MCPServer {
   async stop(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Stopping MCP server...');
-      
+
       // Clean up old sessions before shutdown
       this.sessionManager.cleanupOldSessions();
-      
+
       // Shutdown session manager (persists sessions)
       this.sessionManager.shutdown();
-      
+
       // Shutdown rate limiter
       this.rateLimiter.shutdown();
-      
+
       // Clean up memory capture middleware
       this.memoryCaptureMiddleware.cleanupSessions();
-      
+
+      // Clean up conversation context
+      this.conversationContext.cleanup();
+
       await this.transport.stop();
       this.memoryService.close();
+
+      // Remove PID file on clean shutdown
+      const projectId = this.config.getProjectId();
+      this.processManager.removePidFile(projectId);
+
       this.logger.info('MCPServer', 'MCP server stopped');
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'stop', error as Error);
