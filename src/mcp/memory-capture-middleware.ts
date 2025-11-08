@@ -206,11 +206,11 @@ export class MemoryCaptureMiddleware {
       }
     }
 
-    // PRIORITY 1: Check for explicit "remember" commands
-    const rememberRegex = /(?:remember|Remember)\s+(?:that\s+)?(.+?)(?:[.!?]|$)/gi;
-    const rememberMatches = content.matchAll(rememberRegex);
+    // PRIORITY 1: Check for explicit "remember" or "recall" commands
+    const explicitMemoryRegex = /(?:remember|Remember|recall|Recall)\s+(?:that\s+)?(.+?)(?:[.!?]|$)/gi;
+    const explicitMemoryMatches = content.matchAll(explicitMemoryRegex);
 
-    for (const match of rememberMatches) {
+    for (const match of explicitMemoryMatches) {
       const memoryContent = match[1].trim();
       if (memoryContent) {
         memories.push({
@@ -218,7 +218,7 @@ export class MemoryCaptureMiddleware {
           content: memoryContent,
           data: {
             raw: memoryContent,
-            source: 'explicit_remember_command',
+            source: 'explicit_memory_command',
             confidence: 1.0
           },
           confidence: 1.0,  // Always highest confidence
@@ -254,7 +254,8 @@ export class MemoryCaptureMiddleware {
 
       for (const match of matches) {
         // Skip if this was already captured as explicit memory
-        if (match[0].toLowerCase().includes('remember')) continue;
+        const lower = match[0].toLowerCase();
+        if (lower.includes('remember') || lower.includes('recall')) continue;
 
         memories.push({
           type: pattern.type,

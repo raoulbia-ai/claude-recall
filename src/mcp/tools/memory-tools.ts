@@ -93,13 +93,18 @@ export class MemoryTools {
         inputSchema: {
           type: 'object',
           properties: {
-            content: { 
-              type: 'string', 
-              description: 'Memory content to store' 
+            content: {
+              type: 'string',
+              description: 'Memory content to store'
             },
-            metadata: { 
-              type: 'object', 
-              description: 'Optional metadata for the memory' 
+            metadata: {
+              type: 'object',
+              description: 'Optional metadata for the memory'
+            },
+            scope: {
+              type: 'string',
+              enum: ['universal', 'project'],
+              description: 'Memory scope: "universal" (available in all projects) or "project" (current project only). Default: unscoped (available everywhere for backward compatibility)'
             }
           },
           required: ['content']
@@ -143,17 +148,21 @@ export class MemoryTools {
               type: 'string', 
               description: 'Search query' 
             },
-            filters: { 
-              type: 'object', 
+            filters: {
+              type: 'object',
               description: 'Optional filters to apply',
               properties: {
-                type: { 
-                  type: 'string', 
-                  description: 'Filter by memory type' 
+                type: {
+                  type: 'string',
+                  description: 'Filter by memory type'
                 },
-                projectId: { 
-                  type: 'string', 
-                  description: 'Filter by project ID' 
+                projectId: {
+                  type: 'string',
+                  description: 'Filter by project ID (includes universal memories)'
+                },
+                globalSearch: {
+                  type: 'boolean',
+                  description: 'Search all projects (ignores projectId filter)'
                 }
               }
             },
@@ -283,14 +292,14 @@ export class MemoryTools {
 
   private async handleStoreMemory(input: any, context: MCPContext): Promise<any> {
     try {
-      const { content, metadata } = input;
-      
+      const { content, metadata, scope } = input;
+
       if (!content || typeof content !== 'string') {
         throw new Error('Content is required and must be a string');
       }
-      
+
       const key = `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       this.memoryService.store({
         key,
         value: {
@@ -302,8 +311,9 @@ export class MemoryTools {
         type: 'conversation',
         context: {
           sessionId: context.sessionId,
-          projectId: context.projectId,
-          timestamp: context.timestamp
+          projectId: scope === 'project' ? context.projectId : undefined,
+          timestamp: context.timestamp,
+          scope: scope || null
         }
       });
       
@@ -417,9 +427,19 @@ export class MemoryTools {
           if (filters.type && result.type !== filters.type) {
             return false;
           }
-          if (filters.projectId && result.project_id !== filters.projectId) {
-            return false;
+
+          // Global search: include all memories
+          if (filters.globalSearch) {
+            return true;
           }
+
+          // Project-scoped search: include project + universal + unscoped memories
+          if (filters.projectId) {
+            return result.project_id === filters.projectId ||
+                   result.scope === 'universal' ||
+                   result.project_id === null;
+          }
+
           return true;
         });
       }

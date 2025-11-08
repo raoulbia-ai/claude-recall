@@ -451,6 +451,90 @@ Failure Rate: 12.4% ↘
 - **L3 Adaptive**: Systematic workflows, devops patterns
 - **L4 Compositional**: Multi-constraint reasoning, complex decision-making
 
+## Project Scoping (v0.7.2+)
+
+Claude Recall now supports **project-specific memory isolation** while keeping universal preferences available everywhere.
+
+### How It Works
+
+- **Single global database**: `~/.claude-recall/claude-recall.db`
+- **Three memory scopes**:
+  - **Universal**: Available in all projects (coding preferences, tools)
+  - **Project**: Only available in the specific project
+  - **Unscoped** (default): Available everywhere (backward compatible)
+- **Project ID**: Automatically detected from directory name
+
+### Storing Memories
+
+**Universal memories** (available everywhere):
+```
+User: "Remember everywhere: I prefer TypeScript with strict mode"
+Claude: [Stores with scope='universal']
+```
+
+**Project-specific memories**:
+```
+User: "For this project, we use SQLite for the database"
+Claude: [Stores with scope='project', project_id='my-app']
+```
+
+**Default** (unscoped, works like before):
+```
+User: "I prefer Jest for testing"
+Claude: [Stores with scope=null, available everywhere]
+```
+
+### Searching with Scopes
+
+**Default** (current project + universal):
+```bash
+npx claude-recall search "database"
+# Returns: Current project memories + universal memories + unscoped
+```
+
+**Specific project**:
+```bash
+npx claude-recall search "database" --project my-app
+# Returns: my-app memories + universal memories + unscoped
+```
+
+**All projects**:
+```bash
+npx claude-recall search "database" --global
+# Returns: All memories from all projects
+```
+
+### Stats with Scopes
+
+**Current project**:
+```bash
+npx claude-recall stats
+# Shows: Memories for current project (claude-recall) + universal + unscoped
+```
+
+**All projects**:
+```bash
+npx claude-recall stats --global
+# Shows: All memories across all projects
+```
+
+### Use Cases
+
+**Universal memories** (scope='universal'):
+- Coding style preferences: "Always use TypeScript with strict mode"
+- Tool preferences: "Prefer Jest for testing"
+- File naming conventions: "Name markdown files with lowercase-dash-case"
+
+**Project-specific memories** (scope='project'):
+- Database choice: "This project uses PostgreSQL"
+- API endpoints: "API base URL is https://api.example.com"
+- Build commands: "Run npm run build:prod for production"
+
+**Unscoped memories** (scope=null, default):
+- Backward compatible
+- Works like v0.7.1 and earlier
+- Available everywhere unless you explicitly scope them
+
 ## Memory Management
 
 Claude Recall automatically manages memory to prevent unlimited database growth, with user notifications:

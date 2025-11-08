@@ -233,6 +233,87 @@ Confirm: "✓ Stored preference"
 5. **Use broad search terms**: Include task type + language + preferences + success/failure/correction
 6. **Close the loop**: Pre-action search → Execute → Post-action outcome storage
 
+## Project Scoping (v0.7.2+)
+
+Claude Recall now supports **project-specific memory isolation** to keep universal preferences separate from project-specific information.
+
+### Three Memory Scopes
+
+1. **Universal** (`scope='universal'`): Available in all projects
+   - User says: "Remember everywhere: I prefer TypeScript with strict mode"
+   - Stored as universal memory, accessible from any project
+
+2. **Project** (`scope='project'`): Only available in current project
+   - User says: "For this project, we use PostgreSQL"
+   - Stored with project_id, only accessible from this project
+
+3. **Unscoped** (`scope=null`, default): Available everywhere (backward compatible)
+   - User says: "I prefer Jest for testing"
+   - Stored without scope, works like v0.7.1 and earlier
+
+### Auto-Detection
+
+When storing memories, the system automatically detects scope from user language:
+
+**Universal indicators**:
+- "remember everywhere"
+- "for all projects"
+- "globally"
+- "always use"
+
+**Project indicators**:
+- "for this project"
+- "project-specific"
+- "only here"
+- "in this project"
+
+**Default**: If no indicator, memory is unscoped (available everywhere)
+
+### How Search Works
+
+**Default behavior** (project + universal):
+```
+mcp__claude-recall__search("database")
+```
+Returns: Current project memories + universal memories + unscoped memories
+
+**Global search** (all projects):
+```
+mcp__claude-recall__search("database", filters: { globalSearch: true })
+```
+Returns: All memories from all projects
+
+### CLI Usage
+
+```bash
+# Current project stats
+npx claude-recall stats
+
+# Global stats (all projects)
+npx claude-recall stats --global
+
+# Search current project
+npx claude-recall search "database"
+
+# Search specific project
+npx claude-recall search "database" --project my-app
+
+# Search all projects
+npx claude-recall search "database" --global
+```
+
+### Use Cases
+
+**Universal memories**: Preferences that apply across all your work
+- Coding style: "Always use TypeScript with strict mode"
+- Tools: "Prefer Jest for testing"
+- Conventions: "Name files with kebab-case"
+
+**Project memories**: Project-specific details
+- Database: "This project uses PostgreSQL"
+- API: "Base URL is https://api.example.com"
+- Build: "Run npm run build:prod for production"
+
 ## Advanced: Optional Context-Manager Agent
 
 For complex multi-step research, a `context-manager` agent is available at `.claude/agents/context-manager.md`.

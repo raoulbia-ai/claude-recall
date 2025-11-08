@@ -14,6 +14,8 @@ export interface MemoryServiceContext {
   query?: string;
   keywords?: string[];
   sessionId?: string;
+  scope?: 'universal' | 'project' | null;  // v0.8.0: Memory scope
+  globalSearch?: boolean;  // v0.8.0: For CLI --global flag
 }
 
 export interface MemoryStoreRequest {
@@ -62,14 +64,18 @@ export class MemoryService {
         console.log(`⚠️  Memory usage at ${percent}% (${stats.total}/${maxMemories})`);
       }
       
+      // Detect scope (v0.8.0)
+      const scope = this.detectScope(request);
+
       const memory: Memory = {
         key: request.key,
         value: request.value,
         type: request.type,
-        project_id: request.context?.projectId || this.config.getProjectId(),
+        project_id: scope === 'universal' ? undefined : (request.context?.projectId || this.config.getProjectId()),
         file_path: request.context?.filePath,
         timestamp: request.context?.timestamp || Date.now(),
-        relevance_score: request.relevanceScore || 1.0
+        relevance_score: request.relevanceScore || 1.0,
+        scope: scope
       };
 
       // Auto-classify sophistication level (v0.7.0)
@@ -422,6 +428,43 @@ export class MemoryService {
     }
   }
   
+  /**
+   * Detect memory scope from request (v0.8.0)
+   * @private
+   */
+  private detectScope(request: MemoryStoreRequest): 'universal' | 'project' | null {
+    // Check explicit scope in context
+    if (request.context?.scope) {
+      return request.context.scope;
+    }
+
+    // Extract content for analysis
+    const content = typeof request.value === 'string'
+      ? request.value
+      : JSON.stringify(request.value);
+
+    const lowerContent = content.toLowerCase();
+
+    // Explicit user indicators for universal scope
+    if (lowerContent.includes('remember everywhere') ||
+        lowerContent.includes('for all projects') ||
+        lowerContent.includes('globally') ||
+        lowerContent.includes('always use')) {
+      return 'universal';
+    }
+
+    // Explicit user indicators for project scope
+    if (lowerContent.includes('for this project') ||
+        lowerContent.includes('project-specific') ||
+        lowerContent.includes('only here') ||
+        lowerContent.includes('in this project')) {
+      return 'project';
+    }
+
+    // Default: unscoped (null) for backward compatibility
+    return null;
+  }
+
   /**
    * Close database connection
    */

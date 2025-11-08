@@ -39,14 +39,28 @@ class ClaudeRecallCLI {
   /**
    * Show memory statistics
    */
-  showStats(): void {
-    const stats = this.memoryService.getStats();
+  showStats(options?: { project?: string; global?: boolean }): void {
+    let stats;
     const configService = ConfigService.getInstance();
     const config = configService.getConfig();
     const maxMemories = config.database.compaction?.maxMemories || 10000;
-    const usagePercent = (stats.total / maxMemories) * 100;
 
-    console.log('\n📊 Claude Recall Statistics\n');
+    if (options?.global) {
+      // Show stats for all memories
+      stats = this.memoryService.getStats();
+      console.log('\n📊 Claude Recall Statistics (All Projects)\n');
+    } else if (options?.project) {
+      // Show stats for specific project + universal
+      stats = this.getProjectStats(options.project);
+      console.log(`\n📊 Claude Recall Statistics (Project: ${options.project})\n`);
+    } else {
+      // Show stats for current project + universal
+      const projectId = configService.getProjectId();
+      stats = this.getProjectStats(projectId);
+      console.log(`\n📊 Claude Recall Statistics (Project: ${projectId})\n`);
+    }
+
+    const usagePercent = (stats.total / maxMemories) * 100;
     console.log(`Total Memories: ${stats.total}/${maxMemories} (${usagePercent.toFixed(1)}%)`);
 
     // Simple status indicator
@@ -71,6 +85,29 @@ class ClaudeRecallCLI {
 
     console.log('\n');
     this.logger.info('CLI', 'Stats displayed', stats);
+  }
+
+  /**
+   * Get stats for a specific project (includes universal and unscoped memories)
+   */
+  private getProjectStats(projectId: string): any {
+    const allMemories = this.memoryService.search('');
+    const projectMemories = allMemories.filter(m =>
+      m.project_id === projectId ||
+      m.scope === 'universal' ||
+      m.project_id === null
+    );
+
+    // Calculate byType breakdown
+    const byType: Record<string, number> = {};
+    for (const mem of projectMemories) {
+      byType[mem.type] = (byType[mem.type] || 0) + 1;
+    }
+
+    return {
+      total: projectMemories.length,
+      byType
+    };
   }
 
   /**
@@ -263,9 +300,29 @@ class ClaudeRecallCLI {
   /**
    * Search memories by query
    */
-  search(query: string, options: { limit?: number; json?: boolean }): void {
+  search(query: string, options: { limit?: number; json?: boolean; project?: string; global?: boolean }): void {
     const limit = options.limit || 10;
-    const results = this.memoryService.search(query);
+
+    // Determine search scope
+    let results;
+    if (options.global) {
+      // Global search: all memories
+      results = this.memoryService.search(query);
+    } else if (options.project) {
+      // Project-specific search: project + universal
+      results = this.memoryService.findRelevant({
+        query,
+        projectId: options.project
+      });
+    } else {
+      // Default: current project + universal
+      const config = ConfigService.getInstance();
+      results = this.memoryService.findRelevant({
+        query,
+        projectId: config.getProjectId()
+      });
+    }
+
     const topResults = results.slice(0, limit);
 
     if (options.json) {
@@ -612,11 +669,15 @@ async function main() {
     .description('Search memories by query')
     .option('-l, --limit <number>', 'Maximum results to show', '10')
     .option('--json', 'Output as JSON')
+    .option('--project <id>', 'Filter by project ID (includes universal memories)')
+    .option('--global', 'Search all projects and memories')
     .action((query, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.search(query, {
         limit: parseInt(options.limit),
-        json: options.json
+        json: options.json,
+        project: options.project,
+        global: options.global
       });
       process.exit(0);
     });
@@ -625,9 +686,14 @@ async function main() {
   program
     .command('stats')
     .description('Show memory statistics')
-    .action(() => {
+    .option('--project <id>', 'Filter by project ID')
+    .option('--global', 'Show all memories across all projects')
+    .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
-      cli.showStats();
+      cli.showStats({
+        project: options.project,
+        global: options.global
+      });
       process.exit(0);
     });
 
