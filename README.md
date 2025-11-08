@@ -371,40 +371,39 @@ Claude Recall stores different types of memories (sorted by priority):
 
 ## CLI Commands
 
-### Essential Commands
+All commands can be run from your terminal or **within Claude Code sessions** (Claude can execute them using the Bash tool).
+
+### Memory Operations
+
+**Search memories:**
 ```bash
-# View statistics
-claude-recall stats
-
-# Search memories
-claude-recall search "database configuration"
-
-# Export memories
-claude-recall export memories.json
-
-# Import memories
-claude-recall import memories.json
-
-# Clear memories (use with caution)
-claude-recall clear --type preferences  # Clear only preferences
-claude-recall clear --force               # Clear everything
-
-# Test memory capture (for debugging)
-claude-recall capture user-prompt '{"content":"your message here"}'
+npx claude-recall search "database"
+npx claude-recall search "auth" --limit 20           # Show up to 20 results
+npx claude-recall search "config" --project my-app   # Filter by project + universal
+npx claude-recall search "testing" --global          # Search all projects
+npx claude-recall search "api" --json                # Output as JSON
 ```
 
-### Intelligence & Evolution Commands (v0.7.0+)
-
+**View statistics:**
 ```bash
-# View memory evolution and sophistication metrics
-claude-recall evolution
-claude-recall evolution --days 60           # Analyze last 60 days
-claude-recall evolution --project my-app    # Filter by project
+npx claude-recall stats                    # Current project + universal + unscoped
+npx claude-recall stats --project my-app   # Specific project + universal
+npx claude-recall stats --global           # All projects
+```
 
-# View failure memories with counterfactual learning
-claude-recall failures
-claude-recall failures --limit 20           # Show 20 most recent
-claude-recall failures --project my-app     # Filter by project
+**Store memory directly:**
+```bash
+npx claude-recall store "I prefer TypeScript with strict mode"
+npx claude-recall store "Use PostgreSQL" --type project-knowledge
+```
+
+### Intelligence & Evolution (v0.7.0+)
+
+**View memory evolution and sophistication metrics:**
+```bash
+npx claude-recall evolution                    # Last 30 days
+npx claude-recall evolution --days 60          # Last 60 days
+npx claude-recall evolution --project my-app   # Filter by project
 ```
 
 **Example `evolution` output:**
@@ -427,6 +426,19 @@ Failure Rate: 12.4% ↘
 ○ Agent developing adaptive patterns
 ```
 
+**Sophistication Levels:**
+- **L1 Procedural**: Basic tool use, simple actions
+- **L2 Self-Reflection**: Error checking, corrections, learning from failures
+- **L3 Adaptive**: Systematic workflows, devops patterns
+- **L4 Compositional**: Multi-constraint reasoning, complex decision-making
+
+**View failure memories with counterfactual learning:**
+```bash
+npx claude-recall failures                    # Last 10 failures
+npx claude-recall failures --limit 20         # Show 20 most recent
+npx claude-recall failures --project my-app   # Filter by project
+```
+
 **Example `failures` output:**
 ```
 ❌ Failure Memories (Counterfactual Learning)
@@ -445,11 +457,74 @@ Failure Rate: 12.4% ↘
    Should Do: Use JWT tokens instead
 ```
 
-**Sophistication Levels:**
-- **L1 Procedural**: Basic tool use, simple actions
-- **L2 Self-Reflection**: Error checking, corrections, learning from failures
-- **L3 Adaptive**: Systematic workflows, devops patterns
-- **L4 Compositional**: Multi-constraint reasoning, complex decision-making
+### Data Management
+
+**Export/import memories:**
+```bash
+npx claude-recall export memories.json          # Export all memories
+npx claude-recall export backup.json --json     # Export as JSON
+npx claude-recall import memories.json          # Import memories
+```
+
+**Clear memories (use with caution):**
+```bash
+npx claude-recall clear --force                 # Clear everything (requires --force)
+```
+
+### MCP Server Commands
+
+**What are MCP commands?**
+The MCP (Model Context Protocol) server is how Claude Code communicates with Claude Recall. When you install claude-recall, it automatically configures `~/.claude.json` to start the MCP server.
+
+**Process Management (v0.7.4+):**
+```bash
+# Start/stop
+npx claude-recall mcp start              # Start MCP server (auto-started by Claude Code)
+npx claude-recall mcp stop               # Stop running server gracefully
+npx claude-recall mcp restart            # Restart server
+npx claude-recall mcp test               # Test MCP server functionality
+
+# Monitoring
+npx claude-recall mcp status             # Show server status for current project
+npx claude-recall mcp ps                 # List all running MCP servers (all projects)
+
+# Cleanup
+npx claude-recall mcp cleanup            # Remove stale PID files and processes
+npx claude-recall mcp cleanup --dry-run  # Preview cleanup actions
+npx claude-recall mcp cleanup --all      # Stop all MCP servers (all projects)
+```
+
+**When to use:**
+- **Auto-started**: Claude Code automatically starts the MCP server on launch
+- **Manual management**: Stop, restart, or cleanup stale servers as needed
+- **Troubleshooting**: Use `mcp ps` to see running servers, `mcp cleanup` to remove zombies
+- **Testing**: Use `mcp test` to verify the server responds correctly
+
+### Utilities
+
+**Check installation status:**
+```bash
+npx claude-recall status        # Show installation and system status
+npx claude-recall --version     # Show version
+```
+
+**Monitoring (advanced):**
+```bash
+npx claude-recall monitor                      # View search monitoring stats
+npx claude-recall test-memory-search           # Test if Claude searches before file creation
+```
+
+**Migration (if upgrading from old versions):**
+```bash
+npx claude-recall migrate       # Migrate from file-watcher to MCP architecture
+```
+
+### Global Options
+
+All commands support:
+- `--verbose` - Enable verbose logging
+- `--config <path>` - Use custom config file
+- `-h, --help` - Show help for any command
 
 ## Project Scoping (v0.7.2+)
 

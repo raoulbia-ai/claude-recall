@@ -13,6 +13,8 @@ import { PromptsHandler } from './prompts-handler';
 import { PreferenceAnalyzer } from '../services/preference-analyzer';
 import { ContextEnhancer } from '../services/context-enhancer';
 import { ConversationContextManager } from '../services/conversation-context-manager';
+import { ProcessManager } from '../services/process-manager';
+import { ConfigService } from '../services/config';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -64,6 +66,8 @@ export class MCPServer {
   private preferenceAnalyzer: PreferenceAnalyzer;
   private contextEnhancer: ContextEnhancer;
   private conversationContext: ConversationContextManager;
+  private processManager: ProcessManager;
+  private config: ConfigService;
   private isInitialized = false;
 
   constructor() {
@@ -87,6 +91,8 @@ export class MCPServer {
     );
     this.contextEnhancer = ContextEnhancer.getInstance();
     this.conversationContext = ConversationContextManager.getInstance();
+    this.processManager = ProcessManager.getInstance();
+    this.config = ConfigService.getInstance();
 
     this.setupRequestHandlers();
     this.registerTools();
@@ -504,13 +510,47 @@ export class MCPServer {
   async start(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Starting Claude Recall MCP server...');
-      
+
+      // Get project ID for PID tracking
+      const projectId = this.config.getProjectId();
+
+      // Check for existing MCP server process
+      const existingPid = this.processManager.readPidFile(projectId);
+
+      if (existingPid) {
+        // Validate if process is actually running
+        if (this.processManager.isProcessRunning(existingPid)) {
+          // Check environment variable for auto-cleanup behavior
+          const autoCleanup = process.env.CLAUDE_RECALL_AUTO_CLEANUP === 'true';
+
+          if (autoCleanup) {
+            this.logger.warn('MCPServer', `Killing stale MCP server (PID: ${existingPid}) before starting...`);
+            this.processManager.killProcess(existingPid, false);
+            this.processManager.removePidFile(projectId);
+            // Give it a moment to shut down
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            throw new Error(
+              `MCP server already running for project "${projectId}" (PID: ${existingPid}). ` +
+              `Stop it first with: npx claude-recall mcp stop`
+            );
+          }
+        } else {
+          // Clean up stale PID file
+          this.logger.info('MCPServer', 'Removing stale PID file...');
+          this.processManager.removePidFile(projectId);
+        }
+      }
+
       // Initialize queue integration for background processing
       await this.queueIntegration.initialize();
       this.logger.info('MCPServer', 'Queue integration initialized');
-      
+
       await this.transport.start();
-      this.logger.info('MCPServer', 'MCP server started successfully');
+
+      // Write PID file after successful startup
+      this.processManager.writePidFile(projectId, process.pid);
+      this.logger.info('MCPServer', `MCP server started successfully (PID: ${process.pid}, Project: ${projectId})`);
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);
       throw error;
@@ -538,6 +578,11 @@ export class MCPServer {
 
       await this.transport.stop();
       this.memoryService.close();
+
+      // Remove PID file on clean shutdown
+      const projectId = this.config.getProjectId();
+      this.processManager.removePidFile(projectId);
+
       this.logger.info('MCPServer', 'MCP server stopped');
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'stop', error as Error);

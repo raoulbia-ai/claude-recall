@@ -15,6 +15,7 @@ import { LiveTestCommand } from './commands/live-test';
 import { QueueIntegrationService } from '../services/queue-integration';
 import { MemoryEvolution, SophisticationLevel } from '../services/memory-evolution';
 import { FailureExtractor } from '../services/failure-extractor';
+import { MCPCommands } from './commands/mcp-commands';
 
 const program = new Command();
 
@@ -591,8 +592,8 @@ async function main() {
   // MCP command
   const mcpCmd = program
     .command('mcp')
-    .description('MCP server commands');
-    
+    .description('MCP server commands (start, stop, status, cleanup, ps, restart)');
+
   mcpCmd
     .command('start')
     .description('Start Claude Recall as an MCP server')
@@ -601,7 +602,7 @@ async function main() {
         // Initialize queue integration service for background processing
         const queueIntegration = QueueIntegrationService.getInstance();
         await queueIntegration.initialize();
-        
+
         const server = new MCPServer();
         server.setupSignalHandlers();
         await server.start();
@@ -611,19 +612,19 @@ async function main() {
         process.exit(1);
       }
     });
-    
+
   mcpCmd
     .command('test')
     .description('Test MCP server functionality')
     .action(async () => {
       console.log('🧪 Testing Claude Recall MCP Server...\n');
-      
+
       // Check if configured in Claude
       const fs = require('fs');
       const path = require('path');
       const os = require('os');
       const claudeConfig = path.join(os.homedir(), '.claude.json');
-      
+
       try {
         if (fs.existsSync(claudeConfig)) {
           const config = JSON.parse(fs.readFileSync(claudeConfig, 'utf-8'));
@@ -638,24 +639,27 @@ async function main() {
         } else {
           console.log('❌ ~/.claude.json not found');
         }
-        
+
         // Test database connection
         const configService = ConfigService.getInstance();
         const dbPath = configService.getDatabasePath();
         console.log('\n✅ Database configured at:', dbPath);
-        
+
         // Test basic MCP protocol
         console.log('\n✅ MCP server is ready to start');
         console.log('\nTo use with Claude Code:');
         console.log('1. Ensure Claude Code is not running');
         console.log('2. Start Claude Code');
         console.log('3. Use MCP tools like mcp__claude-recall__store_memory');
-        
+
       } catch (error) {
         console.error('❌ Test failed:', error);
         process.exit(1);
       }
     });
+
+  // Register MCP process management commands
+  MCPCommands.register(mcpCmd);
 
   // Migration commands
   MigrateCommand.register(program);

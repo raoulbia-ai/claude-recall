@@ -1,3 +1,10 @@
+# Claude Recall - Skills Integration
+
+**Note**: Claude Recall now uses Claude Code Skills for better memory management.
+See [.claude/skills/memory-management/SKILL.md](./.claude/skills/memory-management/SKILL.md) for details.
+
+---
+
 # Claude Recall - Memory-First Development with Learning Loop
 
 This file provides instructions to Claude Code when working with projects that use Claude Recall for persistent memory.
