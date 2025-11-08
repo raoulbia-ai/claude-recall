@@ -5,6 +5,8 @@ import { MemoryService } from '../services/memory';
 import { LoggingService } from '../services/logging';
 import { KeywordExtractor } from '../services/keyword-extractor';
 import { MemoryUsageTracker } from '../services/memory-usage-tracker';
+import { FailureExtractor } from '../services/failure-extractor';
+import { MemoryEvolution } from '../services/memory-evolution';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -39,6 +41,8 @@ export class MemoryCaptureMiddleware {
   private logger: LoggingService;
   private keywordExtractor: KeywordExtractor;
   private usageTracker: MemoryUsageTracker;
+  private failureExtractor: FailureExtractor;
+  private memoryEvolution: MemoryEvolution;
   private config!: MemoryPatternConfig;
   private recentCaptures: Map<string, number> = new Map();
   private sessionMemoryCount: Map<string, number> = new Map();
@@ -50,6 +54,8 @@ export class MemoryCaptureMiddleware {
     this.logger = LoggingService.getInstance();
     this.keywordExtractor = KeywordExtractor.getInstance();
     this.usageTracker = MemoryUsageTracker.getInstance();
+    this.failureExtractor = FailureExtractor.getInstance();
+    this.memoryEvolution = MemoryEvolution.getInstance();
     this.loadConfig();
   }
 
@@ -219,6 +225,26 @@ export class MemoryCaptureMiddleware {
           priority: 1  // Second highest priority
         });
       }
+    }
+
+    // PRIORITY 1.5: Check for user corrections and failures (counterfactual learning)
+    const failureMemory = this.failureExtractor.extractFromUserCorrection(
+      content,
+      'previous_action',  // TODO: Track actual previous action in session
+      {
+        query: content,
+        timestamp: Date.now()
+      }
+    );
+
+    if (failureMemory) {
+      memories.push({
+        type: 'failure',
+        content: JSON.stringify(failureMemory.value),
+        data: failureMemory.value,
+        confidence: failureMemory.confidence_score || 0.9,
+        priority: 1.5  // High priority - learn from failures
+      });
     }
 
     // PRIORITY 2: Use configured preference patterns

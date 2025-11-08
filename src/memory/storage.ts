@@ -2,10 +2,17 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// Structured memory value format (v0.7.0+)
+export interface StructuredMemoryValue {
+  title?: string;  // Concise identifier
+  description?: string;  // One-sentence summary
+  content: any;  // Actual memory data
+}
+
 export interface Memory {
   id?: number;
   key: string;
-  value: any;
+  value: any | StructuredMemoryValue;  // Supports both old and new format
   type: string;
   project_id?: string;
   file_path?: string;
@@ -18,6 +25,7 @@ export interface Memory {
   superseded_by?: string;
   superseded_at?: number;
   confidence_score?: number;
+  sophistication_level?: number;  // 1-4: Procedural → Compositional
 }
 
 export class MemoryStorage {
@@ -70,12 +78,12 @@ export class MemoryStorage {
   
   save(memory: Memory): void {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO memories 
-      (key, value, type, project_id, file_path, timestamp, relevance_score, access_count, 
-       preference_key, is_active, superseded_by, superseded_at, confidence_score)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO memories
+      (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
+       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     stmt.run(
       memory.key,
       JSON.stringify(memory.value),
@@ -89,9 +97,10 @@ export class MemoryStorage {
       memory.is_active !== undefined ? (memory.is_active ? 1 : 0) : 1,
       memory.superseded_by || null,
       memory.superseded_at || null,
-      memory.confidence_score || null
+      memory.confidence_score || null,
+      memory.sophistication_level || 1
     );
-    
+
     // Force a WAL checkpoint to ensure the data is written to the main database file
     // This ensures that other processes (like CLI) can see the changes immediately
     this.db.pragma('wal_checkpoint(TRUNCATE)');

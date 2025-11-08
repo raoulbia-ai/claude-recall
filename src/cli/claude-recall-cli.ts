@@ -13,6 +13,8 @@ import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
 import { LiveTestCommand } from './commands/live-test';
 import { QueueIntegrationService } from '../services/queue-integration';
+import { MemoryEvolution, SophisticationLevel } from '../services/memory-evolution';
+import { FailureExtractor } from '../services/failure-extractor';
 
 const program = new Command();
 
@@ -140,6 +142,122 @@ class ClaudeRecallCLI {
     console.log('\n💰 Estimated Token Savings:');
     console.log(`  Total saved: ~${totalSavings.toLocaleString()} tokens`);
     console.log(`  (vs repeating preferences or loading all reference files)`);
+  }
+
+  /**
+   * Show memory evolution metrics (v0.7.0)
+   */
+  showEvolution(options: { project?: string; days?: number }): void {
+    const evolution = MemoryEvolution.getInstance();
+    const metrics = evolution.getEvolutionMetrics(
+      options.project,
+      options.days || 30
+    );
+
+    console.log('\n📈 Memory Evolution\n');
+    console.log(`Analysis Period: Last ${options.days || 30} days`);
+    if (options.project) {
+      console.log(`Project: ${options.project}`);
+    }
+    console.log(`Total Memories: ${metrics.totalMemories}`);
+    console.log(`Progression Score: ${metrics.progressionScore}/100\n`);
+
+    if (metrics.totalMemories === 0) {
+      console.log('No memories found for this period.\n');
+      return;
+    }
+
+    console.log('Sophistication Breakdown:');
+    const total = metrics.totalMemories;
+    const levels = [
+      { level: 1, name: 'Procedural (L1)' },
+      { level: 2, name: 'Self-Reflection (L2)' },
+      { level: 3, name: 'Adaptive (L3)' },
+      { level: 4, name: 'Compositional (L4)' }
+    ];
+
+    for (const { level, name } of levels) {
+      const count = metrics.sophisticationBreakdown[level as SophisticationLevel];
+      const pct = ((count / total) * 100).toFixed(1);
+      console.log(`  ${name}: ${count.toString().padStart(3)} (${pct.padStart(5)}%)`);
+    }
+
+    console.log('');
+
+    // Confidence trend
+    const confidenceArrow = metrics.confidenceTrend === 'improving' ? '↗' :
+                            metrics.confidenceTrend === 'declining' ? '↘' : '→';
+    console.log(`Average Confidence: ${metrics.averageConfidence.toFixed(2)} ${confidenceArrow}`);
+
+    // Failure trend
+    const failureArrow = metrics.failureTrend === 'improving' ? '↗ Better' :
+                         metrics.failureTrend === 'worsening' ? '↘ Worse' : '→';
+    console.log(`Failure Rate: ${metrics.failureRate.toFixed(1)}% ${failureArrow}\n`);
+
+    // Interpretation
+    if (metrics.progressionScore >= 75) {
+      console.log('✓ Agent demonstrating sophisticated reasoning');
+    } else if (metrics.progressionScore >= 50) {
+      console.log('○ Agent developing adaptive patterns');
+    } else {
+      console.log('◌ Agent in early learning phase');
+    }
+
+    console.log('');
+    this.logger.info('CLI', 'Evolution metrics displayed', metrics);
+  }
+
+  /**
+   * Show failure memories (v0.7.0)
+   */
+  showFailures(options: { limit?: number; project?: string }): void {
+    const allMemories = this.memoryService.search('');
+    let failures = allMemories.filter(m => m.type === 'failure');
+
+    if (options.project) {
+      failures = failures.filter(m => m.project_id === options.project);
+    }
+
+    // Sort by timestamp (newest first)
+    failures.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    // Limit results
+    const limit = options.limit || 10;
+    const displayFailures = failures.slice(0, limit);
+
+    console.log('\n❌ Failure Memories (Counterfactual Learning)\n');
+    console.log(`Found ${failures.length} failures (showing ${displayFailures.length})\n`);
+
+    if (displayFailures.length === 0) {
+      console.log('No failure memories found.\n');
+      return;
+    }
+
+    displayFailures.forEach((failure, index) => {
+      const value = typeof failure.value === 'string'
+        ? JSON.parse(failure.value)
+        : failure.value;
+
+      const content = value.content || value;
+
+      console.log(`${index + 1}. ${value.title || 'Untitled Failure'}`);
+      console.log(`   What Failed: ${content.what_failed || 'Unknown'}`);
+      console.log(`   Why Failed: ${content.why_failed || 'Unknown'}`);
+      console.log(`   Should Do: ${content.what_should_do || 'Unknown'}`);
+
+      if (content.preventative_checks && content.preventative_checks.length > 0) {
+        console.log(`   Preventative Checks:`);
+        content.preventative_checks.forEach((check: string) => {
+          console.log(`     - ${check}`);
+        });
+      }
+
+      console.log(`   Context: ${content.context || 'Unknown'}`);
+      console.log(`   When: ${new Date(failure.timestamp || 0).toLocaleString()}`);
+      console.log('');
+    });
+
+    this.logger.info('CLI', 'Failures displayed', { count: displayFailures.length });
   }
 
   /**
@@ -510,6 +628,36 @@ async function main() {
     .action(() => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.showStats();
+      process.exit(0);
+    });
+
+  // Evolution command
+  program
+    .command('evolution')
+    .description('View memory evolution and sophistication metrics')
+    .option('--project <id>', 'Filter by project ID')
+    .option('--days <number>', 'Number of days to analyze', '30')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showEvolution({
+        project: options.project,
+        days: parseInt(options.days)
+      });
+      process.exit(0);
+    });
+
+  // Failures command
+  program
+    .command('failures')
+    .description('View failure memories with counterfactual learning')
+    .option('--limit <number>', 'Maximum failures to show', '10')
+    .option('--project <id>', 'Filter by project ID')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showFailures({
+        limit: parseInt(options.limit),
+        project: options.project
+      });
       process.exit(0);
     });
 

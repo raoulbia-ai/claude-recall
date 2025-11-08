@@ -3,6 +3,7 @@ import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { ExtractedPreference } from './preference-extractor';
+import { MemoryEvolution } from './memory-evolution';
 
 export interface MemoryServiceContext {
   projectId?: string;
@@ -29,12 +30,13 @@ export class MemoryService {
   private retrieval: MemoryRetrieval;
   private config = ConfigService.getInstance();
   private logger = LoggingService.getInstance();
-  
+  private evolution = MemoryEvolution.getInstance();
+
   private constructor() {
     const dbPath = this.config.getDatabasePath();
     this.storage = new MemoryStorage(dbPath);
     this.retrieval = new MemoryRetrieval(this.storage);
-    
+
     this.logger.info('MemoryService', `Initialized with database: ${dbPath}`);
   }
   
@@ -69,7 +71,10 @@ export class MemoryService {
         timestamp: request.context?.timestamp || Date.now(),
         relevance_score: request.relevanceScore || 1.0
       };
-      
+
+      // Auto-classify sophistication level (v0.7.0)
+      memory.sophistication_level = this.evolution.classifySophistication(memory);
+
       this.storage.save(memory);
       
       this.logger.logMemoryOperation('STORE', {
