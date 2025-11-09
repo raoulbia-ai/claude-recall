@@ -1,7 +1,7 @@
 {
   "name": "claude-recall",
-  "version": "0.7.4",
-  "description": "Persistent memory for Claude Code with automatic capture, failure learning, sophistication tracking, and project scoping via MCP server",
+  "version": "0.7.5",
+  "description": "Persistent memory for Claude Code with automatic capture, failure learning, sophistication tracking, project scoping, and project registry via MCP server",
   "main": "dist/index.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"
@@ -11,6 +11,7 @@
     ".claude/",
     "scripts/postinstall.js",
     "scripts/postinstall-claude-md.js",
+    "scripts/uninstall.js",
     "README.md",
     "LICENSE",
     "docs/"
@@ -89,7 +90,6 @@
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
-    "claude-recall": "^0.7.3",
     "commander": "^12.1.0"
   }
 }

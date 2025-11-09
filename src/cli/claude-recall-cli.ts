@@ -16,6 +16,7 @@ import { QueueIntegrationService } from '../services/queue-integration';
 import { MemoryEvolution, SophisticationLevel } from '../services/memory-evolution';
 import { FailureExtractor } from '../services/failure-extractor';
 import { MCPCommands } from './commands/mcp-commands';
+import { ProjectCommands } from './commands/project-commands';
 
 const program = new Command();
 
@@ -660,6 +661,9 @@ async function main() {
 
   // Register MCP process management commands
   MCPCommands.register(mcpCmd);
+
+  // Project management commands
+  ProjectCommands.register(program);
 
   // Migration commands
   MigrateCommand.register(program);

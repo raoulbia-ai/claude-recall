@@ -15,6 +15,9 @@ import { ContextEnhancer } from '../services/context-enhancer';
 import { ConversationContextManager } from '../services/conversation-context-manager';
 import { ProcessManager } from '../services/process-manager';
 import { ConfigService } from '../services/config';
+import { ProjectRegistry } from '../services/project-registry';
+import * as path from 'path';
+import * as fs from 'fs';
 
 export interface MCPRequest {
   jsonrpc: "2.0";
@@ -514,6 +517,16 @@ export class MCPServer {
       // Get project ID for PID tracking
       const projectId = this.config.getProjectId();
 
+      // Auto-register project in registry
+      const rootDir = this.config.getConfig().project.rootDir;
+      const version = this.getVersion();
+      const projectRegistry = ProjectRegistry.getInstance();
+
+      projectRegistry.register(projectId, rootDir, version);
+      projectRegistry.updateLastSeen(projectId);
+
+      this.logger.debug('MCPServer', `Project registered: ${projectId} at ${rootDir} (v${version})`);
+
       // Check for existing MCP server process
       const existingPid = this.processManager.readPidFile(projectId);
 
@@ -603,5 +616,18 @@ export class MCPServer {
       await this.stop();
       process.exit(0);
     });
+  }
+
+  /**
+   * Get current version from package.json
+   */
+  private getVersion(): string {
+    try {
+      const packageJsonPath = path.join(__dirname, '../../package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      return packageJson.version;
+    } catch (error) {
+      return 'unknown';
+    }
   }
 }

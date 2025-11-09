@@ -74,6 +74,8 @@ CLAUDE.md
 # Scripts - exclude all except postinstall.js and publish.sh
 scripts/*
 !scripts/postinstall.js
+!scripts/postinstall-claude-md.js
+!scripts/uninstall.js
 !scripts/publish.sh
 
 # User-specific

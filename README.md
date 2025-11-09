@@ -541,6 +541,98 @@ All commands support:
 - `--config <path>` - Use custom config file
 - `-h, --help` - Show help for any command
 
+## Project Management (v0.7.5+)
+
+Claude Recall maintains a **project registry** to track all projects using it, enabling better organization and visibility across multiple projects.
+
+### Auto-Registration
+
+Projects are automatically registered when:
+- The MCP server starts (every time Claude Code connects)
+- You run `npm install claude-recall` locally
+- You manually run `npx claude-recall project register`
+
+The registry stores:
+- Project path
+- Claude Recall version
+- Registration date
+- Last activity timestamp
+
+### Project Commands
+
+**List all registered projects:**
+```bash
+npx claude-recall project list              # Human-friendly output
+npx claude-recall project list --json       # JSON format
+```
+
+Shows:
+- Project name and path
+- Claude Recall version
+- Last activity
+- MCP server status (active/inactive)
+
+**Show project details:**
+```bash
+npx claude-recall project show              # Current project
+npx claude-recall project show my-project   # Specific project
+```
+
+Displays:
+- Registry information (path, version, timestamps)
+- MCP server status (running/stopped, PID)
+
+**Register a project:**
+```bash
+npx claude-recall project register          # Current directory
+npx claude-recall project register --path /path/to/project
+```
+
+**Unregister a project:**
+```bash
+npx claude-recall project unregister        # Current project
+npx claude-recall project unregister my-project
+```
+
+**Note**: Unregistering does NOT remove memories or MCP configuration - only the registry entry.
+
+**Clean up stale entries:**
+```bash
+npx claude-recall project clean             # Remove projects not seen in 30 days
+npx claude-recall project clean --days 60   # Custom threshold
+npx claude-recall project clean --dry-run   # Preview without changes
+```
+
+### Enhanced MCP Commands
+
+MCP commands now show registry information:
+
+```bash
+npx claude-recall mcp status    # Shows registry info + MCP status
+npx claude-recall mcp ps        # Lists all servers with version info
+```
+
+### Registry Storage
+
+Registry stored at: `~/.claude-recall/projects.json`
+
+Format:
+```json
+{
+  "version": 1,
+  "projects": {
+    "my-project": {
+      "path": "/full/path/to/my-project",
+      "registeredAt": "2025-11-09T...",
+      "version": "0.7.5",
+      "lastSeen": "2025-11-09T..."
+    }
+  }
+}
+```
+
+**Note**: The registry is separate from your memory database. Cleaning the registry does NOT affect your stored memories.
+
 ## Project Scoping (v0.7.2+)
 
 Claude Recall now supports **project-specific memory isolation** while keeping universal preferences available everywhere.

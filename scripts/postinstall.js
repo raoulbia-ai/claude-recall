@@ -56,6 +56,53 @@ try {
     // Don't fail installation if CLAUDE.md update fails
   }
   
+  // Auto-register project if this is a local install
+  try {
+    // Detect if we're in a project (not global install, not claude-recall itself)
+    const cwd = process.cwd();
+    const projectName = path.basename(cwd);
+
+    // Skip registration if:
+    // 1. We're inside claude-recall itself
+    // 2. We're in node_modules (global install)
+    if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
+      const registryPath = path.join(dbDir, 'projects.json');
+
+      // Read or create registry
+      let registry = { version: 1, projects: {} };
+      if (fs.existsSync(registryPath)) {
+        const registryContent = fs.readFileSync(registryPath, 'utf8');
+        registry = JSON.parse(registryContent);
+      }
+
+      // Get version from package.json
+      const packageJsonPath = path.join(__dirname, '../package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+      const version = packageJson.version;
+
+      // Register project
+      const now = new Date().toISOString();
+      const existing = registry.projects[projectName];
+
+      registry.projects[projectName] = {
+        path: cwd,
+        registeredAt: existing ? existing.registeredAt : now,
+        version: version,
+        lastSeen: now
+      };
+
+      // Write registry atomically
+      const tempPath = registryPath + '.tmp';
+      fs.writeFileSync(tempPath, JSON.stringify(registry, null, 2));
+      fs.renameSync(tempPath, registryPath);
+
+      console.log(`📋 Registered project: ${projectName}`);
+    }
+  } catch (error) {
+    // Don't fail installation if registration fails
+    console.log('⚠️  Failed to register project (non-fatal):', error.message);
+  }
+
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
   console.log('   Restart your terminal to activate the memory system.');
