@@ -94,7 +94,22 @@ npm uninstall -g claude-recall
 
 Claude Recall works on **Windows, Linux, and macOS**. Native binaries (SQLite) compile automatically for your platform during `npm install`.
 
-**WSL Users:** Use local installation only. Global installation on Windows + WSL usage causes binary conflicts ("invalid ELF header" errors).
+**WSL Users - Special Case:**
+
+If you use **both Windows and WSL** for the same project (e.g., Electron app runs on Windows, but Claude Code runs in WSL):
+
+**Problem**: Installing locally creates Windows binaries, but WSL needs Linux binaries → "invalid ELF header" errors.
+
+**Solution**: Install globally in WSL only:
+```bash
+# From WSL:
+npm install -g claude-recall
+
+# Verify:
+claude-recall --version
+```
+
+**Important**: Global installation does NOT affect project-specific memory scoping! See [How Project Scoping Works](#how-project-scoping-works-installation-location) below.
 
 **Everyone else:** Both local and global work, but local is still recommended for the benefits above.
 
@@ -609,6 +624,71 @@ npx claude-recall stats --global
 - Backward compatible
 - Works like v0.7.1 and earlier
 - Available everywhere unless you explicitly scope them
+
+### How Project Scoping Works (Installation Location)
+
+**Important**: Where you install claude-recall (global vs local) does NOT affect project-specific memory scoping!
+
+**What Determines Project Scope:**
+
+1. ✅ **Claude Code's working directory** - Where you run Claude Code
+2. ✅ **Database scoping logic** - Filters memories by project_id
+3. ❌ **Installation location** - Doesn't matter for scoping
+
+**How It Works:**
+
+```
+# Claude Code runs in this directory:
+/home/user/projects/my-app
+
+# Project ID detected from directory name:
+project_id = "my-app"
+
+# Memories stored/searched with that project_id:
+- "For this project, use PostgreSQL" → stored with project_id="my-app"
+- "Remember everywhere: I prefer TypeScript" → stored with scope="universal"
+
+# Same behavior whether claude-recall is:
+# - Installed globally: /usr/local/lib/node_modules/claude-recall
+# - Installed locally: ./node_modules/claude-recall
+```
+
+**Database Location (Always Global):**
+
+Whether you install globally or locally, the database is **always** at:
+```
+~/.claude-recall/claude-recall.db
+```
+
+This single database contains:
+- Project-specific memories for each project (isolated by project_id)
+- Universal memories (available in all projects)
+- Unscoped memories (backward compatible)
+
+**Example: Two Projects, One Installation**
+
+```bash
+# Project A:
+cd ~/projects/project-a
+# Claude Code detects: project_id = "project-a"
+# Memories: isolated to project-a + universal + unscoped
+
+# Project B:
+cd ~/projects/project-b
+# Claude Code detects: project_id = "project-b"
+# Memories: isolated to project-b + universal + unscoped
+
+# Same global installation, proper isolation!
+```
+
+**WSL Users:**
+
+This is why **global installation in WSL** works perfectly for project scoping:
+- Code location: `/home/user/.nvm/.../bin/claude-recall` (global)
+- Project detection: Based on Claude Code's `cwd`, NOT installation path
+- Memory isolation: Each project gets its own memories + universal preferences
+
+Global installation actually **helps** WSL users by avoiding binary conflicts while maintaining perfect project isolation!
 
 ## Memory Management
 
