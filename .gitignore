@@ -68,6 +68,7 @@ task-phase-*.md
 swarm-tasks/
 .claude-flow/
 .claude/
+!.claude/hooks/
 test-instructions-*.md
 CLAUDE.md
 
