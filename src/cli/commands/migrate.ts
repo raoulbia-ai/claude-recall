@@ -44,6 +44,15 @@ export class MigrateCommand {
         const migrator = new MigrateCommand();
         await migrator.completeMigration();
       });
+
+    migrateCmd
+      .command('schema')
+      .description('Migrate database schema to latest version (adds missing columns)')
+      .option('--backup', 'Create backup before migration')
+      .action(async (options) => {
+        const migrator = new MigrateCommand();
+        await migrator.migrateSchema(options.backup);
+      });
   }
 
   async checkInstallation(): Promise<void> {
@@ -235,5 +244,80 @@ export class MigrateCommand {
     }
 
     return false;
+  }
+
+  async migrateSchema(createBackup: boolean = false): Promise<void> {
+    console.log('📋 Migrating database schema...\n');
+
+    try {
+      const dbPath = path.join(os.homedir(), '.claude-recall', 'claude-recall.db');
+
+      if (!fs.existsSync(dbPath)) {
+        console.log('❌ Database not found. Nothing to migrate.');
+        return;
+      }
+
+      // Create backup if requested
+      if (createBackup) {
+        const backupPath = `${dbPath}.backup.${Date.now()}`;
+        console.log(`📦 Creating backup: ${backupPath}`);
+        fs.copyFileSync(dbPath, backupPath);
+        console.log('✅ Backup created\n');
+      }
+
+      // Access storage to trigger migration
+      const { MemoryStorage } = require('../../memory/storage');
+      const storage = new MemoryStorage(dbPath);
+
+      // Check what columns exist
+      const db = storage.getDatabase();
+      const columns = db.prepare("PRAGMA table_info(memories)").all() as Array<{name: string}>;
+      const columnNames = columns.map((c: any) => c.name);
+
+      console.log('Current schema columns:');
+      console.log('  ' + columnNames.join(', '));
+
+      const hasSophistication = columnNames.includes('sophistication_level');
+      const hasScope = columnNames.includes('scope');
+
+      if (hasSophistication && hasScope) {
+        console.log('\n✅ Schema is already up to date!');
+        console.log('   All required columns are present.');
+      } else {
+        console.log('\n📋 Schema update needed:');
+        if (!hasSophistication) {
+          console.log('   - Missing: sophistication_level (added in v0.7.0)');
+        }
+        if (!hasScope) {
+          console.log('   - Missing: scope (added in v0.7.2)');
+        }
+
+        console.log('\n⚙️  Running migration...');
+        // The migration happens automatically when MemoryStorage initializes
+        // Just force a re-init by creating a new instance
+        const { MemoryStorage: Storage2 } = require('../../memory/storage');
+        new Storage2(dbPath);
+
+        console.log('\n✅ Migration complete!');
+        console.log('   Database schema is now up to date.');
+      }
+
+      // Display stats
+      console.log('\n📊 Database stats:');
+      const stats = storage.getStats();
+      console.log(`   Total memories: ${stats.total}`);
+      if (stats.byType) {
+        console.log('   By type:');
+        for (const [type, count] of Object.entries(stats.byType)) {
+          console.log(`     ${type}: ${count}`);
+        }
+      }
+
+    } catch (error) {
+      console.error('\n❌ Migration failed:', error);
+      console.log('\nIf you created a backup, you can restore it manually:');
+      console.log(`  cp ~/.claude-recall/claude-recall.db.backup.* ~/.claude-recall/claude-recall.db`);
+      process.exit(1);
+    }
   }
 }

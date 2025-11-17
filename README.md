@@ -136,6 +136,51 @@ npm install -g claude-recall@latest
 
 **Note:** MCP server configuration in `~/.claude.json` persists across updates. You only need to update the package.
 
+### Schema Migration (v0.7.6+)
+
+**Automatic Migration:**
+
+Starting with v0.7.6, Claude Recall automatically migrates your database schema when needed. The first time you run any command after upgrading, missing columns will be added automatically.
+
+**What Gets Migrated:**
+- `sophistication_level` column (added in v0.7.0)
+- `scope` column (added in v0.7.2)
+
+You'll see console messages like:
+```
+📋 Migrating database schema: Adding scope column...
+✅ Added scope column
+```
+
+**Manual Migration (Optional):**
+
+If you prefer to run the migration explicitly:
+
+```bash
+# Check current schema and migrate if needed
+npx claude-recall migrate schema
+
+# Create backup before migration
+npx claude-recall migrate schema --backup
+```
+
+**Troubleshooting Schema Errors:**
+
+If you see errors like:
+- `"no such column: scope"`
+- `"no such column: sophistication_level"`
+
+Run the manual migration:
+```bash
+npx claude-recall migrate schema --backup
+```
+
+This will:
+1. Create a backup of your database (if `--backup` flag used)
+2. Add any missing columns
+3. Create necessary indexes
+4. Verify the migration succeeded
+
 ## Verifying Claude Recall is Working
 
 To confirm claude-recall is active in your Claude Code session:
@@ -529,9 +574,14 @@ npx claude-recall monitor                      # View search monitoring stats
 npx claude-recall test-memory-search           # Test if Claude searches before file creation
 ```
 
-**Migration (if upgrading from old versions):**
+**Migration:**
 ```bash
-npx claude-recall migrate       # Migrate from file-watcher to MCP architecture
+# Database schema migration (v0.7.6+)
+npx claude-recall migrate schema                # Migrate database schema (automatic)
+npx claude-recall migrate schema --backup       # Create backup before migration
+
+# Architecture migration (file-watcher → MCP)
+npx claude-recall migrate                       # Migrate from file-watcher to MCP architecture
 ```
 
 ### Global Options

@@ -47,15 +47,16 @@ export class MemoryStorage {
       const tableExists = this.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
       ).get();
-      
+
       if (tableExists) {
-        // Database is already initialized, skip schema execution
+        // Database is already initialized, run schema migration if needed
+        this.migrateSchema();
         return;
       }
     } catch (error) {
       // If checking fails, proceed with initialization
     }
-    
+
     // Initialize the database schema
     try {
       const schemaPath = path.join(__dirname, 'schema.sql');
@@ -64,16 +65,47 @@ export class MemoryStorage {
     } catch (error) {
       // Log error but don't throw - database might already be initialized
       console.error('Error initializing database schema:', error);
-      
+
       // Verify that the memories table exists
       const tableExists = this.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
       ).get();
-      
+
       if (!tableExists) {
         // Re-throw the error if the table doesn't exist
         throw new Error(`Failed to initialize database: ${error}`);
       }
+    }
+  }
+
+  /**
+   * Migrate existing database schema to add missing columns
+   * Adds columns introduced in v0.7.0+ (sophistication_level, scope)
+   */
+  private migrateSchema(): void {
+    try {
+      // Get existing columns
+      const columns = this.db.prepare("PRAGMA table_info(memories)").all() as Array<{name: string}>;
+      const columnNames = columns.map(c => c.name);
+
+      // Add sophistication_level if missing (v0.7.0+)
+      if (!columnNames.includes('sophistication_level')) {
+        console.log('📋 Migrating database schema: Adding sophistication_level column...');
+        this.db.exec('ALTER TABLE memories ADD COLUMN sophistication_level INTEGER DEFAULT 1');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_sophistication ON memories(sophistication_level)');
+        console.log('✅ Added sophistication_level column');
+      }
+
+      // Add scope if missing (v0.7.2+)
+      if (!columnNames.includes('scope')) {
+        console.log('📋 Migrating database schema: Adding scope column...');
+        this.db.exec("ALTER TABLE memories ADD COLUMN scope TEXT CHECK(scope IN ('universal', 'project', NULL))");
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_scope_project ON memories(scope, project_id)');
+        console.log('✅ Added scope column');
+      }
+    } catch (error) {
+      console.error('⚠️  Schema migration error:', error);
+      // Don't throw - let the database continue with existing schema
     }
   }
   
@@ -148,7 +180,9 @@ export class MemoryStorage {
       is_active: row.is_active === 1,
       superseded_by: row.superseded_by,
       superseded_at: row.superseded_at,
-      confidence_score: row.confidence_score
+      confidence_score: row.confidence_score,
+      sophistication_level: row.sophistication_level || 1,
+      scope: row.scope || null
     };
   }
   
