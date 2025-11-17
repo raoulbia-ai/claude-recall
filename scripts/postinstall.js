@@ -103,6 +103,87 @@ try {
     console.log('⚠️  Failed to register project (non-fatal):', error.message);
   }
 
+  // Install hook scripts to .claude/hooks/ directory
+  try {
+    const cwd = process.cwd();
+    const projectName = path.basename(cwd);
+
+    // Only install hooks for actual projects (not in claude-recall itself or node_modules)
+    if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
+      const claudeDir = path.join(cwd, '.claude');
+      const hooksDir = path.join(claudeDir, 'hooks');
+
+      // Create .claude/hooks directory
+      if (!fs.existsSync(hooksDir)) {
+        fs.mkdirSync(hooksDir, { recursive: true });
+      }
+
+      // Copy hook scripts from package
+      const packageHooksDir = path.join(__dirname, '../.claude/hooks');
+      const hookScripts = [
+        'pre_tool_search_enforcer.py',
+        'user_prompt_capture.py'
+      ];
+
+      for (const script of hookScripts) {
+        const source = path.join(packageHooksDir, script);
+        const dest = path.join(hooksDir, script);
+
+        if (fs.existsSync(source)) {
+          fs.copyFileSync(source, dest);
+          // Make executable
+          fs.chmodSync(dest, 0o755);
+        }
+      }
+
+      console.log('✅ Installed hook scripts to .claude/hooks/');
+
+      // Create or update .claude/settings.json with hook configuration
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      let settings = {};
+
+      if (fs.existsSync(settingsPath)) {
+        const settingsContent = fs.readFileSync(settingsPath, 'utf8');
+        settings = JSON.parse(settingsContent);
+      }
+
+      // Add hook configuration if not already present
+      if (!settings.hooks) {
+        settings.hooks = {
+          PreToolUse: [
+            {
+              matcher: "Write|Edit",
+              hooks: [
+                {
+                  type: "command",
+                  command: "python3 .claude/hooks/pre_tool_search_enforcer.py"
+                }
+              ]
+            }
+          ],
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "python3 .claude/hooks/user_prompt_capture.py"
+                }
+              ]
+            }
+          ]
+        };
+
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        console.log('✅ Configured hooks in .claude/settings.json');
+        console.log('   → PreToolUse: Enforces memory search before file operations');
+        console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+      }
+    }
+  } catch (error) {
+    // Don't fail installation if hook setup fails
+    console.log('⚠️  Failed to install hooks (non-fatal):', error.message);
+  }
+
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
   console.log('   Restart your terminal to activate the memory system.');

@@ -210,6 +210,116 @@ npx claude-recall clear --type response-pattern --force
 
 **Note:** This cleanup is optional. These memory types are harmless but take up space. New pattern memories will no longer be created after v0.7.7.
 
+### Automatic Memory Search Enforcement (v0.7.8+)
+
+**What Changed:**
+
+Starting with v0.7.8, Claude Recall uses **Claude Code hooks** to automatically enforce the learning loop workflow. This ensures Claude Code searches memories BEFORE executing file operations (Phase 1 - Pre-Action).
+
+**The Learning Loop:**
+```
+Phase 1: Search memories BEFORE task  ← Enforced by PreToolUse hook
+Phase 2: Execute with found context
+Phase 3: Capture outcome after task   ← Handled by UserPromptSubmit hook
+```
+
+**How It Works:**
+
+When you `npm install claude-recall`, the installer automatically:
+1. Creates `.claude/hooks/` directory in your project
+2. Installs two Python hook scripts:
+   - `pre_tool_search_enforcer.py` - Blocks Write/Edit until memory search is performed
+   - `user_prompt_capture.py` - Captures prompts for preference extraction
+3. Configures `.claude/settings.json` with hook bindings
+
+**Hook Behavior:**
+
+When Claude Code tries to create or edit files without searching memories first:
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 MEMORY SEARCH REQUIRED (Phase 1 - Pre-Action)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before executing Write, please search memories first:
+
+  mcp__claude-recall__search("filename create preferences success failure correction")
+
+WHY THIS MATTERS:
+  ✓ User preferences (coding style, tools, conventions)
+  ✓ Past successes (what worked before)
+  ✓ Past failures (what to avoid)
+  ✓ Recent corrections (highest priority!)
+
+Suggested search query: "filename create preferences success failure correction"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+The tool execution is **blocked** until Claude Code performs the search.
+
+**Benefits:**
+- ✅ **Enforces Phase 1** - Ensures memories are searched before actions
+- ✅ **Prevents repetition** - User never has to repeat preferences
+- ✅ **Educational** - Teaches Claude Code the learning loop
+- ✅ **Smart blocking** - Only blocks file creation/modification, not reads
+- ✅ **Session-aware** - One search covers multiple subsequent operations
+
+**Configuration:**
+
+Hooks are configured in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/pre_tool_search_enforcer.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/user_prompt_capture.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Disabling Hooks:**
+
+If you want to disable enforcement (not recommended):
+
+```json
+{
+  "hooks": {}
+}
+```
+
+Or remove specific hooks from the `hooks` object.
+
+**Requirements:**
+- Python 3 must be available (pre-installed on most systems)
+- Hook scripts are installed automatically during `npm install`
+- Works with Claude Code CLI hooks system
+
+**Troubleshooting:**
+
+If hooks aren't working:
+1. Check Python is available: `python3 --version`
+2. Verify hooks are installed: `ls .claude/hooks/`
+3. Check configuration: `cat .claude/settings.json`
+4. Reinstall: `npm install claude-recall --force`
+
 ## Verifying Claude Recall is Working
 
 To confirm claude-recall is active in your Claude Code session:

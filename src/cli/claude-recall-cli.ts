@@ -17,6 +17,7 @@ import { MemoryEvolution, SophisticationLevel } from '../services/memory-evoluti
 import { FailureExtractor } from '../services/failure-extractor';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
+import { HookCommands } from './commands/hook-commands';
 
 const program = new Command();
 
@@ -667,7 +668,10 @@ async function main() {
 
   // Migration commands
   MigrateCommand.register(program);
-  
+
+  // Hook commands (used by Claude Code hooks)
+  HookCommands.register(program);
+
   // Register live test command
   new LiveTestCommand().register(program);
 
