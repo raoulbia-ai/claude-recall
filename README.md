@@ -181,6 +181,35 @@ This will:
 3. Create necessary indexes
 4. Verify the migration succeeded
 
+### Pattern-Analysis Cleanup (v0.7.7+)
+
+**What Changed:**
+
+Starting with v0.7.7, Claude Recall no longer stores pattern-analysis, detected-pattern, or response-pattern memories. These were system-generated metadata that provided no retrieval utility and cluttered the database.
+
+**Why:**
+- No code retrieves or uses these memories
+- Ranked lowest in relevance scoring
+- System-generated noise rather than useful preferences
+- Pattern detection logic remains active for PreferenceExtractor
+
+**Cleanup Existing Entries:**
+
+If you upgraded from an earlier version and want to remove existing pattern-analysis noise:
+
+```bash
+# Remove pattern-analysis memories
+npx claude-recall clear --type pattern-analysis --force
+
+# Remove detected-pattern memories
+npx claude-recall clear --type detected-pattern --force
+
+# Remove response-pattern memories
+npx claude-recall clear --type response-pattern --force
+```
+
+**Note:** This cleanup is optional. These memory types are harmless but take up space. New pattern memories will no longer be created after v0.7.7.
+
 ## Verifying Claude Recall is Working
 
 To confirm claude-recall is active in your Claude Code session:

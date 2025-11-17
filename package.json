@@ -1,7 +1,7 @@
 {
   "name": "claude-recall",
-  "version": "0.7.6",
-  "description": "Persistent memory for Claude Code with automatic capture, failure learning, sophistication tracking, project scoping, project registry, and automatic schema migration via MCP server",
+  "version": "0.7.7",
+  "description": "Persistent memory for Claude Code with automatic capture, failure learning, sophistication tracking, project scoping, project registry, automatic schema migration, and noise reduction via MCP server",
   "main": "dist/index.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"

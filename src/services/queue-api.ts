@@ -484,19 +484,20 @@ class HookEventProcessor extends QueueProcessor {
       }
     }
     
-    // Also run legacy pattern detection as fallback
-    const { PatternService } = await import('./pattern-service');
-    const patternService = PatternService.getInstance();
-    const patterns = patternService.analyzePrompt(promptContent);
-    
-    if (patterns) {
-      memoryService.store({
-        key: `pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        value: patterns,
-        type: 'detected-pattern',
-        context: payload.context || {}
-      });
-    }
+    // Pattern detection kept for PreferenceExtractor, but storage disabled (v0.7.7)
+    // These detected-pattern memories were system-generated noise with no retrieval/utility
+    // const { PatternService } = await import('./pattern-service');
+    // const patternService = PatternService.getInstance();
+    // const patterns = patternService.analyzePrompt(promptContent);
+    //
+    // if (patterns) {
+    //   memoryService.store({
+    //     key: `pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    //     value: patterns,
+    //     type: 'detected-pattern',
+    //     context: payload.context || {}
+    //   });
+    // }
   }
 
   private async processClaudeResponseEvent(payload: any): Promise<void> {
@@ -506,19 +507,20 @@ class HookEventProcessor extends QueueProcessor {
     
     // Analyze the response for patterns
     const patterns = patternService.analyzePrompt(payload.content);
-    
-    // Store the analyzed patterns if they exist
-    if (patterns) {
-      const { MemoryService } = await import('./memory');
-      const memoryService = MemoryService.getInstance();
-      
-      memoryService.store({
-        key: `response-pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        value: patterns,
-        type: 'response-pattern',
-        context: payload.context || {}
-      });
-    }
+
+    // Pattern detection kept for PreferenceExtractor, but storage disabled (v0.7.7)
+    // These response-pattern memories were system-generated noise with no retrieval/utility
+    // if (patterns) {
+    //   const { MemoryService } = await import('./memory');
+    //   const memoryService = MemoryService.getInstance();
+    //
+    //   memoryService.store({
+    //     key: `response-pattern-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    //     value: patterns,
+    //     type: 'response-pattern',
+    //     context: payload.context || {}
+    //   });
+    // }
   }
 }
 
@@ -653,18 +655,19 @@ class PatternDetectionProcessor extends QueueProcessor {
     
     // Analyze the content for patterns
     const patterns = patternService.analyzePrompt(message.payload.content);
-    
-    // Store the analyzed patterns if they exist
-    if (patterns) {
-      const { MemoryService } = await import('./memory');
-      const memoryService = MemoryService.getInstance();
-      
-      memoryService.store({
-        key: `pattern-detection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        value: patterns,
-        type: 'pattern-analysis',
-        context: message.payload.context || {}
-      });
-    }
+
+    // Pattern detection is kept for PreferenceExtractor, but storage disabled (v0.7.7)
+    // These pattern-analysis memories were system-generated noise with no retrieval/utility
+    // if (patterns) {
+    //   const { MemoryService } = await import('./memory');
+    //   const memoryService = MemoryService.getInstance();
+    //
+    //   memoryService.store({
+    //     key: `pattern-detection-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    //     value: patterns,
+    //     type: 'pattern-analysis',
+    //     context: message.payload.context || {}
+    //   });
+    // }
   }
 }

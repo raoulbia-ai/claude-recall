@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm view:*)",
-      "mcp__perplexity-mcp__search"
+      "mcp__perplexity-mcp__search",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
