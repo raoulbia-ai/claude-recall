@@ -20,7 +20,7 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **Categorized storage** - Organizes memories by type (preferences, project knowledge, corrections)
 - **Priority-based** - More important or frequently used memories are prioritized
 
-### ⚡ Advanced Features (v0.3.2+)
+### ⚡ Advanced Features
 - **Direct MCP calls** - Fast memory search without agent overhead (milliseconds)
 - **Comprehensive search** - Single search finds preferences, successes, failures, and corrections
 - **Outcome capture** - Stores what worked and what didn't for future learning
@@ -28,7 +28,7 @@ Every time you start a new conversation with Claude, you're starting from scratc
 - **Optional agent** - Advanced context-manager agent available for complex workflows
 - **Correction priority** - User corrections given highest priority (never repeat mistakes)
 
-### 🧠 Intelligence & Evolution (v0.7.0+)
+### 🧠 Intelligence & Evolution
 - **Sophistication tracking** - Measures agent progression from basic tool use to compositional reasoning
 - **Failure learning** - Captures what failed, why it failed, and what should be done instead (counterfactual reasoning)
 - **Evolution metrics** - View progression score, confidence trends, and failure rates over time
@@ -61,7 +61,7 @@ npm install claude-recall
 
 **After installation, verify:**
 ```bash
-npx claude-recall --version   # Should show 0.3.3 or later
+npx claude-recall --version   # Should show installed version
 ```
 
 ### Why Local Over Global?
@@ -96,22 +96,38 @@ Claude Recall works on **Windows, Linux, and macOS**. Native binaries (SQLite) c
 
 **WSL Users - Special Case:**
 
-If you use **both Windows and WSL** for the same project (e.g., Electron app runs on Windows, but Claude Code runs in WSL):
+If you use **both Windows and WSL** for the same project (e.g., Electron app runs on Windows, but you use WSL):
 
 **Problem**: Installing locally creates Windows binaries, but WSL needs Linux binaries → "invalid ELF header" errors.
 
-**Solution**: Install globally in WSL only:
+**Solution**: Use WSL-specific local installation:
 ```bash
-# From WSL:
-npm install -g claude-recall
+# From WSL, in your project directory:
+cd /path/to/your-project
+npm install claude-recall
 
-# Verify:
-claude-recall --version
+# This installs Linux binaries AND hook scripts
+# MCP server configured in ~/.claude.json works for all projects
 ```
 
-**Important**: Global installation does NOT affect project-specific memory scoping! See [How Project Scoping Works](#how-project-scoping-works-installation-location) below.
+**Why this works**:
+- WSL gets Linux binaries (no ELF errors)
+- Hooks installed to project's `.claude/hooks/` (automatic memory search enforcement works)
+- MCP server in `~/.claude.json` is global (works everywhere)
+- Memory database `~/.claude-recall/` is global (shared across projects)
 
-**Everyone else:** Both local and global work, but local is still recommended for the benefits above.
+**Alternative (NOT recommended)**: If you absolutely need global installation:
+```bash
+npm install -g claude-recall
+
+# ⚠️ WARNING: You MUST manually install hooks to each project:
+cd your-project
+mkdir -p .claude/hooks
+cp $(npm root -g)/claude-recall/.claude/hooks/* .claude/hooks/
+cp $(npm root -g)/claude-recall/.claude/settings.json .claude/settings.json
+```
+
+This manual approach loses automatic setup and team sharing via `package.json`.
 
 ## Updating Claude Recall
 
@@ -136,85 +152,15 @@ npm install -g claude-recall@latest
 
 **Note:** MCP server configuration in `~/.claude.json` persists across updates. You only need to update the package.
 
-### Schema Migration (v0.7.6+)
+### Database Migration
 
-**Automatic Migration:**
+Claude Recall automatically migrates your database schema when updating. See [CHANGELOG.md](CHANGELOG.md) for version-specific migration notes if upgrading from older versions.
 
-Starting with v0.7.6, Claude Recall automatically migrates your database schema when needed. The first time you run any command after upgrading, missing columns will be added automatically.
+### Automatic Memory Search Enforcement
 
-**What Gets Migrated:**
-- `sophistication_level` column (added in v0.7.0)
-- `scope` column (added in v0.7.2)
+**How It Works:**
 
-You'll see console messages like:
-```
-📋 Migrating database schema: Adding scope column...
-✅ Added scope column
-```
-
-**Manual Migration (Optional):**
-
-If you prefer to run the migration explicitly:
-
-```bash
-# Check current schema and migrate if needed
-npx claude-recall migrate schema
-
-# Create backup before migration
-npx claude-recall migrate schema --backup
-```
-
-**Troubleshooting Schema Errors:**
-
-If you see errors like:
-- `"no such column: scope"`
-- `"no such column: sophistication_level"`
-
-Run the manual migration:
-```bash
-npx claude-recall migrate schema --backup
-```
-
-This will:
-1. Create a backup of your database (if `--backup` flag used)
-2. Add any missing columns
-3. Create necessary indexes
-4. Verify the migration succeeded
-
-### Pattern-Analysis Cleanup (v0.7.7+)
-
-**What Changed:**
-
-Starting with v0.7.7, Claude Recall no longer stores pattern-analysis, detected-pattern, or response-pattern memories. These were system-generated metadata that provided no retrieval utility and cluttered the database.
-
-**Why:**
-- No code retrieves or uses these memories
-- Ranked lowest in relevance scoring
-- System-generated noise rather than useful preferences
-- Pattern detection logic remains active for PreferenceExtractor
-
-**Cleanup Existing Entries:**
-
-If you upgraded from an earlier version and want to remove existing pattern-analysis noise:
-
-```bash
-# Remove pattern-analysis memories
-npx claude-recall clear --type pattern-analysis --force
-
-# Remove detected-pattern memories
-npx claude-recall clear --type detected-pattern --force
-
-# Remove response-pattern memories
-npx claude-recall clear --type response-pattern --force
-```
-
-**Note:** This cleanup is optional. These memory types are harmless but take up space. New pattern memories will no longer be created after v0.7.7.
-
-### Automatic Memory Search Enforcement (v0.7.8+)
-
-**What Changed:**
-
-Starting with v0.7.8, Claude Recall uses **Claude Code hooks** to automatically enforce the learning loop workflow. This ensures Claude Code searches memories BEFORE executing file operations (Phase 1 - Pre-Action).
+Claude Recall uses **Claude Code hooks** to automatically enforce the learning loop workflow. This ensures memories are searched BEFORE executing file operations (Phase 1 - Pre-Action).
 
 **The Learning Loop:**
 ```
@@ -402,7 +348,7 @@ You: "No, put scripts in scripts/ directory not root"
 Next time: Search finds correction and applies automatically
 ```
 
-## Claude Code Skills Integration (v0.5.0+)
+## Claude Code Skills Integration
 
 Claude Recall now integrates with **Claude Code Skills** for better LLM compliance and automatic memory management.
 
@@ -596,7 +542,7 @@ npx claude-recall store "I prefer TypeScript with strict mode"
 npx claude-recall store "Use PostgreSQL" --type project-knowledge
 ```
 
-### Intelligence & Evolution (v0.7.0+)
+### Intelligence & Evolution
 
 **View memory evolution and sophistication metrics:**
 ```bash
@@ -675,7 +621,7 @@ npx claude-recall clear --force                 # Clear everything (requires --f
 **What are MCP commands?**
 The MCP (Model Context Protocol) server is how Claude Code communicates with Claude Recall. When you install claude-recall, it automatically configures `~/.claude.json` to start the MCP server.
 
-**Process Management (v0.7.4+):**
+**Process Management:**
 ```bash
 # Start/stop
 npx claude-recall mcp start              # Start MCP server (auto-started by Claude Code)
@@ -715,7 +661,7 @@ npx claude-recall test-memory-search           # Test if Claude searches before 
 
 **Migration:**
 ```bash
-# Database schema migration (v0.7.6+)
+# Database schema migration
 npx claude-recall migrate schema                # Migrate database schema (automatic)
 npx claude-recall migrate schema --backup       # Create backup before migration
 
@@ -730,7 +676,7 @@ All commands support:
 - `--config <path>` - Use custom config file
 - `-h, --help` - Show help for any command
 
-## Project Management (v0.7.5+)
+## Project Management
 
 Claude Recall maintains a **project registry** to track all projects using it, enabling better organization and visibility across multiple projects.
 
@@ -822,7 +768,7 @@ Format:
 
 **Note**: The registry is separate from your memory database. Cleaning the registry does NOT affect your stored memories.
 
-## Project Scoping (v0.7.2+)
+## Project Scoping
 
 Claude Recall now supports **project-specific memory isolation** while keeping universal preferences available everywhere.
 

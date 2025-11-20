@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Persistent memory for Claude Code with automatic capture, failure learning, sophistication tracking, project scoping, project registry, automatic schema migration, noise reduction, and enforced pre-action memory search via MCP server and hooks",
   "main": "dist/index.js",
   "bin": {

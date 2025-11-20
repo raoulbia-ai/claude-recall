@@ -3,7 +3,10 @@
     "allow": [
       "Bash(npm view:*)",
       "mcp__perplexity-mcp__search",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(claude-recall --version)"
     ],
     "deny": [],
     "ask": []
