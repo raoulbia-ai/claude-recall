@@ -50,7 +50,12 @@
     "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:test": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}' | npm run mcp:start",
-    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start"
+    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start",
+    "agent:start": "node dist/pubnub/agent-cli.js start",
+    "agent:stop": "node dist/pubnub/agent-cli.js stop",
+    "agent:status": "node dist/pubnub/agent-cli.js status",
+    "agent:logs": "node dist/pubnub/agent-cli.js logs",
+    "test:pubnub": "node dist/pubnub/test-integration.js"
   },
   "keywords": [
     "claude-code",
