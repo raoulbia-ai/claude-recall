@@ -129,6 +129,30 @@ cp $(npm root -g)/claude-recall/.claude/settings.json .claude/settings.json
 
 This manual approach loses automatic setup and team sharing via `package.json`.
 
+### Node.js Version Requirement
+
+Claude Recall requires **Node.js 20+** due to native dependencies (better-sqlite3). If you're on Node 18 or older:
+
+**Install Node 20 using nvm:**
+```bash
+# Install nvm (if not already installed)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+source ~/.bashrc
+
+# Install Node 20
+nvm install 20
+nvm use 20
+node --version  # Should show v20.x.x
+```
+
+**Reinstall claude-recall with Node 20:**
+```bash
+cd ~/path-to-project-dir
+rm -rf node_modules package-lock.json
+npm install claude-recall
+npx claude-recall --version
+```
+
 ## Updating Claude Recall
 
 **For local installations (recommended):**
