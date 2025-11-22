@@ -101,7 +101,7 @@ export class MemoryAgent {
           continue;
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
 
         // Update timetoken for next request
         if (data.t && data.t.t) {
@@ -440,8 +440,8 @@ export async function runAgent(projectId?: string): Promise<void> {
   await agent.start();
 }
 
-// If run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// If run directly (CommonJS pattern)
+if (require.main === module) {
   const projectId = process.argv[2];
   runAgent(projectId).catch((error) => {
     console.error('[Memory Agent] Fatal error:', error);

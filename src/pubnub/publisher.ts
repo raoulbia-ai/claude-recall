@@ -210,7 +210,7 @@ export async function publishFromCLI(args: string[]): Promise<void> {
   }
 }
 
-// If run directly as CLI
-if (import.meta.url === `file://${process.argv[1]}`) {
+// If run directly as CLI (CommonJS pattern)
+if (require.main === module) {
   publishFromCLI(process.argv.slice(2));
 }
