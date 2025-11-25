@@ -15,71 +15,155 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ## 🚀 Features
 
-### **🌱 Continuous Learning (Local SQLite)**
+### 🌱 Continuous Learning (Local SQLite)
 
-* Learns your coding patterns, tool preferences, and corrections
-* Stores and evolves them in a local SQLite database
-* Claud Code automatically searches memory before performing actions
+Claude learns your:
 
-### **⚡ Realtime Memory Intelligence (PubNub Event Bus)**
+* coding patterns
+* tool preferences
+* corrections
+* architectural decisions
+* workflow habits
 
-Claude Recall uses a lightweight, metadata-only PubNub layer to enable **instant, asynchronous memory processing**:
+Everything stays **local**.
 
-* Hooks publish tool events and prompt metadata to PubNub channels
-* Memory Agent subscribes in real time
-* Processes events without blocking Claude
-* Suggests relevant memories back to Claude Code
+---
 
-This gives hooks **sub-10ms execution**, compared to 50–500ms with synchronous CLI pipelines.
+## ⚡ Realtime Memory Intelligence (PubNub Event Bus)
 
-> **No user text, code, or memory content is ever sent over PubNub.**
-> Only small metadata packets — tool names, file paths, event types, heartbeat signals.
+Claude Recall uses a lightweight, metadata-only PubNub layer to provide **instant, asynchronous memory intelligence**.
 
-### **📂 Project-Scoped Knowledge**
+### What PubNub enables
 
-Each project gets its own memory context:
+* **Hooks become <10ms**
+  Instead of slow, blocking MCP or CLI calls (50–500ms), hooks now publish a tiny packet and return instantly.
+
+* **The Memory Agent works in the background**
+  The Agent subscribes to PubNub channels, processes events in real time, updates memory, and sends suggestions back to Claude without slowing anything down.
+
+* **Claude stays fast and responsive**
+  Even under heavy editing or repeated tool runs.
+
+### What PubNub actually carries (metadata-only)
+
+* tool name
+* file path
+* event type
+* prompt token counts (no text)
+* memory suggestion IDs
+* Agent heartbeat
+
+### What PubNub does *not* carry
+
+🚫 code
+🚫 conversation text
+🚫 file contents
+🚫 memory content
+🚫 embeddings
+🚫 prompts
+🚫 anything sensitive
+
+PubNub is **not** storage — it is a realtime coordination channel.
+
+---
+
+## 💬 Why use PubNub at all?
+
+Developers often ask this. Here's the clear answer:
+
+### ✔ **Persistent memory doesn't require PubNub**
+
+The core idea (Claude remembering preferences and project knowledge) could be implemented with:
+
+* direct MCP calls
+* local HTTP server
+* sockets / pipes
+* a local queue
+* synchronous CLI calls
+
+### ✔ **But PubNub gives a dramatically better UX**
+
+Without PubNub:
+
+* hooks block while waiting for the Memory Agent to finish
+* every file write/edit stalls Claude
+* the editor feels sluggish
+* memory suggestions arrive too late to help
+* cross-platform performance varies wildly
+
+With PubNub:
+
+* hooks return in **6–10ms**
+* memory is processed asynchronously
+* Claude gets suggestions in real time
+* no need to bundle/maintain a local broker
+* works the same on macOS, Windows, Linux, WSL
+
+### ✔ **Local-first design is preserved**
+
+PubNub only transmits metadata — no user content ever leaves your machine.
+
+### ✔ **Implementation detail, not a hard dependency**
+
+In the future the event bus can be swapped (local-only transport, WebSockets, NATS, etc.).
+PubNub is simply the fastest path to a great developer experience today.
+
+---
+
+## 📂 Project-Scoped Knowledge
+
+Each project gets its own memory namespace:
 
 * architecture
-* conventions
-* decisions
-* constraints
-* mistakes + corrections
-* coding preferences
 * tech stack
+* conventions
+* past decisions
+* known pitfalls
+* previous fixes
+* preferences unique to that codebase
 
 Switch projects → Claude switches memory.
 
-### **🔌 Zero Cloud Storage**
+---
 
-* All memory stays local
-* SQLite database in `~/.claude-recall/`
+## 🔌 Zero Cloud Storage
+
+* All memory stored locally in SQLite
+* No cloud sync
 * No telemetry
-* No remote sync
 * PubNub carries **ephemeral metadata only**
+* Entire system works offline (except realtime coordination)
 
-### **💻 Claude Code–Native Integration**
+---
 
-* MCP server automatically detected
-* Realtime memory suggestions
-* High-quality planning via Python hooks
-* Automatic search-before-edit behavior
+## 💻 Claude Code–Native Integration
+
+Claude Recall integrates tightly via:
+
+* MCP server (search, store, evolve)
+* pre-action hooks
+* planning hooks
+* post-action hooks
+* PubNub event subscriber (Memory Agent)
+
+Claude automatically searches memory before writing or editing files.
 
 ---
 
 ## ⚡ Quick Start
 
-### **Requirements**
+### Requirements
 
-| Component | Version                 | Notes                                 |
-| --------- | ----------------------- | ------------------------------------- |
-| Node.js   | **20+**                 | required for better-sqlite3           |
-| Python    | **3.x**                 | required for Claude Code hook scripts |
-| PubNub    | included via npm        | metadata-only usage                   |
-| OS        | macOS / Linux / Windows | WSL supported                         |
+| Component | Version                 | Notes                          |
+| --------- | ----------------------- | ------------------------------ |
+| Node.js   | **20+**                 | required for better-sqlite3    |
+| Python    | **3.x**                 | required for Claude Code hooks |
+| PubNub    | included via npm        | metadata only                  |
+| OS        | macOS / Linux / Windows | WSL supported                  |
 
 ---
 
-### **Install (recommended: per project)**
+### Install (per project)
 
 ```bash
 cd your-project
@@ -90,11 +174,11 @@ Restart **Claude Code**.
 
 ---
 
-### **Verify it's working**
+### Verify it's working
 
 In Claude Code:
 
-> "Search my memories for preferences."
+> "Search my memories."
 
 Claude should call:
 
@@ -102,129 +186,67 @@ Claude should call:
 mcp__claude-recall__search
 ```
 
-If results appear → Claude Recall is active.
+If results appear → You're ready.
 
 ---
 
-## 🧠 How It Works
+## 🧠 How It Works (High-Level)
 
-Claude Recall consists of **three integrated systems**:
+Claude Recall consists of:
 
----
+### 1. Local Memory Engine (SQLite)
 
-### **1. The Memory Engine (SQLite, local)**
+Stores and evolves preferences, patterns, decisions, corrections.
 
-Stores:
+### 2. Realtime Event Bus (PubNub)
 
-* preferences
-* project knowledge
-* coding style
-* corrections
-* workflow patterns
-* successes & failures
+Makes hooks fast and enables the Memory Agent to work asynchronously.
 
-Memory is structured, versioned, and evolves over time.
+### 3. Memory Agent
 
----
+Subscribes to PubNub, updates memory, sends suggestions to Claude.
 
-### **2. The Realtime Event Bus (PubNub)**
+### 4. Claude Code Hooks
 
-A lightweight, metadata-only communication layer enabling **non-blocking hooks** and **fast memory updates**.
-
-**Why PubNub?**
-
-* Hooks complete in <10ms
-* Memory Agent processes events asynchronously
-* Claude stays fast and responsive
-* Zero waiting on the MCP server
-* No user data transmitted
-
-**Channels used:**
-
-| Channel                 | Purpose                  | Payload (metadata only) |
-| ----------------------- | ------------------------ | ----------------------- |
-| `claude-tool-events`    | tool invocation metadata | tool name, file path    |
-| `claude-prompt-stream`  | prompt chunk events      | token counts, not text  |
-| `claude-memory-context` | memory suggestions       | memory IDs, confidence  |
-| `claude-presence`       | heartbeat & lifecycle    | agent online/offline    |
-
-**Privacy guarantee:**
-No code, file contents, conversation text, or memory content is ever transmitted.
-Only minimal metadata.
-
----
-
-### **3. Claude Code Hook System**
-
-Hooks enforce high-quality behavior:
-
-**Pre-action:**
-
-* Search memory
-* Provide context
-* Adjust plan
-
-**Post-action:**
-
-* Capture new learnings
-* Update or evolve memories
-* Suggest improvements through PubNub
-
-**Planning hook:**
-
-* High-quality reasoning
-* Structured decision making
-* Leverages stored knowledge
-
----
-
-## 📚 Full Documentation
-
-Detailed docs live in the `docs/` folder:
-
-| Topic                      | File                      |
-| -------------------------- | ------------------------- |
-| Installation               | `docs/installation.md`    |
-| 5-minute Quickstart        | `docs/quickstart.md`      |
-| Architecture (with PubNub) | `docs/architecture.md`    |
-| The Learning Loop          | `docs/learning-loop.md`   |
-| Memory Types               | `docs/memory-types.md`    |
-| CLI Reference              | `docs/cli.md`             |
-| Hooks Documentation        | `docs/hooks.md`           |
-| Project Scoping            | `docs/project-scoping.md` |
-| Troubleshooting            | `docs/troubleshooting.md` |
-| Security & Privacy         | `docs/security.md`        |
-| FAQ                        | `docs/faq.md`             |
+Inject memory pre-action, perform structured planning, capture post-action learnings.
 
 ---
 
 ## 🔐 Security & Privacy
 
-Claude Recall is a **local-first**, privacy-focused system.
+Claude Recall is built for local-first workflows:
 
-* All memory stored locally in SQLite
-* PubNub used only for ephemeral event metadata
-* No user data, code, or conversation text leaves your machine
-* No cloud sync
-* No telemetry
-* You control your entire memory set
-* Easy export/inspect/delete through CLI
+* SQLite memory never leaves your machine
+* PubNub sends metadata only
+* No storage of PubNub messages
+* No prompts, code, or memory content is transmitted
+* Full transparency via CLI (`list`, `inspect`, `export`)
 
-Full security notes: `docs/security.md`.
+Full details in `/docs/security.md`.
 
 ---
 
-## 🛠 Development
+## 📚 Full Documentation
 
-PRs welcome — see `CONTRIBUTING.md` (optional).
-Local development uses the Memory Agent + PubNub + SQLite.
+All docs in `/docs`:
+
+* Installation
+* Quickstart
+* Architecture
+* Learning Loop
+* Memory Types
+* CLI Reference
+* Hooks
+* Project Scoping
+* Troubleshooting
+* Security
+* FAQ
 
 ---
 
-## ❤️ Community
+## 🛠 Development & Contributions
 
-Issues and feedback are welcome.
-Claude Recall is evolving rapidly — your input shapes it.
+PRs welcome — Claude Recall is open to contributors.
 
 ---
 
