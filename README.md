@@ -64,6 +64,36 @@ npm install claude-recall
 npx claude-recall --version   # Should show installed version
 ```
 
+### Enable Autonomous Memory Agent
+
+**Start the memory agent for real-time memory capture:**
+
+```bash
+npx claude-recall agent start
+```
+
+**What this does:**
+- 🤖 Starts background process that monitors tool/prompt events via PubNub
+- ⚡ Non-blocking hooks (<10ms) publish events without slowing Claude Code
+- 🧠 Agent autonomously searches/stores memories based on your activity
+- 📊 View status: `npx claude-recall agent status`
+- 📋 View logs: `npx claude-recall agent logs`
+
+**How it works:**
+1. **Hooks installed automatically** - PubNub hooks publish events (fire-and-forget)
+2. **Agent receives events** - Subscribes to tool execution and prompt events
+3. **Memory operations** - Searches relevant memories proactively, stores preferences automatically
+4. **No Claude Code blocking** - All heavy lifting happens in background process
+
+**Agent commands:**
+```bash
+npx claude-recall agent start      # Start the agent
+npx claude-recall agent stop       # Stop the agent
+npx claude-recall agent restart    # Restart the agent
+npx claude-recall agent status     # Check if running
+npx claude-recall agent logs       # View agent activity
+```
+
 ### Why Local Over Global?
 
 **Local installation (`npm install claude-recall`):**
@@ -180,58 +210,72 @@ npm install -g claude-recall@latest
 
 Claude Recall automatically migrates your database schema when updating. See [CHANGELOG.md](CHANGELOG.md) for version-specific migration notes if upgrading from older versions.
 
-### Automatic Memory Search Enforcement
+### 🚀 Revolutionary Architecture: Fire-and-Forget Memory
 
-**How It Works:**
+**What Makes This Different:**
 
-Claude Recall uses **Claude Code hooks** to automatically enforce the learning loop workflow. This ensures memories are searched BEFORE executing file operations (Phase 1 - Pre-Action).
+Traditional memory systems block your workflow while processing. Claude Recall uses a **revolutionary event-driven architecture** that keeps Claude Code fast while memory operations happen autonomously in the background.
 
-**The Learning Loop:**
+**The Innovation:**
+
 ```
-Phase 1: Search memories BEFORE task  ← Enforced by PreToolUse hook
-Phase 2: Execute with found context
-Phase 3: Capture outcome after task   ← Handled by UserPromptSubmit hook
+┌─────────────┐                  ┌─────────────┐                ┌──────────────────┐
+│ Claude Code │                  │   PubNub    │                │  Memory Agent    │
+│             │                  │ Message Bus │                │   (Daemon)       │
+└──────┬──────┘                  └──────┬──────┘                └────────┬─────────┘
+       │                                │                                │
+       │  Tool use (Write/Edit/Bash)    │                                │
+       ├────────────────────────────────>                                │
+       │                                │                                │
+       │  Hook fires (<10ms)            │                                │
+       │  Publishes event               │                                │
+       │  Returns immediately ✓         │                                │
+       ├────────────────────────────────>                                │
+       │                                │                                │
+       │  Continue execution            │   Event received               │
+       │  (no blocking!)                ├────────────────────────────────>
+       │                                │                                │
+       │                                │   Agent processes:             │
+       │                                │   - Search memories            │
+       │                                │   - Store preferences          │
+       │                                │   - Learn from patterns        │
+       │                                │   (all async)                  │
+       │                                │                                │
 ```
 
-**How It Works:**
+**Key Architectural Advantages:**
+
+1. **<10ms Latency** - Hooks publish events and return immediately, no blocking
+2. **True Autonomy** - Memory agent runs as independent daemon process
+3. **Event-Driven Decoupling** - PubNub acts as message bus between Claude Code and agent
+4. **Zero Performance Impact** - All memory operations happen in background thread
+5. **Real-Time Pub/Sub** - Agent subscribes to events, processes asynchronously
+6. **Fault Isolation** - If agent crashes, Claude Code continues working
+
+**Automatic Setup:**
 
 When you `npm install claude-recall`, the installer automatically:
 1. Creates `.claude/hooks/` directory in your project
-2. Installs two Python hook scripts:
-   - `pre_tool_search_enforcer.py` - Blocks Write/Edit until memory search is performed
-   - `user_prompt_capture.py` - Captures prompts for preference extraction
+2. Installs PubNub hook scripts:
+   - `pubnub_pre_tool_hook.py` - Publishes tool execution events (fire-and-forget)
+   - `pubnub_prompt_hook.py` - Publishes user prompts for preference extraction
 3. Configures `.claude/settings.json` with hook bindings
 
-**Hook Behavior:**
+**How It Works:**
 
-When Claude Code tries to create or edit files without searching memories first:
+```python
+# Hook executes in <10ms:
+1. Receive tool execution event from Claude Code
+2. Publish to PubNub (fire-and-forget)
+3. Return immediately ✓
+
+# Meanwhile, memory agent (running as daemon):
+4. Receives event from PubNub
+5. Searches relevant memories
+6. Stores new patterns
+7. Updates memory database
+   (all happens asynchronously, doesn't block Claude Code)
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 MEMORY SEARCH REQUIRED (Phase 1 - Pre-Action)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Before executing Write, please search memories first:
-
-  mcp__claude-recall__search("filename create preferences success failure correction")
-
-WHY THIS MATTERS:
-  ✓ User preferences (coding style, tools, conventions)
-  ✓ Past successes (what worked before)
-  ✓ Past failures (what to avoid)
-  ✓ Recent corrections (highest priority!)
-
-Suggested search query: "filename create preferences success failure correction"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-The tool execution is **blocked** until Claude Code performs the search.
-
-**Benefits:**
-- ✅ **Enforces Phase 1** - Ensures memories are searched before actions
-- ✅ **Prevents repetition** - User never has to repeat preferences
-- ✅ **Educational** - Teaches Claude Code the learning loop
-- ✅ **Smart blocking** - Only blocks file creation/modification, not reads
-- ✅ **Session-aware** - One search covers multiple subsequent operations
 
 **Configuration:**
 
@@ -242,11 +286,11 @@ Hooks are configured in `.claude/settings.json`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/pre_tool_search_enforcer.py"
+            "command": "python3 .claude/hooks/pubnub_pre_tool_hook.py"
           }
         ]
       }
@@ -256,7 +300,7 @@ Hooks are configured in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/user_prompt_capture.py"
+            "command": "python3 .claude/hooks/pubnub_prompt_hook.py"
           }
         ]
       }
@@ -265,30 +309,19 @@ Hooks are configured in `.claude/settings.json`:
 }
 ```
 
-**Disabling Hooks:**
-
-If you want to disable enforcement (not recommended):
-
-```json
-{
-  "hooks": {}
-}
-```
-
-Or remove specific hooks from the `hooks` object.
-
 **Requirements:**
-- Python 3 must be available (pre-installed on most systems)
-- Hook scripts are installed automatically during `npm install`
-- Works with Claude Code CLI hooks system
+- Python 3 (pre-installed on most systems)
+- Memory agent running: `npx claude-recall agent start`
+- Hook scripts installed automatically during `npm install`
 
 **Troubleshooting:**
 
 If hooks aren't working:
 1. Check Python is available: `python3 --version`
 2. Verify hooks are installed: `ls .claude/hooks/`
-3. Check configuration: `cat .claude/settings.json`
-4. Reinstall: `npm install claude-recall --force`
+3. Check agent status: `npx claude-recall agent status`
+4. View agent logs: `npx claude-recall agent logs`
+5. Restart agent: `npx claude-recall agent restart`
 
 ## Verifying Claude Recall is Working
 

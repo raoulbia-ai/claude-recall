@@ -10,6 +10,7 @@
  * This agent makes memory management truly autonomous.
  */
 
+import PubNub from 'pubnub';
 import {
   CHANNELS,
   MessageType,
@@ -21,18 +22,21 @@ import {
   getDefaultConfig,
 } from './config.js';
 import { PubNubPublisher } from './publisher.js';
+import { MemoryService } from '../services/memory.js';
 
 /**
  * Memory Agent - the brain of autonomous memory management
  */
 export class MemoryAgent {
+  private pubnub: PubNub;
   private publisher: PubNubPublisher;
   private agentId: string;
   private sessionId: string;
   private projectId?: string;
-  private subscribeUrl: string;
   private isRunning: boolean = false;
-  private timetoken: string = '0';
+
+  // Memory services
+  private memoryService: MemoryService;
 
   // Memory analysis state
   private recentSearches: Set<string> = new Set();
@@ -44,7 +48,16 @@ export class MemoryAgent {
     this.agentId = `memory-agent-${Date.now()}`;
     this.sessionId = config.userId;
     this.projectId = projectId;
-    this.subscribeUrl = `https://ps.pndsn.com`;
+
+    // Initialize memory services
+    this.memoryService = MemoryService.getInstance();
+
+    // Initialize PubNub SDK
+    this.pubnub = new PubNub({
+      publishKey: config.publishKey,
+      subscribeKey: config.subscribeKey,
+      userId: config.userId
+    });
   }
 
   /**
@@ -58,11 +71,34 @@ export class MemoryAgent {
     console.log(`  - ${CHANNELS.TOOL_EVENTS}`);
     console.log(`  - ${CHANNELS.PROMPT_STREAM}`);
 
-    // Announce agent started
-    await this.publishHeartbeat('active');
+    // Set up PubNub listener
+    this.pubnub.addListener({
+      message: (event) => {
+        console.log(`[Memory Agent] ✅ Message received on ${event.channel}`);
+        this.handleMessage(event.channel, event.message).catch(error => {
+          console.error('[Memory Agent] Error handling message:', error);
+        });
+      },
+      presence: (event) => {
+        console.log(`[Memory Agent] Presence event:`, event);
+      },
+      status: (event) => {
+        console.log(`[Memory Agent] Status: ${event.category}`);
+        if (event.category === 'PNConnectedCategory') {
+          console.log(`[Memory Agent] ✅ Connected to PubNub!`);
+          this.publishHeartbeat('active').catch(err => {
+            console.error('[Memory Agent] Heartbeat error:', err);
+          });
+        }
+      }
+    });
 
-    // Start subscription loop
-    await this.subscribeLoop();
+    // Subscribe to channels
+    this.pubnub.subscribe({
+      channels: [CHANNELS.TOOL_EVENTS, CHANNELS.PROMPT_STREAM]
+    });
+
+    console.log(`[Memory Agent] Subscription initiated, waiting for messages...`);
   }
 
   /**
@@ -71,64 +107,11 @@ export class MemoryAgent {
   async stop(): Promise<void> {
     console.log(`[Memory Agent] Stopping agent ${this.agentId}`);
     this.isRunning = false;
+
+    // Unsubscribe from all channels
+    this.pubnub.unsubscribeAll();
+
     await this.publishHeartbeat('idle');
-  }
-
-  /**
-   * Subscribe loop - continuously poll PubNub for messages
-   */
-  private async subscribeLoop(): Promise<void> {
-    const config = getDefaultConfig();
-    const channels = [CHANNELS.TOOL_EVENTS, CHANNELS.PROMPT_STREAM].join(',');
-
-    while (this.isRunning) {
-      try {
-        // PubNub Subscribe API
-        const url = `${this.subscribeUrl}/subscribe/${config.subscribeKey}/${channels}/0/${this.timetoken}`;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-        const response = await fetch(url, {
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeout);
-
-        if (!response.ok) {
-          console.error(`[Memory Agent] Subscribe error: ${response.status}`);
-          await this.sleep(5000); // Wait 5s before retry
-          continue;
-        }
-
-        const data = await response.json() as any;
-
-        // Update timetoken for next request
-        if (data.t && data.t.t) {
-          this.timetoken = data.t.t;
-        }
-
-        // Process messages
-        if (data.m && Array.isArray(data.m)) {
-          for (const envelope of data.m) {
-            await this.handleMessage(envelope.c, envelope.d);
-          }
-        }
-
-        // Heartbeat every 30 messages or 30 seconds
-        if (Math.random() < 0.1) {
-          await this.publishHeartbeat('active');
-        }
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') {
-          // Timeout - normal, just continue
-          continue;
-        }
-
-        console.error(`[Memory Agent] Subscription error:`, error);
-        await this.sleep(5000); // Wait 5s before retry
-      }
-    }
   }
 
   /**
@@ -147,12 +130,14 @@ export class MemoryAgent {
       switch (channel) {
         case CHANNELS.TOOL_EVENTS:
           if (MessageValidator.isToolExecutionMessage(msg)) {
+            console.log(`[Memory Agent] Processing tool event: ${msg.toolName}`);
             await this.handleToolEvent(msg);
           }
           break;
 
         case CHANNELS.PROMPT_STREAM:
           if (MessageValidator.isPromptMessage(msg)) {
+            console.log(`[Memory Agent] Processing prompt event`);
             await this.handlePromptEvent(msg);
           }
           break;
@@ -354,22 +339,39 @@ export class MemoryAgent {
   }
 
   /**
-   * Search memories using MCP
-   * TODO: Integrate with actual MCP server
+   * Search memories using MemoryService
    */
   private async searchMemories(
     query: string,
     projectId?: string
   ): Promise<any[]> {
-    // TODO: Call MCP server's search function
-    // For now, return mock data
-    console.log(`[Memory Agent] TODO: Search memories for "${query}"`);
-    return [];
+    try {
+      const results = this.memoryService.findRelevant({
+        query,
+        projectId,
+        type: undefined, // Search all types
+      });
+
+      // Filter to only relevant memory types and limit to top 5
+      const filtered = results
+        .filter(r => ['preference', 'success', 'failure', 'correction', 'project-knowledge'].includes(r.type))
+        .slice(0, 5);
+
+      return filtered.map((result: any) => ({
+        id: result.id,
+        content: result.value?.content || result.key,
+        type: result.type,
+        confidence: result.score || 0.8,
+        relevance: result.score
+      }));
+    } catch (error) {
+      console.error('[Memory Agent] Search error:', error);
+      return [];
+    }
   }
 
   /**
-   * Store memory using MCP
-   * TODO: Integrate with actual MCP server
+   * Store memory using MemoryService
    */
   private async storeMemory(
     content: string,
@@ -377,8 +379,20 @@ export class MemoryAgent {
     metadata: Record<string, any>,
     projectId?: string
   ): Promise<void> {
-    // TODO: Call MCP server's store function
-    console.log(`[Memory Agent] TODO: Store ${type}: ${content}`);
+    try {
+      this.memoryService.store({
+        key: `pubnub-agent-${type}-${Date.now()}`,
+        value: { content, ...metadata },
+        type,
+        context: {
+          projectId,
+          timestamp: Date.now()
+        }
+      });
+      console.log(`[Memory Agent] ✅ Stored ${type}: ${content.substring(0, 50)}...`);
+    } catch (error) {
+      console.error('[Memory Agent] Store error:', error);
+    }
   }
 
   /**
@@ -410,12 +424,6 @@ export class MemoryAgent {
     }
   }
 
-  /**
-   * Sleep helper
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
 }
 
 /**

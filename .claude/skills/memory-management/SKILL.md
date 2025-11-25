@@ -31,9 +31,9 @@ This Skill teaches Claude Code how to use Claude Recall's persistent memory syst
    - Code style, framework preferences
    - File organization, naming conventions
 
-4. **Success/Failure** (Priority 3) - What worked and what didn't
-   - Successful implementations to repeat
-   - Failed approaches to avoid
+4. **Success/Failure** (Priority 3) - Learning cycles only
+   - **Success (rare!)**: Only when overcoming challenges - fail → correct → success cycles
+   - **Failure (auto-captured)**: System detects failures automatically with counterfactual reasoning
 
 ## Phase 1: Search Memories (REQUIRED FIRST STEP)
 
@@ -73,8 +73,8 @@ mcp__claude-recall__search("deploy build docker git workflow")
 
 - **DevOps workflows**: Git branching, testing rules, deployment steps
 - **Preferences**: User's stated coding style, tool choices
-- **Successes**: Past approaches that worked well
-- **Failures**: Past approaches that failed (avoid these!)
+- **Learning cycles**: Approaches that overcame challenges (fail → correct → success)
+- **Failures (auto-captured)**: Past approaches that failed (avoid these!)
 - **Corrections**: User fixes (HIGHEST PRIORITY - user explicitly said "no, do this")
 
 ## When to Store Memories
@@ -196,11 +196,9 @@ Finds: "I prefer Python for scripts" + "We use TDD"
 
 Step 2: Create test_script.py with TDD approach
 
-Step 3: User approves → Store success
-mcp__claude-recall__store_memory({
-  content: "Created test script with Python + TDD - SUCCESS",
-  metadata: { type: "success", task: "test_script" }
-})
+Step 3: User approves
+✗ DO NOT store success - this was just applying known preferences
+No challenge overcome, no learning cycle
 ```
 
 ### Third Time (Automatic Application)
@@ -213,10 +211,32 @@ mcp__claude-recall__search("script build python tdd")
 Finds:
 - "I prefer Python for scripts" (preference)
 - "We use TDD" (devops)
-- "Created test script with Python + TDD - SUCCESS" (validates approach)
 
 Step 2: Create build.py with tests automatically
 User doesn't have to repeat preferences! ✓
+```
+
+### Learning Cycle Example (When to Store Success)
+
+```
+User: "Integrate with payment API"
+
+Step 1: Try REST approach
+- Built REST client with fetch()
+- Error: "CORS blocked in production"
+
+Step 2: User feedback
+User: "Our infra doesn't support CORS, use GraphQL endpoint"
+
+Step 3: Switch to GraphQL
+- Implemented GraphQL client
+- SUCCESS! Works in production
+
+Step 4: ✓ STORE THIS - it's a learning cycle
+mcp__claude-recall__store_memory({
+  content: "Payment API: REST failed (CORS blocked). GraphQL endpoint works - use GraphQL for all payment integrations",
+  metadata: { type: "success", task: "payment_api", learning_cycle: true }
+})
 ```
 
 ## Best Practices

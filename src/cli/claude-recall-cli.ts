@@ -18,6 +18,7 @@ import { FailureExtractor } from '../services/failure-extractor';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
+import { AgentCommands } from './commands/agent-commands';
 
 const program = new Command();
 
@@ -671,6 +672,9 @@ async function main() {
 
   // Hook commands (used by Claude Code hooks)
   HookCommands.register(program);
+
+  // Agent commands (autonomous memory agent management)
+  AgentCommands.register(program);
 
   // Register live test command
   new LiveTestCommand().register(program);

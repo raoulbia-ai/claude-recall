@@ -5,23 +5,19 @@
  * Used by both Python hooks (via CLI) and Node.js code.
  */
 
+import PubNub from 'pubnub';
 import { CHANNELS, MessageFactory, PubNubMessage, getDefaultConfig } from './config.js';
 
-// We'll use native fetch API (available in Node 18+) to avoid heavy dependencies
-// This keeps the publisher fast and lightweight
-
 export class PubNubPublisher {
-  private publishKey: string;
-  private subscribeKey: string;
-  private userId: string;
-  private baseUrl: string;
+  private pubnub: PubNub;
 
   constructor() {
     const config = getDefaultConfig();
-    this.publishKey = config.publishKey;
-    this.subscribeKey = config.subscribeKey;
-    this.userId = config.userId;
-    this.baseUrl = `https://ps.pndsn.com`;
+    this.pubnub = new PubNub({
+      publishKey: config.publishKey,
+      subscribeKey: config.subscribeKey,
+      userId: config.userId
+    });
   }
 
   /**
@@ -30,21 +26,14 @@ export class PubNubPublisher {
    */
   async publish(channel: string, message: PubNubMessage): Promise<boolean> {
     try {
-      // PubNub REST API: https://ps.pndsn.com/publish/{pubKey}/{subKey}/0/{channel}/0/{message}
-      const messageJson = JSON.stringify(message);
-      const url = `${this.baseUrl}/publish/${this.publishKey}/${this.subscribeKey}/0/${channel}/0/${encodeURIComponent(messageJson)}`;
-
-      // Fire and forget - don't wait for response to avoid blocking hooks
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1000); // 1s timeout
-
-      const response = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
+      // Use PubNub SDK for reliable message delivery
+      // Cast to any to satisfy PubNub's Payload type requirements
+      const result = await this.pubnub.publish({
+        channel,
+        message: message as any
       });
 
-      clearTimeout(timeout);
-      return response.ok;
+      return !!result; // Success if publish completed
     } catch (error) {
       // Silently fail - hooks should never block on PubNub errors
       console.error('[PubNub] Publish failed:', error);

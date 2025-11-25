@@ -209,7 +209,9 @@ export type PubNubMessage =
  */
 export function getDefaultConfig(): PubNubConfig {
   return {
-    // Demo keys - replace with environment variables for production
+    // Demo keys work out-of-box for testing and development
+    // Override with environment variables for production or if you hit rate limits:
+    // PUBNUB_PUBLISH_KEY, PUBNUB_SUBSCRIBE_KEY, PUBNUB_USER_ID
     publishKey: process.env.PUBNUB_PUBLISH_KEY || 'demo',
     subscribeKey: process.env.PUBNUB_SUBSCRIBE_KEY || 'demo',
     userId: process.env.PUBNUB_USER_ID || `claude-recall-${Date.now()}`,

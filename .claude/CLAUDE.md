@@ -15,8 +15,8 @@ This file provides instructions to Claude Code when working with projects that u
 
 Your job is to:
 1. Remember stated preferences permanently
-2. Learn from successes (what worked)
-3. Learn from failures (what didn't work)
+2. Learn from failures and corrections (what didn't work, how it was fixed)
+3. Capture meaningful success patterns (when overcoming challenges, not trivial actions)
 4. Apply learned patterns automatically
 
 ## The Learning Loop Workflow
@@ -55,15 +55,7 @@ Apply what you found:
 
 ### Phase 3: Post-Action (AFTER task completion)
 
-**Capture the outcome** for future learning by storing directly:
-
-**If user approves** ("Good!", "Perfect!", "Thanks!"):
-```
-mcp__claude-recall__store_memory({
-  content: "Created [what you did] - SUCCESS",
-  metadata: { type: "success", task: "[task type]" }
-})
-```
+**Capture meaningful outcomes** for future learning:
 
 **If user corrects** ("No, do it this way", "Change X to Y"):
 ```
@@ -75,9 +67,26 @@ mcp__claude-recall__store_memory({
 
 **If task fails** (errors, "That didn't work"):
 ```
+Failures are AUTO-CAPTURED with counterfactual reasoning.
+No manual storage needed - the system detects failures automatically.
+```
+
+**If task succeeds AFTER overcoming challenges** (fail → correct → success):
+```
+ONLY store success when there was a learning cycle:
+- After you tried approach A, failed, then approach B worked
+- After user corrected your approach and THEN it succeeded
+- When task required multiple iterations to get right
+
+DO NOT store success for:
+- Trivial tool executions (creating files, running commands)
+- First-try successes with no challenges
+- Actions that just followed existing preferences
+
+Example of meaningful success:
 mcp__claude-recall__store_memory({
-  content: "[Approach] failed - [reason]",
-  metadata: { type: "failure", avoid: true }
+  content: "Tried session-based auth (failed), switched to JWT tokens (SUCCESS) - JWT works better for stateless API",
+  metadata: { type: "success", task: "authentication", learning_cycle: true }
 })
 ```
 
@@ -182,10 +191,8 @@ Confirm: "✓ Stored preference"
 
 3. User responds: "Perfect!"
 
-4. Store success: mcp__claude-recall__store_memory({
-     content: "Created test script with Python - SUCCESS",
-     metadata: { type: "success", task: "test_script" }
-   })
+4. ✗ DO NOT store success - this was just applying a known preference
+   No challenge overcome, no learning cycle.
 ```
 
 ### Third Time - Automatic Application
@@ -195,12 +202,29 @@ Confirm: "✓ Stored preference"
 **You (Claude Code):**
 ```
 1. Search: mcp__claude-recall__search("scripts build python")
-   Finds:
-   - "I prefer Python for scripts" (preference)
-   - "Created test script with Python - SUCCESS" (validates preference)
+   Finds: "I prefer Python for scripts" (preference)
 
-2. Create build.py automatically - preference + success pattern!
+2. Create build.py automatically - preference applied!
    User doesn't have to repeat themselves ✓
+```
+
+### Learning Cycle Example - When to Store Success
+
+**User:** "Set up authentication"
+
+**You (Claude Code):**
+```
+1. Try approach: Create session-based auth with cookies
+2. Error: "CORS issues in stateless API"
+3. User feedback: "This is a stateless API, sessions won't work"
+4. Try approach: JWT tokens with Bearer authentication
+5. Success! Works correctly.
+
+6. ✓ STORE THIS - it's a learning cycle:
+   mcp__claude-recall__store_memory({
+     content: "Session auth failed for stateless API (CORS). JWT tokens work - use Bearer authentication for stateless APIs",
+     metadata: { type: "success", task: "authentication", learning_cycle: true }
+   })
 ```
 
 ### User Makes Correction
@@ -225,11 +249,17 @@ Confirm: "✓ Stored preference"
 - States a preference ("I prefer X", "Always use Y", "Never do Z")
 - Makes a decision ("We're using X framework")
 - Provides project info ("Our API uses X pattern")
+- Makes a correction ("No, do it this way", "Change X to Y")
 
-**Store after task completion:**
-- Success: "Created X with Y approach - SUCCESS"
-- Failure: "Approach X failed - use Y instead"
-- Correction: "CORRECTION: User prefers Y not X"
+**Store after task completion (ONLY for learning cycles):**
+- **Success (rare!)**: Only when overcoming challenges - "Tried X (failed), then Y (SUCCESS)"
+- **Failure (auto-captured)**: System detects automatically, no manual storage needed
+- **Correction**: Always store user corrections with high priority
+
+**DO NOT store:**
+- Trivial successes (file creation, simple tool execution)
+- First-try successes with no challenges
+- Actions that just followed existing preferences
 
 ## Critical Guidelines
 

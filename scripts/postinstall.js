@@ -121,8 +121,8 @@ try {
       // Copy hook scripts from package
       const packageHooksDir = path.join(__dirname, '../.claude/hooks');
       const hookScripts = [
-        'pre_tool_search_enforcer.py',
-        'user_prompt_capture.py'
+        'pubnub_pre_tool_hook.py',
+        'pubnub_prompt_hook.py'
       ];
 
       for (const script of hookScripts) {
@@ -152,11 +152,11 @@ try {
         settings.hooks = {
           PreToolUse: [
             {
-              matcher: "Write|Edit",
+              matcher: "Write|Edit|Bash",
               hooks: [
                 {
                   type: "command",
-                  command: "python3 .claude/hooks/pre_tool_search_enforcer.py"
+                  command: "python3 .claude/hooks/pubnub_pre_tool_hook.py"
                 }
               ]
             }
@@ -166,7 +166,7 @@ try {
               hooks: [
                 {
                   type: "command",
-                  command: "python3 .claude/hooks/user_prompt_capture.py"
+                  command: "python3 .claude/hooks/pubnub_prompt_hook.py"
                 }
               ]
             }
@@ -174,9 +174,9 @@ try {
         };
 
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-        console.log('✅ Configured hooks in .claude/settings.json');
-        console.log('   → PreToolUse: Enforces memory search before file operations');
-        console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+        console.log('✅ Configured PubNub hooks in .claude/settings.json');
+        console.log('   → PreToolUse: Publishes tool events to memory agent');
+        console.log('   → UserPromptSubmit: Publishes prompts for preference extraction');
       }
     }
   } catch (error) {
@@ -187,11 +187,15 @@ try {
   console.log('\n📝 Installation complete!');
   console.log('   Claude Recall MCP server is now configured.');
   console.log('   Restart your terminal to activate the memory system.');
-  console.log('\n💡 Tip: Claude Recall works automatically with the memory-researcher agent.');
-  console.log('   Claude Code will search memories before file operations and decisions.');
-  console.log('\n🎯 Agent Integration:');
-  console.log('   The memory-researcher agent is available in .claude/agents/');
-  console.log('   Claude Code reads .claude/CLAUDE.md for memory-first instructions.');
+  console.log('\n🤖 Autonomous Memory Agent:');
+  console.log('   Start the memory agent to enable real-time memory capture:');
+  console.log('   → npx claude-recall agent start');
+  console.log('   → npx claude-recall agent status  (check if running)');
+  console.log('   → npx claude-recall agent logs     (view agent activity)');
+  console.log('\n💡 How it works:');
+  console.log('   • Hooks publish events to PubNub (fire-and-forget, <10ms)');
+  console.log('   • Memory agent receives events and searches/stores autonomously');
+  console.log('   • No blocking - your Claude Code workflow stays fast!');
   console.log('\n   Your memories persist across conversations and restarts.\n');
 
 } catch (error) {

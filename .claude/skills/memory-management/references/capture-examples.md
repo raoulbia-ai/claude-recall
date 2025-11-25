@@ -5,43 +5,71 @@ This document provides templates for manually storing memories when automatic ca
 ## When to Use Manual Storage
 
 Use `mcp__claude-recall__store_memory` when:
-- Complex multi-step workflows need to be documented
-- Lessons learned from failures
-- User corrects your work
-- Nuanced context that patterns might miss
+- **User corrects your work** (highest priority)
+- **Learning cycles** - When you overcame a challenge (tried A, failed, then B worked)
+- **Complex multi-step workflows** need to be documented
+- **Nuanced context** that automatic capture might miss
 
-## Success Examples
+**DO NOT** use for:
+- Trivial successes (file creation, simple tool execution)
+- First-try successes with no challenges
+- Actions that just followed existing preferences
 
-### Basic Success
+## Success Examples (Learning Cycles Only!)
+
+**IMPORTANT**: Only store success memories when there was a **learning cycle** - you tried something, it failed, then another approach worked. This captures valuable insights, not trivial actions.
+
+### Learning Cycle: Authentication Approach
 ```javascript
+// ✓ Store this - overcame a challenge
 mcp__claude-recall__store_memory({
-  content: "Created authentication with JWT tokens - SUCCESS",
-  metadata: { type: "success", task: "authentication" }
+  content: "Tried session-based auth with cookies (FAILED - CORS issues in distributed API). Switched to JWT tokens with Bearer auth - SUCCESS. JWT works better for stateless architecture.",
+  metadata: {
+    type: "success",
+    task: "authentication",
+    learning_cycle: true,
+    failed_approach: "session_cookies",
+    working_approach: "jwt_bearer"
+  }
 })
 ```
 
-### Success with Context
+### Learning Cycle: Audio Capture Strategy
 ```javascript
+// ✓ Store this - iterated to find the right solution
 mcp__claude-recall__store_memory({
-  content: "Implemented push-to-talk with pyaudio instead of continuous VAD - SUCCESS. Much better performance and user control.",
+  content: "Continuous VAD approach failed (too CPU intensive). Tried buffering (FAILED - lag issues). Implemented push-to-talk with pyaudio - SUCCESS. Much better performance and UX control.",
   metadata: {
     type: "success",
     task: "audio_capture",
+    learning_cycle: true,
     improvement: "performance + ux"
   }
 })
 ```
 
-### Success with Technical Details
+### Learning Cycle: Performance Fix
 ```javascript
+// ✓ Store this - debugging led to solution
 mcp__claude-recall__store_memory({
-  content: "Fixed memory leak by moving PyAudio initialization outside the loop - SUCCESS. Memory usage dropped from 500MB to 50MB.",
+  content: "Memory leak investigation: Tried garbage collection tuning (no effect). Checked event listeners (not the issue). Found PyAudio initialization inside loop - moved outside - SUCCESS. Memory dropped 500MB → 50MB.",
   metadata: {
     type: "success",
     task: "performance",
+    learning_cycle: true,
     metric: "10x memory reduction"
   }
 })
+```
+
+### ✗ DON'T Store Trivial Success
+```javascript
+// ✗ DON'T store this - no challenge, just basic tool execution
+mcp__claude-recall__store_memory({
+  content: "Created authentication module with JWT - SUCCESS",
+  metadata: { type: "success", task: "authentication" }
+})
+// Why not? No failure, no iteration, no learning cycle.
 ```
 
 ## Failure Examples
