@@ -292,7 +292,7 @@ export class MemoryAgent {
     const lower = content.toLowerCase();
 
     // Detect request interruptions - these are high-priority corrections
-    const interruptionMatch = content.match(/\[request interrupted by user\]\s*(.+)/i);
+    const interruptionMatch = content.match(/request interrupted.*?\]\s*(.+)/i);
     if (interruptionMatch && interruptionMatch[1]) {
       const userMessage = interruptionMatch[1].trim();
 
