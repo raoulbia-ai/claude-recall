@@ -363,6 +363,36 @@ ps aux | grep claude-recall
 ```
 Should show the MCP server process running.
 
+## PubNub: Fire-and-Forget Architecture
+
+Claude Recall uses **PubNub** as a real-time message bus to enable truly autonomous memory operations with zero performance impact on Claude Code.
+
+###  What is PubNub?
+
+PubNub is a real-time pub/sub messaging service that acts as a message bus between Claude Code and the Memory Agent. When Claude Code executes a tool (Write, Edit, Bash), a lightweight hook publishes an event to PubNub and returns immediately (<10ms). The Memory Agent, running as an independent daemon, subscribes to these events and processes them asynchronously.
+
+**Simple flow:**
+```
+Claude Code → Hook (<10ms) → PubNub → Memory Agent (background)
+       ↓
+  Continues immediately
+  (zero blocking!)
+```
+
+### Why This Matters
+
+- **<10ms hook latency** - Hooks return instantly, no waiting
+- **Zero performance impact** - Memory operations happen in background
+- **True autonomy** - Agent runs independently, crashes don't affect Claude Code
+- **Fault isolation** - If agent fails, Claude Code continues working
+- **Real-time pub/sub** - Events flow asynchronously through message bus
+
+### Demo Keys Included
+
+Claude Recall includes **demo PubNub keys** that work out of the box - no signup or configuration required. Perfect for getting started immediately.
+
+**For production use**, you can optionally use your own PubNub keys (free tier available). See [PubNub Integration Guide](docs/PUBNUB_INTEGRATION.md) for details.
+
 ## How It Works
 
 Claude Recall implements an **intelligent learning loop** that ensures you never repeat yourself:

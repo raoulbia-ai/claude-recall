@@ -291,12 +291,49 @@ export class MemoryAgent {
   } {
     const lower = content.toLowerCase();
 
+    // Detect request interruptions - these are high-priority corrections
+    const interruptionMatch = content.match(/\[request interrupted by user\]\s*(.+)/i);
+    if (interruptionMatch && interruptionMatch[1]) {
+      const userMessage = interruptionMatch[1].trim();
+
+      return {
+        shouldStore: true,
+        type: 'correction',
+        content: `INTERRUPTION CORRECTION: ${userMessage}`,
+        metadata: {
+          priority: 'highest',
+          confidence: 0.95,
+          source: 'user-interruption',
+          interrupted: true
+        },
+      };
+    }
+
+    // Short correction patterns (for terse corrections like "no gpg needed!")
+    const shortCorrectionPatterns = [
+      /\bno (gpg|signing|hooks|verify|tests?|push|commit|tag)/i,
+      /\bskip (tests?|hooks|verify|gpg|signing)/i,
+      /\bdon'?t (use|need|want|run|execute|commit|push)/i,
+      /\buse \w+/i,
+    ];
+
+    for (const pattern of shortCorrectionPatterns) {
+      if (pattern.test(content)) {
+        return {
+          shouldStore: true,
+          type: 'correction',
+          content: `CORRECTION: ${content.trim()}`,
+          metadata: { priority: 'high', confidence: 0.9, source: 'short-correction' },
+        };
+      }
+    }
+
     // Strong preference indicators
     const preferenceWords = ['prefer', 'always', 'never', 'from now on', 'moving forward'];
     const hasPreference = preferenceWords.some((w) => lower.includes(w));
 
-    // Correction indicators
-    const correctionWords = ['no,', 'actually', 'instead', 'correction', 'fix'];
+    // Correction indicators (relaxed to include "no " without comma)
+    const correctionWords = ['no,', 'no ', 'nope', 'actually', 'instead', 'correction', 'fix', 'wrong', 'incorrect', 'dont', "don't"];
     const isCorrection = correctionWords.some((w) => lower.includes(w));
 
     // Project-specific indicators
