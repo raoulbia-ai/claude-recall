@@ -19,6 +19,17 @@ This enables:
 
 ---
 
+## Automatic Memory Scoping
+
+Claude Recall automatically manages memory scope:
+- **Universal memories** (coding style, tool preferences) → reused across all projects
+- **Project memories** (database configs, APIs) → isolated per project
+
+System auto-detects from language ("remember everywhere" vs "for this project").
+No user configuration needed.
+
+---
+
 ## Presence Channel
 
 Memory Agent publishes heartbeats:

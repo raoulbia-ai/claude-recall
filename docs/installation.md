@@ -37,6 +37,10 @@ Then restart **Claude Code**.
 
 Claude will automatically detect the MCP server and begin using persistent memory.
 
+Installation creates `.claude/skills/memory-management/` with:
+- SKILL.md (main skill definition)
+- references/ (examples, patterns, troubleshooting)
+
 ---
 
 ## Global Install (Not Recommended)

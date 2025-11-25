@@ -221,6 +221,9 @@ Project-specific keys ensure:
 - no cross-project leakage
 - clean agent shutdown
 
+**Recommended**: Create your own free keys for production:
+[Create PubNub Keys](https://www.pubnub.com/how-to/admin-portal-create-keys/)
+
 ---
 
 ## What if I want to reset everything?
