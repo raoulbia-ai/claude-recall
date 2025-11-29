@@ -121,6 +121,7 @@ try {
       // Copy hook scripts from package
       const packageHooksDir = path.join(__dirname, '../.claude/hooks');
       const hookScripts = [
+        'pre_tool_search_enforcer.py',
         'pubnub_pre_tool_hook.py',
         'pubnub_prompt_hook.py'
       ];
@@ -152,8 +153,12 @@ try {
         settings.hooks = {
           PreToolUse: [
             {
-              matcher: "Write|Edit|Bash",
+              matcher: "Write|Edit",
               hooks: [
+                {
+                  type: "command",
+                  command: "python3 .claude/hooks/pre_tool_search_enforcer.py"
+                },
                 {
                   type: "command",
                   command: "python3 .claude/hooks/pubnub_pre_tool_hook.py"
@@ -174,9 +179,9 @@ try {
         };
 
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-        console.log('✅ Configured PubNub hooks in .claude/settings.json');
-        console.log('   → PreToolUse: Publishes tool events to memory agent');
-        console.log('   → UserPromptSubmit: Publishes prompts for preference extraction');
+        console.log('✅ Configured hooks in .claude/settings.json');
+        console.log('   → PreToolUse: Enforces memory search before Write/Edit');
+        console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
       }
     }
   } catch (error) {

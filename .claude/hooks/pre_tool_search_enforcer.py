@@ -47,8 +47,8 @@ def should_require_search(tool_name: str, tool_input: Dict[str, Any]) -> bool:
 def check_recent_search(session_id: str) -> bool:
     """Check if memory search was performed recently in this session."""
     if not session_id:
-        # No session ID, be permissive
-        return True
+        # No session ID - strict mode: block execution
+        return False
 
     try:
         # Call claude-recall CLI to check recent tool usage
@@ -60,15 +60,15 @@ def check_recent_search(session_id: str) -> bool:
         )
 
         if result.returncode != 0:
-            # Command failed, be permissive (don't block)
-            return True
+            # Command failed - strict mode: block execution
+            return False
 
         # Check if mcp__claude-recall__search was called recently
         return 'mcp__claude-recall__search' in result.stdout
 
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        # If check fails, be permissive (don't block)
-        return True
+        # Check failed - strict mode: block execution
+        return False
 
 
 def generate_search_query(tool_name: str, tool_input: Dict[str, Any]) -> str:
