@@ -174,9 +174,19 @@ npx claude-recall --version
 
 # Show activation instructions:
 npx claude-recall setup
+```
 
-# Upgrade to latest:
+### Upgrade (existing users)
+
+npm doesn't run postinstall on version upgrades, so hooks/skills won't update automatically.
+
+```bash
+# Option 1: Uninstall and reinstall (recommended)
 npm uninstall claude-recall && npm install claude-recall@latest
+
+# Option 2: Manually install hooks/skills after upgrade
+npm install claude-recall@latest
+npx claude-recall setup --install
 ```
 
 ---

@@ -592,29 +592,164 @@ async function main() {
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
-  // Setup command - shows activation instructions
+  // Helper function to recursively copy directories
+  function copyDirRecursive(src: string, dest: string): void {
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+
+      if (entry.isDirectory()) {
+        copyDirRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+
+  // Install hooks and skills to current project
+  function installHooksAndSkills(): void {
+    const cwd = process.cwd();
+    const projectName = path.basename(cwd);
+
+    console.log('\n📦 Installing Claude Recall hooks and skills...\n');
+    console.log(`📍 Project: ${projectName}`);
+    console.log(`📍 Directory: ${cwd}\n`);
+
+    // Find the package directory (where claude-recall is installed)
+    // When run via npx, __dirname points to dist/cli, so we go up to find .claude
+    const packageDir = path.resolve(__dirname, '../..');
+    const packageHooksDir = path.join(packageDir, '.claude/hooks');
+    const packageSkillsDir = path.join(packageDir, '.claude/skills');
+
+    const claudeDir = path.join(cwd, '.claude');
+    const hooksDir = path.join(claudeDir, 'hooks');
+
+    // Create .claude/hooks directory
+    if (!fs.existsSync(hooksDir)) {
+      fs.mkdirSync(hooksDir, { recursive: true });
+    }
+
+    // Copy hook scripts
+    const hookScripts = [
+      'pre_tool_search_enforcer.py',
+      'pubnub_pre_tool_hook.py',
+      'pubnub_prompt_hook.py'
+    ];
+
+    let hooksInstalled = 0;
+    for (const script of hookScripts) {
+      const source = path.join(packageHooksDir, script);
+      const dest = path.join(hooksDir, script);
+
+      if (fs.existsSync(source)) {
+        fs.copyFileSync(source, dest);
+        fs.chmodSync(dest, 0o755);
+        hooksInstalled++;
+      }
+    }
+
+    if (hooksInstalled > 0) {
+      console.log(`✅ Installed ${hooksInstalled} hook scripts to .claude/hooks/`);
+    } else {
+      console.log(`⚠️  No hook scripts found at: ${packageHooksDir}`);
+    }
+
+    // Create or update .claude/settings.json with hook configuration
+    const settingsPath = path.join(claudeDir, 'settings.json');
+    let settings: Record<string, unknown> = {};
+
+    if (fs.existsSync(settingsPath)) {
+      const settingsContent = fs.readFileSync(settingsPath, 'utf8');
+      settings = JSON.parse(settingsContent);
+    }
+
+    // Add hook configuration if not already present
+    if (!settings.hooks) {
+      settings.hooks = {
+        PreToolUse: [
+          {
+            matcher: "Write|Edit",
+            hooks: [
+              {
+                type: "command",
+                command: "python3 .claude/hooks/pre_tool_search_enforcer.py"
+              },
+              {
+                type: "command",
+                command: "python3 .claude/hooks/pubnub_pre_tool_hook.py"
+              }
+            ]
+          }
+        ],
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "python3 .claude/hooks/pubnub_prompt_hook.py"
+              }
+            ]
+          }
+        ]
+      };
+
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      console.log('✅ Configured hooks in .claude/settings.json');
+      console.log('   → PreToolUse: Enforces memory search before Write/Edit');
+      console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+    } else {
+      console.log('ℹ️  Hooks already configured in .claude/settings.json (skipped)');
+    }
+
+    // Copy skills directory
+    if (fs.existsSync(packageSkillsDir)) {
+      const skillsDir = path.join(claudeDir, 'skills');
+      copyDirRecursive(packageSkillsDir, skillsDir);
+      console.log('✅ Installed skills to .claude/skills/');
+    } else {
+      console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
+    }
+
+    console.log('\n✅ Installation complete!\n');
+    console.log('Restart Claude Code to activate hooks and skills.\n');
+  }
+
+  // Setup command - shows activation instructions or installs hooks/skills
   program
     .command('setup')
-    .description('Show activation instructions for Claude Recall')
-    .action(() => {
-      console.log('\n✅ Claude Recall Setup\n');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('📌 ACTIVATE CLAUDE RECALL:');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('');
-      console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
-      console.log('');
-      console.log('  Then restart Claude Code (exit and re-enter the session).');
-      console.log('');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('');
-      console.log('🔄 Already registered? Remove and re-add:');
-      console.log('  claude mcp remove claude-recall');
-      console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
-      console.log('');
-      console.log('🛑 Stop old instance:');
-      console.log('  npx claude-recall mcp stop');
-      console.log('');
+    .description('Show activation instructions or install hooks/skills')
+    .option('--install', 'Install hooks and skills to current project')
+    .action((options) => {
+      if (options.install) {
+        // Install hooks and skills to current project
+        installHooksAndSkills();
+      } else {
+        // Show activation instructions
+        console.log('\n✅ Claude Recall Setup\n');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('📌 ACTIVATE CLAUDE RECALL:');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
+        console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+        console.log('');
+        console.log('  Then restart Claude Code (exit and re-enter the session).');
+        console.log('');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
+        console.log('🔄 Already registered? Remove and re-add:');
+        console.log('  claude mcp remove claude-recall');
+        console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+        console.log('');
+        console.log('🛑 Stop old instance:');
+        console.log('  npx claude-recall mcp stop');
+        console.log('');
+      }
       process.exit(0);
     });
 
