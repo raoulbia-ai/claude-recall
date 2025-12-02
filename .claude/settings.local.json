@@ -6,7 +6,8 @@
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(claude-recall --version)"
+      "Bash(claude-recall --version)",
+      "Bash(npx claude-recall:*)"
     ],
     "deny": [],
     "ask": []

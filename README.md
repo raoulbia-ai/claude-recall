@@ -170,7 +170,20 @@ cd your-project
 npm install claude-recall
 ```
 
-Restart **Claude Code**.
+---
+
+### Activate
+
+```bash
+# Add to your MCP config (if not already):
+claude mcp add claude-recall -- npx -y claude-recall@latest
+
+# Or restart Claude Code if it's already configured:
+# Exit and restart the claude session
+
+# Verify it's in your config:
+cat ~/.claude/settings.json | grep -A 5 claude-recall
+```
 
 ---
 

@@ -34,6 +34,7 @@ export class MCPCommands {
       .description('Show MCP server status for current project')
       .action(async () => {
         await commands.showStatus();
+        process.exit(0);
       });
 
     // mcp ps - List all running MCP servers
@@ -42,6 +43,7 @@ export class MCPCommands {
       .description('List all running MCP servers across all projects')
       .action(async () => {
         await commands.listServers();
+        process.exit(0);
       });
 
     // mcp stop - Stop MCP server
@@ -52,6 +54,7 @@ export class MCPCommands {
       .option('--force', 'Force kill (SIGKILL) instead of graceful shutdown (SIGTERM)')
       .action(async (options) => {
         await commands.stopServer(options);
+        process.exit(0);
       });
 
     // mcp restart - Restart MCP server
@@ -61,6 +64,7 @@ export class MCPCommands {
       .option('--force', 'Force kill before restart')
       .action(async (options) => {
         await commands.restartServer(options);
+        process.exit(0);
       });
 
     // mcp cleanup - Clean up stale processes and PID files
@@ -72,6 +76,7 @@ export class MCPCommands {
       .option('--force', 'Force kill processes')
       .action(async (options) => {
         await commands.cleanup(options);
+        process.exit(0);
       });
   }
 
