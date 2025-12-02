@@ -171,6 +171,12 @@ npm install claude-recall
 
 # Check installed version:
 npx claude-recall --version
+
+# Show activation instructions:
+npx claude-recall setup
+
+# Upgrade to latest:
+npm uninstall claude-recall && npm install claude-recall@latest
 ```
 
 ---
