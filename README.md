@@ -44,6 +44,16 @@ Claude Recall uses a lightweight, metadata-only PubNub layer to provide **instan
 * **Claude stays fast and responsive**
   Even under heavy editing or repeated tool runs.
 
+### Why only Write/Edit, not Search?
+
+* **Write/Edit (capture)** → async via PubNub
+  Hooks fire metadata and return instantly. Memory Agent processes in background. Non-blocking.
+
+* **Search (retrieval)** → sync via MCP
+  Claude needs results immediately to inform its response. Must be synchronous. No benefit to PubNub here.
+
+The pattern: **capture async, retrieve sync**.
+
 ### What PubNub actually carries (metadata-only)
 
 * tool name
