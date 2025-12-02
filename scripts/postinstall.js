@@ -8,6 +8,26 @@ console.log('\n🚀 Setting up Claude Recall...\n');
 
 const { execSync } = require('child_process');
 
+// Helper function for recursive directory copy
+function copyDirRecursive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 try {
   // Set up database location in user's home directory
   const dbDir = path.join(os.homedir(), '.claude-recall');
@@ -92,12 +112,18 @@ try {
     console.log('⚠️  Failed to register project (non-fatal):', error.message);
   }
 
-  // Install hook scripts to .claude/hooks/ directory
+  // Install hook scripts and skills to .claude/ directory
   try {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
+    const packageHooksDir = path.join(__dirname, '../.claude/hooks');
+    const packageSkillsDir = path.join(__dirname, '../.claude/skills');
 
-    // Only install hooks for actual projects (not in claude-recall itself or node_modules)
+    // Debug logging to help diagnose installation issues
+    console.log(`📍 Detected project: ${projectName}`);
+    console.log(`📍 Working directory: ${cwd}`);
+
+    // Only install hooks/skills for actual projects (not in claude-recall itself or node_modules)
     if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
       const claudeDir = path.join(cwd, '.claude');
       const hooksDir = path.join(claudeDir, 'hooks');
@@ -107,8 +133,7 @@ try {
         fs.mkdirSync(hooksDir, { recursive: true });
       }
 
-      // Copy hook scripts from package
-      const packageHooksDir = path.join(__dirname, '../.claude/hooks');
+      // Copy hook scripts from package (packageHooksDir defined above)
       const hookScripts = [
         'pre_tool_search_enforcer.py',
         'pubnub_pre_tool_hook.py',
@@ -172,10 +197,19 @@ try {
         console.log('   → PreToolUse: Enforces memory search before Write/Edit');
         console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
       }
+
+      // Copy skills directory (packageSkillsDir defined above)
+      if (fs.existsSync(packageSkillsDir)) {
+        const skillsDir = path.join(claudeDir, 'skills');
+        copyDirRecursive(packageSkillsDir, skillsDir);
+        console.log('✅ Installed skills to .claude/skills/');
+      } else {
+        console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
+      }
     }
   } catch (error) {
-    // Don't fail installation if hook setup fails
-    console.log('⚠️  Failed to install hooks (non-fatal):', error.message);
+    // Don't fail installation if hook/skill setup fails
+    console.log('⚠️  Failed to install hooks/skills (non-fatal):', error.message);
   }
 
   console.log('\n✅ Installation complete!\n');
