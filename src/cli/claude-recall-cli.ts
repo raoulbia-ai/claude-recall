@@ -592,6 +592,32 @@ async function main() {
     .option('--verbose', 'Enable verbose logging')
     .option('--config <path>', 'Path to custom config file');
 
+  // Setup command - shows activation instructions
+  program
+    .command('setup')
+    .description('Show activation instructions for Claude Recall')
+    .action(() => {
+      console.log('\n✅ Claude Recall Setup\n');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📌 ACTIVATE CLAUDE RECALL:');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('');
+      console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+      console.log('');
+      console.log('  Then restart Claude Code (exit and re-enter the session).');
+      console.log('');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('');
+      console.log('🔄 Already registered? Remove and re-add:');
+      console.log('  claude mcp remove claude-recall');
+      console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+      console.log('');
+      console.log('🛑 Stop old instance:');
+      console.log('  npx claude-recall mcp stop');
+      console.log('');
+      process.exit(0);
+    });
+
   // MCP command
   const mcpCmd = program
     .command('mcp')
