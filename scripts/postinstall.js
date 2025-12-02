@@ -178,19 +178,21 @@ try {
     console.log('⚠️  Failed to install hooks (non-fatal):', error.message);
   }
 
-  console.log('\n📝 Installation complete!');
-  console.log('   Claude Recall MCP server is now configured.');
-  console.log('   Restart your terminal to activate the memory system.');
-  console.log('\n🤖 Autonomous Memory Agent:');
-  console.log('   Start the memory agent to enable real-time memory capture:');
-  console.log('   → npx claude-recall agent start');
-  console.log('   → npx claude-recall agent status  (check if running)');
-  console.log('   → npx claude-recall agent logs     (view agent activity)');
-  console.log('\n💡 How it works:');
-  console.log('   • Hooks publish events to PubNub (fire-and-forget, <10ms)');
-  console.log('   • Memory agent receives events and searches/stores autonomously');
-  console.log('   • No blocking - your Claude Code workflow stays fast!');
-  console.log('\n   Your memories persist across conversations and restarts.\n');
+  console.log('\n✅ Installation complete!\n');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('📌 ACTIVATE CLAUDE RECALL:');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('');
+  console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+  console.log('');
+  console.log('  Then restart Claude Code (exit and re-enter the session).');
+  console.log('');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('');
+  console.log('🤖 Optional: Start the memory agent for real-time capture:');
+  console.log('   npx claude-recall agent start');
+  console.log('');
+  console.log('💡 Your memories persist across conversations and restarts.\n');
 
 } catch (error) {
   console.error('❌ Error updating ~/.claude.json:', error.message);
