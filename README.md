@@ -188,6 +188,16 @@ claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 # Then restart your terminal or session
 ```
 
+### Stop old instance
+
+If an old MCP server is already running:
+
+```bash
+npx -y claude-recall@latest mcp stop
+```
+
+Then restart your session - it will automatically start the latest version.
+
 ---
 
 ### Verify it's working
