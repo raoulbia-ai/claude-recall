@@ -35,14 +35,26 @@ export class StdioTransport {
   private running = false;
   private messageBuffer = '';
   private expectedLength = 0;
-  
-  // Claude-flow pattern: Reconnection handling
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
-  private reconnectDelay = 1000;
-  private isShuttingDown = false;
 
-  constructor() {}
+  // Reconnection handling with exponential backoff
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts: number;
+  private baseReconnectDelay: number;
+  private isShuttingDown = false;
+  private isDisconnected = false;  // New: track disconnected state
+
+  constructor() {
+    // Configurable via environment variables
+    this.maxReconnectAttempts = parseInt(process.env.CLAUDE_RECALL_MAX_RETRIES || '5', 10);
+    this.baseReconnectDelay = parseInt(process.env.CLAUDE_RECALL_RETRY_DELAY || '1000', 10);
+  }
+
+  /**
+   * Check if transport is in disconnected state (max retries exceeded)
+   */
+  get disconnected(): boolean {
+    return this.isDisconnected;
+  }
 
   async start(): Promise<void> {
     if (this.running) {
@@ -83,6 +95,7 @@ export class StdioTransport {
 
       this.running = true;
       this.reconnectAttempts = 0; // Reset on successful start
+      this.isDisconnected = false; // Clear disconnected state
     } catch (error) {
       await this.handleTransportError(error as Error);
     }
@@ -249,26 +262,46 @@ export class StdioTransport {
     }
   }
 
-  // Claude-flow pattern: Transport error handling with reconnection
+  /**
+   * Calculate delay with exponential backoff and jitter
+   * Formula: baseDelay * 2^attempt + random jitter (0-500ms)
+   */
+  private calculateBackoffDelay(): number {
+    const exponentialDelay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const jitter = Math.floor(Math.random() * 500);
+    return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
+  }
+
+  /**
+   * Handle transport errors with exponential backoff reconnection
+   * Does NOT call process.exit() - instead transitions to disconnected state
+   */
   private async handleTransportError(error: Error): Promise<void> {
     console.error('StdioTransport error:', error);
-    
+
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(`Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts}...`);
-      
-      await new Promise(resolve => setTimeout(resolve, this.reconnectDelay));
-      
+      const delay = this.calculateBackoffDelay();
+      console.log(`Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+
       try {
         await this.restart();
         this.reconnectAttempts = 0;
+        this.isDisconnected = false;
         console.log('Reconnection successful');
       } catch (restartError) {
         await this.handleTransportError(restartError as Error);
       }
     } else {
-      console.error('Max reconnection attempts reached, giving up');
-      process.exit(1);
+      // Instead of process.exit(1), transition to disconnected state
+      // This allows the parent process to handle the situation
+      console.error('Max reconnection attempts reached, entering disconnected state');
+      console.error('Server will remain running but transport is unavailable');
+      console.error('Restart the session to reconnect');
+      this.isDisconnected = true;
+      this.running = false;
     }
   }
 

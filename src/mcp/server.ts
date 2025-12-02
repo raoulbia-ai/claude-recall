@@ -72,6 +72,8 @@ export class MCPServer {
   private processManager: ProcessManager;
   private config: ConfigService;
   private isInitialized = false;
+  private parentPid: number | null = null;
+  private parentCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.transport = new StdioTransport();
@@ -477,9 +479,10 @@ export class MCPServer {
   private async handleHealthCheck(request: MCPRequest): Promise<MCPResponse> {
     const rateLimiterStats = this.rateLimiter.getStats();
     const conversationStats = this.conversationContext.getStats();
+    const transportDisconnected = this.transport.disconnected;
 
     const health = {
-      status: 'healthy',
+      status: transportDisconnected ? 'degraded' : 'healthy',
       version: '0.2.0',
       uptime: process.uptime(),
       memory: process.memoryUsage(),
@@ -489,6 +492,7 @@ export class MCPServer {
       },
       toolsRegistered: this.tools.size,
       database: this.memoryService.isConnected() ? 'connected' : 'disconnected',
+      transport: transportDisconnected ? 'disconnected' : 'connected',
       rateLimiter: {
         activeSessions: rateLimiterStats.activeSessions,
         totalRequests: rateLimiterStats.totalRequests,
@@ -527,27 +531,17 @@ export class MCPServer {
 
       this.logger.debug('MCPServer', `Project registered: ${projectId} at ${rootDir} (v${version})`);
 
-      // Check for existing MCP server process
+      // Check for existing MCP server process and auto-cleanup
       const existingPid = this.processManager.readPidFile(projectId);
 
       if (existingPid) {
-        // Validate if process is actually running
         if (this.processManager.isProcessRunning(existingPid)) {
-          // Check environment variable for auto-cleanup behavior
-          const autoCleanup = process.env.CLAUDE_RECALL_AUTO_CLEANUP === 'true';
-
-          if (autoCleanup) {
-            this.logger.warn('MCPServer', `Killing stale MCP server (PID: ${existingPid}) before starting...`);
-            this.processManager.killProcess(existingPid, false);
-            this.processManager.removePidFile(projectId);
-            // Give it a moment to shut down
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            throw new Error(
-              `MCP server already running for project "${projectId}" (PID: ${existingPid}). ` +
-              `Stop it first with: npx claude-recall mcp stop`
-            );
-          }
+          // Always auto-cleanup stale processes (no longer requires env var)
+          this.logger.warn('MCPServer', `Stopping existing MCP server (PID: ${existingPid}) before starting...`);
+          this.processManager.killProcess(existingPid, false);
+          this.processManager.removePidFile(projectId);
+          // Give it a moment to shut down
+          await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
           // Clean up stale PID file
           this.logger.info('MCPServer', 'Removing stale PID file...');
@@ -564,6 +558,9 @@ export class MCPServer {
       // Write PID file after successful startup
       this.processManager.writePidFile(projectId, process.pid);
       this.logger.info('MCPServer', `MCP server started successfully (PID: ${process.pid}, Project: ${projectId})`);
+
+      // Start parent process monitoring
+      this.startParentProcessMonitoring();
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);
       throw error;
@@ -573,6 +570,12 @@ export class MCPServer {
   async stop(): Promise<void> {
     try {
       this.logger.info('MCPServer', 'Stopping MCP server...');
+
+      // Stop parent process monitoring
+      if (this.parentCheckInterval) {
+        clearInterval(this.parentCheckInterval);
+        this.parentCheckInterval = null;
+      }
 
       // Clean up old sessions before shutdown
       this.sessionManager.cleanupOldSessions();
@@ -628,6 +631,58 @@ export class MCPServer {
       return packageJson.version;
     } catch (error) {
       return 'unknown';
+    }
+  }
+
+  /**
+   * Start monitoring the parent process
+   * If the parent dies (e.g., Claude Code crashes), exit gracefully
+   */
+  private startParentProcessMonitoring(): void {
+    // Get parent PID - this is the process that spawned us (Claude Code)
+    this.parentPid = process.ppid;
+
+    if (!this.parentPid || this.parentPid === 1) {
+      // No valid parent or parent is init - skip monitoring
+      this.logger.debug('MCPServer', 'Parent process monitoring disabled (no valid parent PID)');
+      return;
+    }
+
+    this.logger.debug('MCPServer', `Monitoring parent process (PID: ${this.parentPid})`);
+
+    // Check every 30 seconds if parent is still alive
+    const checkInterval = parseInt(process.env.CLAUDE_RECALL_PARENT_CHECK_INTERVAL || '30000', 10);
+
+    this.parentCheckInterval = setInterval(() => {
+      if (!this.isParentAlive()) {
+        this.logger.warn('MCPServer', `Parent process (PID: ${this.parentPid}) no longer running, shutting down...`);
+        this.stop().then(() => {
+          process.exit(0);
+        }).catch((err) => {
+          this.logger.error('MCPServer', 'Error during shutdown after parent death', err);
+          process.exit(1);
+        });
+      }
+    }, checkInterval);
+
+    // Don't prevent process exit if this is the only timer
+    this.parentCheckInterval.unref();
+  }
+
+  /**
+   * Check if parent process is still alive
+   */
+  private isParentAlive(): boolean {
+    if (!this.parentPid) return true;
+
+    try {
+      // Sending signal 0 checks if process exists without killing it
+      process.kill(this.parentPid, 0);
+      return true;
+    } catch (error: any) {
+      // ESRCH means process doesn't exist
+      // EPERM means it exists but we don't have permission (still alive)
+      return error.code === 'EPERM';
     }
   }
 }
