@@ -168,6 +168,9 @@ Claude automatically searches memory before writing or editing files.
 ```bash
 cd your-project
 npm install claude-recall
+
+# Check installed version:
+npx claude-recall --version
 ```
 
 ---
@@ -176,13 +179,13 @@ npm install claude-recall
 
 ```bash
 # Add to your MCP config (if not already):
-claude mcp add claude-recall -- npx -y claude-recall@latest
+claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 
-# Or restart Claude Code if it's already configured:
-# Exit and restart the claude session
+# Already registered? Remove and re-add:
+claude mcp remove claude-recall
+claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 
-# Verify it's in your config:
-cat ~/.claude/settings.json | grep -A 5 claude-recall
+# Then restart your terminal or session
 ```
 
 ---
