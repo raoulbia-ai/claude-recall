@@ -163,6 +163,7 @@ try {
       }
 
       // Add hook configuration if not already present
+      // Use ABSOLUTE paths so hooks work from any subdirectory
       if (!settings.hooks) {
         settings.hooks = {
           PreToolUse: [
@@ -171,11 +172,11 @@ try {
               hooks: [
                 {
                   type: "command",
-                  command: "python3 .claude/hooks/pre_tool_search_enforcer.py"
+                  command: `python3 ${path.join(hooksDir, 'pre_tool_search_enforcer.py')}`
                 },
                 {
                   type: "command",
-                  command: "python3 .claude/hooks/pubnub_pre_tool_hook.py"
+                  command: `python3 ${path.join(hooksDir, 'pubnub_pre_tool_hook.py')}`
                 }
               ]
             }
@@ -185,7 +186,7 @@ try {
               hooks: [
                 {
                   type: "command",
-                  command: "python3 .claude/hooks/pubnub_prompt_hook.py"
+                  command: `python3 ${path.join(hooksDir, 'pubnub_prompt_hook.py')}`
                 }
               ]
             }
