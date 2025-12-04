@@ -753,6 +753,15 @@ async function main() {
       process.exit(0);
     });
 
+  // Repair command - simple alias for setup --install
+  program
+    .command('repair')
+    .description('Repair broken or missing hooks and skills (same as setup --install)')
+    .action(() => {
+      installHooksAndSkills();
+      process.exit(0);
+    });
+
   // MCP command
   const mcpCmd = program
     .command('mcp')
