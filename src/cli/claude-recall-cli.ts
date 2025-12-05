@@ -855,7 +855,7 @@ async function main() {
   // Hooks command group
   const hooksCmd = program
     .command('hooks')
-    .description('Hook management commands');
+    .description('Hook management commands (use: hooks check)');
 
   hooksCmd
     .command('check')
