@@ -763,6 +763,108 @@ async function main() {
       process.exit(0);
     });
 
+  // Check hooks function
+  function checkHooks(): void {
+    const cwd = process.cwd();
+    console.log('\n🔍 Checking Claude Recall hooks...\n');
+    console.log(`📍 Directory: ${cwd}\n`);
+
+    // 1. Find settings.json (walk up directory tree like Claude Code does)
+    let settingsPath: string | null = null;
+    let searchDir = cwd;
+    while (searchDir !== path.dirname(searchDir)) {
+      const candidate = path.join(searchDir, '.claude/settings.json');
+      if (fs.existsSync(candidate)) {
+        settingsPath = candidate;
+        break;
+      }
+      searchDir = path.dirname(searchDir);
+    }
+
+    if (!settingsPath) {
+      console.log('❌ No .claude/settings.json found in directory tree');
+      console.log('   Run: npx claude-recall repair\n');
+      return;
+    }
+    console.log(`✅ Found settings: ${settingsPath}`);
+
+    // 2. Parse and check hooks config
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    if (!settings.hooks) {
+      console.log('❌ No hooks configured in settings.json');
+      return;
+    }
+    console.log('✅ Hooks configured in settings.json');
+
+    // 3. Check each hook file exists
+    const hookCommands: string[] = [];
+    for (const hookType of ['PreToolUse', 'UserPromptSubmit']) {
+      const hooks = settings.hooks[hookType] || [];
+      for (const group of hooks) {
+        for (const hook of group.hooks || []) {
+          if (hook.command) hookCommands.push(hook.command);
+        }
+      }
+    }
+
+    console.log(`\n📋 Hook commands (${hookCommands.length}):\n`);
+
+    let hasIssues = false;
+    for (const cmd of hookCommands) {
+      const match = cmd.match(/python3?\s+(.+\.py)/);
+      if (match) {
+        const scriptPath = match[1];
+        const isAbsolute = path.isAbsolute(scriptPath);
+        const exists = fs.existsSync(scriptPath);
+
+        const existsIcon = exists ? '✅' : '❌';
+        console.log(`   ${existsIcon} ${scriptPath}`);
+
+        if (!isAbsolute) {
+          console.log(`      ⚠️  Relative path - may fail from subdirectories`);
+          hasIssues = true;
+        }
+        if (!exists) {
+          console.log(`      ❌ File not found`);
+          hasIssues = true;
+        }
+      }
+    }
+
+    // 4. Test a hook (dry run)
+    console.log('\n🧪 Testing hook execution...\n');
+    const testHook = hookCommands[0];
+    if (testHook) {
+      try {
+        const { execSync } = require('child_process');
+        execSync(testHook + ' --help 2>&1 || true', { encoding: 'utf8', timeout: 5000 });
+        console.log('✅ Hook script is executable');
+      } catch (e) {
+        console.log('❌ Hook script failed to execute');
+        hasIssues = true;
+      }
+    }
+
+    if (hasIssues) {
+      console.log('\n⚠️  Issues found. Run: npx claude-recall repair\n');
+    } else {
+      console.log('\n✅ All hooks OK!\n');
+    }
+  }
+
+  // Hooks command group
+  const hooksCmd = program
+    .command('hooks')
+    .description('Hook management commands');
+
+  hooksCmd
+    .command('check')
+    .description('Check if hooks are properly configured and working')
+    .action(() => {
+      checkHooks();
+      process.exit(0);
+    });
+
   // MCP command
   const mcpCmd = program
     .command('mcp')
