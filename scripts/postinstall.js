@@ -135,6 +135,7 @@ try {
 
       // Copy hook scripts from package (packageHooksDir defined above)
       const hookScripts = [
+        'mcp_tool_tracker.py',
         'pre_tool_search_enforcer.py',
         'pubnub_pre_tool_hook.py',
         'pubnub_prompt_hook.py'
@@ -168,6 +169,17 @@ try {
         settings.hooks = {
           PreToolUse: [
             {
+              // Track MCP tool calls (especially search) for enforcement
+              matcher: "mcp__claude-recall__.*",
+              hooks: [
+                {
+                  type: "command",
+                  command: `python3 ${path.join(hooksDir, 'mcp_tool_tracker.py')}`
+                }
+              ]
+            },
+            {
+              // Enforce memory search before file operations
               matcher: "Write|Edit",
               hooks: [
                 {
@@ -195,7 +207,8 @@ try {
 
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
         console.log('✅ Configured hooks in .claude/settings.json');
-        console.log('   → PreToolUse: Enforces memory search before Write/Edit');
+        console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
+        console.log('   → PreToolUse (Write|Edit): Enforces memory search first');
         console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
       }
 

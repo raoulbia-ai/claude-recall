@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__claude-recall__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/mcp_tool_tracker.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/pre_tool_search_enforcer.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/pubnub_pre_tool_hook.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/pubnub_prompt_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -637,6 +637,7 @@ async function main() {
 
     // Copy hook scripts
     const hookScripts = [
+      'mcp_tool_tracker.py',
       'pre_tool_search_enforcer.py',
       'pubnub_pre_tool_hook.py',
       'pubnub_prompt_hook.py'
@@ -675,6 +676,17 @@ async function main() {
       settings.hooks = {
         PreToolUse: [
           {
+            // Track MCP tool calls (especially search) for enforcement
+            matcher: "mcp__claude-recall__.*",
+            hooks: [
+              {
+                type: "command",
+                command: `python3 ${path.join(hooksDir, 'mcp_tool_tracker.py')}`
+              }
+            ]
+          },
+          {
+            // Enforce memory search before file operations
             matcher: "Write|Edit",
             hooks: [
               {
@@ -702,7 +714,8 @@ async function main() {
 
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
       console.log('✅ Configured hooks in .claude/settings.json');
-      console.log('   → PreToolUse: Enforces memory search before Write/Edit');
+      console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
+      console.log('   → PreToolUse (Write|Edit): Enforces memory search first');
       console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
     } else {
       console.log('ℹ️  Hooks already configured in .claude/settings.json (skipped)');
@@ -852,16 +865,150 @@ async function main() {
     }
   }
 
+  // Test enforcement function - simulates the hook chain to verify it works
+  function testEnforcement(): void {
+    const os = require('os');
+    const { execSync } = require('child_process');
+
+    console.log('\n🧪 Testing Memory Search Enforcement...\n');
+
+    const stateDir = path.join(os.homedir(), '.claude-recall', 'hook-state');
+    const testSessionId = 'test-enforcement-' + Date.now();
+    const stateFile = path.join(stateDir, `${testSessionId}.json`);
+
+    // Create state directory if needed
+    if (!fs.existsSync(stateDir)) {
+      fs.mkdirSync(stateDir, { recursive: true });
+    }
+
+    // Find the enforcer hook script
+    let searchDir = process.cwd();
+    let enforcerPath: string | null = null;
+    while (searchDir !== path.dirname(searchDir)) {
+      const candidate = path.join(searchDir, '.claude/hooks/pre_tool_search_enforcer.py');
+      if (fs.existsSync(candidate)) {
+        enforcerPath = candidate;
+        break;
+      }
+      searchDir = path.dirname(searchDir);
+    }
+
+    if (!enforcerPath) {
+      console.log('❌ Could not find pre_tool_search_enforcer.py');
+      console.log('   Run: npx claude-recall repair\n');
+      return;
+    }
+
+    console.log(`📍 Enforcer: ${enforcerPath}`);
+    console.log(`📍 State file: ${stateFile}\n`);
+
+    // Test 1: No state file - should block
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('TEST 1: Write without search (should BLOCK)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    // Remove any existing state file
+    if (fs.existsSync(stateFile)) {
+      fs.unlinkSync(stateFile);
+    }
+
+    const testInput1 = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/test/example.ts' },
+      session_id: testSessionId
+    });
+
+    let test1Passed = false;
+    try {
+      execSync(`echo '${testInput1}' | python3 ${enforcerPath}`, {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      console.log('❌ FAIL: Hook allowed Write without search\n');
+    } catch (e: unknown) {
+      const execError = e as { status?: number; stderr?: string };
+      if (execError.status === 2) {
+        console.log('✅ PASS: Hook blocked Write (exit code 2)\n');
+        test1Passed = true;
+      } else {
+        console.log(`❌ FAIL: Unexpected error: ${e}\n`);
+      }
+    }
+
+    // Test 2: Create state file with recent search - should allow
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('TEST 2: Write after recent search (should ALLOW)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    // Create state file simulating a recent search
+    const stateData = {
+      sessionId: testSessionId,
+      lastSearchAt: Date.now(),
+      searchQuery: 'test query',
+      toolHistory: [
+        { tool: 'mcp__claude-recall__search', at: Date.now() }
+      ]
+    };
+    fs.writeFileSync(stateFile, JSON.stringify(stateData, null, 2));
+
+    const testInput2 = JSON.stringify({
+      tool_name: 'Write',
+      tool_input: { file_path: '/test/example.ts' },
+      session_id: testSessionId
+    });
+
+    let test2Passed = false;
+    try {
+      execSync(`echo '${testInput2}' | python3 ${enforcerPath}`, {
+        encoding: 'utf8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      console.log('✅ PASS: Hook allowed Write after search (exit code 0)\n');
+      test2Passed = true;
+    } catch (e: unknown) {
+      const execError = e as { status?: number };
+      console.log(`❌ FAIL: Hook blocked Write (exit code ${execError.status})\n`);
+    }
+
+    // Cleanup
+    if (fs.existsSync(stateFile)) {
+      fs.unlinkSync(stateFile);
+    }
+
+    // Summary
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('SUMMARY');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    if (test1Passed && test2Passed) {
+      console.log('✅ All tests passed! Enforcement is working correctly.\n');
+      console.log('Claude will be blocked from Write/Edit until memory search is performed.\n');
+    } else {
+      console.log('❌ Some tests failed. Check hook configuration.\n');
+      console.log('Run: npx claude-recall repair\n');
+    }
+  }
+
   // Hooks command group
   const hooksCmd = program
     .command('hooks')
-    .description('Hook management commands (use: hooks check)');
+    .description('Hook management (subcommands: check, test-enforcement)');
 
   hooksCmd
     .command('check')
     .description('Check if hooks are properly configured and working')
     .action(() => {
       checkHooks();
+      process.exit(0);
+    });
+
+  hooksCmd
+    .command('test-enforcement')
+    .description('Test that memory search enforcement is working')
+    .action(() => {
+      testEnforcement();
       process.exit(0);
     });
 
