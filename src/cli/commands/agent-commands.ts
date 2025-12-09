@@ -133,8 +133,9 @@ export class AgentCommands {
     console.log(chalk.gray(`💡 Use ${chalk.cyan('npx claude-recall agent status')} to check status`));
     console.log();
 
-    // Wait a bit to ensure startup
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait a bit to ensure startup, then exit cleanly
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    process.exit(0);
   }
 
   /**
