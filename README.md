@@ -188,11 +188,12 @@ npx claude-recall setup
 ### Upgrade
 
 ```bash
-npm install claude-recall@latest
-npx claude-recall repair
+npm uninstall claude-recall
+npm install claude-recall
+npx claude-recall repair --force
 ```
 
-This updates the package and repairs hooks/skills to the latest version.
+Uninstall/reinstall is more reliable than `@latest` for upgrades.
 
 ---
 
