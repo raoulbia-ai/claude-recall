@@ -200,41 +200,38 @@ This updates the package and repairs hooks/skills to the latest version.
 ### Activate
 
 ```bash
-# Add to your MCP config (if not already):
+# Register MCP server:
 claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 
-# Already registered? Remove and re-add:
-claude mcp remove claude-recall
-claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
-
-# Then restart your terminal or session
+# Restart your terminal or Claude Code session
 ```
 
-### Stop old instance
-
-If an old MCP server is already running:
-
-```bash
-npx -y claude-recall@latest mcp stop
-```
-
-Then restart your session - it will automatically start the latest version.
+Already registered? Remove first: `claude mcp remove claude-recall`
 
 ---
 
-### Verify it's working
+### Automatic Capture (Optional)
 
-In Claude Code:
+For automatic preference/pattern capture from conversations, start the Memory Agent:
 
-> "Search my memories."
-
-Claude should call:
-
-```
-mcp__claude-recall__search
+```bash
+npx claude-recall agent start
 ```
 
-If results appear → You're ready.
+The Memory Agent:
+- Listens to conversation events via PubNub
+- Extracts preferences ("I prefer TypeScript", "always use Jest")
+- Stores learnings automatically
+
+Without the agent, you can still manually store memories via MCP tools.
+
+---
+
+### Verify
+
+In Claude Code, ask: *"Search my memories"*
+
+Claude should call `mcp__claude-recall__search`. If it works → you're ready.
 
 ---
 
