@@ -9,7 +9,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 > **TL;DR**
 > Claude Recall stores and searches your past preferences and project knowledge.
-> Install it → restart Claude Code → Claude automatically uses memory before writing or editing files.
+> Install it → restart Claude Code → Claude is reminded to search memory on every turn.
 
 ---
 
@@ -151,12 +151,11 @@ Switch projects → Claude switches memory.
 Claude Recall integrates tightly via:
 
 * MCP server (search, store, evolve)
-* pre-action hooks
-* planning hooks
-* post-action hooks
+* UserPromptSubmit hooks (reminder on every turn)
+* PreToolUse hooks (enforce search before Write/Edit)
 * PubNub event subscriber (Memory Agent)
 
-Claude automatically searches memory before writing or editing files.
+Claude sees a memory search reminder on every conversation turn, with suggested keywords extracted from your prompt.
 
 ---
 
