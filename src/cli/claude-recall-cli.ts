@@ -640,7 +640,8 @@ async function main() {
       'mcp_tool_tracker.py',
       'pre_tool_search_enforcer.py',
       'pubnub_pre_tool_hook.py',
-      'pubnub_prompt_hook.py'
+      'pubnub_prompt_hook.py',
+      'user_prompt_reminder.py'
     ];
 
     let hooksInstalled = 0;
@@ -672,7 +673,7 @@ async function main() {
 
     // Version-based hook configuration
     // Update hooks if: no hooks, older version, or force flag
-    const CURRENT_HOOKS_VERSION = '0.8.22';
+    const CURRENT_HOOKS_VERSION = '0.8.23';
     const needsUpdate = force || !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
 
     if (needsUpdate) {
@@ -708,6 +709,10 @@ async function main() {
         UserPromptSubmit: [
           {
             hooks: [
+              {
+                type: "command",
+                command: `python3 ${path.join(hooksDir, 'user_prompt_reminder.py')}`
+              },
               {
                 type: "command",
                 command: `python3 ${path.join(hooksDir, 'pubnub_prompt_hook.py')}`

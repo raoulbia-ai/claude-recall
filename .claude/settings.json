@@ -29,10 +29,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/user_prompt_reminder.py"
+          },
+          {
+            "type": "command",
             "command": "python3 /home/ebiarao/repos-wsl/personal-projects/claude-recall/.claude/hooks/pubnub_prompt_hook.py"
           }
         ]
       }
     ]
-  }
+  },
+  "hooksVersion": "0.8.23"
 }
