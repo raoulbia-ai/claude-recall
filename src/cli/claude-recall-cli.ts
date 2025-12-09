@@ -613,7 +613,7 @@ async function main() {
   }
 
   // Install hooks and skills to current project
-  function installHooksAndSkills(): void {
+  function installHooksAndSkills(force: boolean = false): void {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 
@@ -670,9 +670,14 @@ async function main() {
       settings = JSON.parse(settingsContent);
     }
 
-    // Add hook configuration if not already present
-    // Use ABSOLUTE paths so hooks work from any subdirectory
-    if (!settings.hooks) {
+    // Version-based hook configuration
+    // Update hooks if: no hooks, older version, or force flag
+    const CURRENT_HOOKS_VERSION = '0.8.22';
+    const needsUpdate = force || !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
+
+    if (needsUpdate) {
+      // Use ABSOLUTE paths so hooks work from any subdirectory
+      settings.hooksVersion = CURRENT_HOOKS_VERSION;
       settings.hooks = {
         PreToolUse: [
           {
@@ -717,8 +722,11 @@ async function main() {
       console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
       console.log('   → PreToolUse (Write|Edit): Enforces memory search first');
       console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+      if (force) {
+        console.log('   → Force flag: overwrote existing configuration');
+      }
     } else {
-      console.log('ℹ️  Hooks already configured in .claude/settings.json (skipped)');
+      console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION} (skipped)`);
     }
 
     // Copy skills directory
@@ -770,9 +778,10 @@ async function main() {
   // Repair command - simple alias for setup --install
   program
     .command('repair')
-    .description('Repair broken or missing hooks and skills (same as setup --install)')
-    .action(() => {
-      installHooksAndSkills();
+    .description('Repair broken or missing hooks and skills')
+    .option('--force', 'Force overwrite existing hook configuration')
+    .action((options) => {
+      installHooksAndSkills(options.force || false);
       process.exit(0);
     });
 

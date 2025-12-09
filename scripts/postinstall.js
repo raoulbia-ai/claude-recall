@@ -163,9 +163,14 @@ try {
         settings = JSON.parse(settingsContent);
       }
 
-      // Add hook configuration if not already present
-      // Use ABSOLUTE paths so hooks work from any subdirectory
-      if (!settings.hooks) {
+      // Version-based hook configuration
+      // Update hooks if: no hooks, or older version
+      const CURRENT_HOOKS_VERSION = '0.8.22';
+      const needsUpdate = !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
+
+      if (needsUpdate) {
+        // Use ABSOLUTE paths so hooks work from any subdirectory
+        settings.hooksVersion = CURRENT_HOOKS_VERSION;
         settings.hooks = {
           PreToolUse: [
             {
@@ -210,6 +215,11 @@ try {
         console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
         console.log('   → PreToolUse (Write|Edit): Enforces memory search first');
         console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+        if (settings.hooksVersion) {
+          console.log(`   → Updated from previous version to ${CURRENT_HOOKS_VERSION}`);
+        }
+      } else {
+        console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION} (skipped)`);
       }
 
       // Copy skills directory (packageSkillsDir defined above)
