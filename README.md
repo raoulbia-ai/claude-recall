@@ -195,14 +195,19 @@ npm uninstall claude-recall && npm install claude-recall && npx claude-recall re
 
 ### Activate
 
-```bash
-# Register MCP server:
-claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
+Register MCP server:
 
-# Restart your terminal or Claude Code session
+```bash
+claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 ```
 
-Already registered? Remove first: `claude mcp remove claude-recall`
+Then restart your terminal or Claude Code session.
+
+Already registered? Remove first:
+
+```bash
+claude mcp remove claude-recall
+```
 
 ---
 
