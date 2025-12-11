@@ -188,12 +188,8 @@ npx claude-recall setup
 ### Upgrade
 
 ```bash
-npm uninstall claude-recall
-npm install claude-recall
-npx claude-recall repair --force
+npm uninstall claude-recall && npm install claude-recall && npx claude-recall repair --force
 ```
-
-Uninstall/reinstall is more reliable than `@latest` for upgrades.
 
 ---
 
