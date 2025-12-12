@@ -48,6 +48,22 @@ def main():
         if len(prompt.strip()) < 5:
             sys.exit(0)
 
+        # Skip if prompt looks like a store request (not a search request)
+        prompt_lower = prompt.lower().strip()
+        store_patterns = [
+            'recall that', 'recall this',
+            'remember that', 'remember this', 'remember to',
+            'store this', 'save this',
+            'from now on', 'going forward'
+        ]
+        # Also check if prompt starts with preference indicators
+        starts_with_patterns = ['always', 'never', 'don\'t ever', 'do not ever']
+
+        if any(pattern in prompt_lower for pattern in store_patterns):
+            sys.exit(0)
+        if any(prompt_lower.startswith(pattern) for pattern in starts_with_patterns):
+            sys.exit(0)
+
         # Extract keywords for suggested search
         keywords = extract_keywords(prompt)
 
