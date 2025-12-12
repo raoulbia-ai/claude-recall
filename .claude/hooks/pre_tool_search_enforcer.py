@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Pre-tool hook to enforce memory search before file operations.
+Pre-tool hook to enforce memory search before significant actions.
 Ensures Phase 1 (Pre-Action) of the learning loop always happens.
 
-This hook intercepts Write/Edit tool calls and blocks execution if
+This hook intercepts Write/Edit/Bash/Task tool calls and blocks execution if
 memory search wasn't performed first. It reads session state from
 a file written by mcp_tool_tracker.py.
+
+For Bash commands, read-only commands are excluded (ls, git status, etc.)
 
 State file location: ~/.claude-recall/hook-state/{session_id}.json
 
 Exit codes:
-- 0: Allow execution (search was performed recently)
+- 0: Allow execution (search was performed recently, or read-only command)
 - 2: Block execution (search required)
 """
 import json
@@ -29,6 +31,51 @@ SEARCH_TTL_MS = int(os.environ.get('CLAUDE_RECALL_SEARCH_TTL', 5 * 60 * 1000))
 
 # Enforcement mode: 'block' (default), 'warn', 'off'
 ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')
+
+# Read-only bash commands that don't need memory search
+READ_ONLY_COMMANDS = [
+    # File listing/viewing
+    'ls', 'cat', 'head', 'tail', 'less', 'more', 'file', 'stat', 'wc',
+    'find', 'locate', 'which', 'whereis', 'type',
+    # Git read operations
+    'git status', 'git log', 'git diff', 'git show', 'git branch',
+    'git remote', 'git fetch', 'git stash list', 'git tag',
+    # Package info (not install)
+    'npm list', 'npm ls', 'npm view', 'npm outdated', 'npm audit',
+    'pip list', 'pip show', 'pip freeze',
+    # System info
+    'pwd', 'whoami', 'hostname', 'date', 'uptime', 'df', 'du', 'free',
+    'ps', 'top', 'htop', 'env', 'printenv', 'echo',
+    # Testing (read results)
+    'npm test', 'npm run test', 'pytest', 'jest', 'cargo test', 'go test',
+    # Build/compile (usually just checking)
+    'npm run build', 'npm run lint', 'tsc --noEmit',
+    # Other read-only
+    'grep', 'rg', 'ag', 'awk', 'sed', 'sort', 'uniq', 'diff', 'cmp',
+    'tree', 'realpath', 'dirname', 'basename',
+]
+
+
+def is_read_only_bash(command: str) -> bool:
+    """Check if a bash command is read-only and doesn't need memory search."""
+    if not command:
+        return False
+
+    cmd_lower = command.strip().lower()
+
+    # Check if command starts with any read-only prefix
+    for ro_cmd in READ_ONLY_COMMANDS:
+        if cmd_lower.startswith(ro_cmd):
+            return True
+
+    # Also allow piped commands that start with read-only
+    if '|' in cmd_lower:
+        first_cmd = cmd_lower.split('|')[0].strip()
+        for ro_cmd in READ_ONLY_COMMANDS:
+            if first_cmd.startswith(ro_cmd):
+                return True
+
+    return False
 
 
 def get_state_file(session_id: str) -> Path:
@@ -96,6 +143,25 @@ def generate_search_query(tool_name: str, tool_input: Dict[str, Any]) -> str:
         queries.extend(['create', 'new file', 'template'])
     elif tool_name == 'Edit':
         queries.extend(['update', 'modify', 'pattern'])
+    elif tool_name == 'Bash':
+        # Extract command name for context
+        command = tool_input.get('command', '')
+        if command:
+            cmd_parts = command.split()
+            if cmd_parts:
+                queries.append(cmd_parts[0])
+        queries.extend(['command', 'script'])
+    elif tool_name == 'Task':
+        # Extract subagent type and prompt keywords
+        subagent = tool_input.get('subagent_type', '')
+        if subagent:
+            queries.append(subagent)
+        prompt = tool_input.get('prompt', '')
+        if prompt:
+            # Get first few words of prompt
+            words = prompt.split()[:3]
+            queries.extend(words)
+        queries.extend(['task', 'agent'])
 
     # Always include learning loop keywords
     queries.extend(['preferences', 'correction'])
@@ -137,6 +203,12 @@ def main():
     tool_name = hook_data.get('tool_name', '')
     tool_input = hook_data.get('tool_input', {})
     session_id = hook_data.get('session_id', '') or 'default'
+
+    # For Bash tool, skip read-only commands
+    if tool_name == 'Bash':
+        command = tool_input.get('command', '')
+        if is_read_only_bash(command):
+            sys.exit(0)  # Allow read-only commands without search
 
     # Check if search was performed recently
     was_searched, last_query, ms_ago = check_recent_search(session_id)

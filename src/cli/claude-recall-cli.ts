@@ -673,7 +673,7 @@ async function main() {
 
     // Version-based hook configuration
     // Update hooks if: no hooks, older version, or force flag
-    const CURRENT_HOOKS_VERSION = '0.8.23';
+    const CURRENT_HOOKS_VERSION = '0.8.25';
     const needsUpdate = force || !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
 
     if (needsUpdate) {
@@ -692,8 +692,8 @@ async function main() {
             ]
           },
           {
-            // Enforce memory search before file operations
-            matcher: "Write|Edit",
+            // Enforce memory search before significant actions
+            matcher: "Write|Edit|Bash|Task",
             hooks: [
               {
                 type: "command",
@@ -725,8 +725,8 @@ async function main() {
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
       console.log('✅ Configured hooks in .claude/settings.json');
       console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
-      console.log('   → PreToolUse (Write|Edit): Enforces memory search first');
-      console.log('   → UserPromptSubmit: Captures prompts for preference extraction');
+      console.log('   → PreToolUse (Write|Edit|Bash|Task): Enforces memory search first');
+      console.log('   → UserPromptSubmit: Reminder + preference capture');
       if (force) {
         console.log('   → Force flag: overwrote existing configuration');
       }
