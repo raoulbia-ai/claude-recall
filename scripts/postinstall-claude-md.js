@@ -6,6 +6,28 @@ const path = require('path');
 console.log('\n📋 Setting up .claude/ directory structure...\n');
 
 /**
+ * Recursively copy a directory
+ */
+function copyDirRecursive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
  * Find the project root by traversing up from node_modules/claude-recall/scripts/
  * This is more reliable than process.cwd() during npm install
  */
@@ -120,22 +142,11 @@ try {
       console.log('   ⚠️  Warning: SKILL.md not found in source');
     }
 
-    // Copy reference files
+    // Copy reference files (recursively to include subdirectories like devops/)
     const sourceReferencesDir = path.join(sourceSkillsDir, 'memory-management', 'references');
     if (fs.existsSync(sourceReferencesDir)) {
-      const refFiles = fs.readdirSync(sourceReferencesDir).filter(f => f.endsWith('.md'));
-      let copiedCount = 0;
-      refFiles.forEach(file => {
-        const sourcePath = path.join(sourceReferencesDir, file);
-        const destPath = path.join(referencesDir, file);
-        if (!fs.existsSync(destPath) && fs.statSync(sourcePath).isFile()) {
-          fs.copyFileSync(sourcePath, destPath);
-          copiedCount++;
-        }
-      });
-      if (copiedCount > 0) {
-        console.log(`   ✅ Created .claude/skills/memory-management/references/ (${copiedCount} file${copiedCount > 1 ? 's' : ''})`);
-      }
+      copyDirRecursive(sourceReferencesDir, referencesDir);
+      console.log('   ✅ Created .claude/skills/memory-management/references/ (including subdirectories)');
     } else {
       console.log('   ⚠️  Warning: references/ directory not found in source');
     }

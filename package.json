@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.8.26",
+  "version": "0.8.27",
   "description": "Persistent memory for Claude Code with fire-and-forget PubNub architecture, automatic capture, failure learning, and project scoping via MCP server",
   "main": "dist/index.js",
   "bin": {
