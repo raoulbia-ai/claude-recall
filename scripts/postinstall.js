@@ -155,6 +155,15 @@ try {
 
       console.log('✅ Installed hook scripts to .claude/hooks/');
 
+      // Copy skills directory (always, not just on version update)
+      if (fs.existsSync(packageSkillsDir)) {
+        const skillsDir = path.join(claudeDir, 'skills');
+        copyDirRecursive(packageSkillsDir, skillsDir);
+        console.log('✅ Installed skills to .claude/skills/');
+      } else {
+        console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
+      }
+
       // Create or update .claude/settings.json with hook configuration
       const settingsPath = path.join(claudeDir, 'settings.json');
       let settings = {};
@@ -225,15 +234,6 @@ try {
         }
       } else {
         console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION} (skipped)`);
-      }
-
-      // Copy skills directory (packageSkillsDir defined above)
-      if (fs.existsSync(packageSkillsDir)) {
-        const skillsDir = path.join(claudeDir, 'skills');
-        copyDirRecursive(packageSkillsDir, skillsDir);
-        console.log('✅ Installed skills to .claude/skills/');
-      } else {
-        console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
       }
     }
   } catch (error) {
