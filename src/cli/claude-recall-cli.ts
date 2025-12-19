@@ -611,82 +611,92 @@ async function main() {
     }
   }
 
-  // Install hooks and skills to current project
-  function installHooksAndSkills(force: boolean = false): void {
+  // Install skills and clean up old hooks (v0.9.0+ uses Skills, not hooks)
+  function installSkillsAndCleanupHooks(force: boolean = false): void {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 
-    console.log('\n📦 Installing Claude Recall hooks and skills...\n');
+    console.log('\n📦 Claude Recall v0.9.x Setup\n');
     console.log(`📍 Project: ${projectName}`);
     console.log(`📍 Directory: ${cwd}\n`);
 
     // Find the package directory (where claude-recall is installed)
-    // When run via npx, __dirname points to dist/cli, so we go up to find .claude
     const packageDir = path.resolve(__dirname, '../..');
-    const packageHooksDir = path.join(packageDir, '.claude/hooks');
     const packageSkillsDir = path.join(packageDir, '.claude/skills');
 
     const claudeDir = path.join(cwd, '.claude');
     const hooksDir = path.join(claudeDir, 'hooks');
-
-    // Create .claude/hooks directory
-    if (!fs.existsSync(hooksDir)) {
-      fs.mkdirSync(hooksDir, { recursive: true });
-    }
-
-    // Copy single enforcement hook
-    const hookSource = path.join(packageHooksDir, 'memory_enforcer.py');
-    const hookDest = path.join(hooksDir, 'memory_enforcer.py');
-
-    if (fs.existsSync(hookSource)) {
-      fs.copyFileSync(hookSource, hookDest);
-      fs.chmodSync(hookDest, 0o755);
-      console.log('✅ Installed memory_enforcer.py to .claude/hooks/');
-    } else {
-      console.log(`⚠️  Hook not found at: ${packageHooksDir}`);
-    }
-
-    // Create or update .claude/settings.json with hook configuration
     const settingsPath = path.join(claudeDir, 'settings.json');
+
+    // === CLEANUP: Remove old hooks (v0.9.0+ doesn't use hooks) ===
+    if (fs.existsSync(hooksDir)) {
+      const oldHooks = [
+        'memory_enforcer.py',
+        'pre_tool_search_enforcer.py',
+        'mcp_tool_tracker.py',
+        'pubnub_pre_tool_hook.py',
+        'pubnub_prompt_hook.py',
+        'user_prompt_capture.py',
+        'user_prompt_reminder.py'
+      ];
+
+      let removedCount = 0;
+      for (const hook of oldHooks) {
+        const hookPath = path.join(hooksDir, hook);
+        if (fs.existsSync(hookPath)) {
+          fs.unlinkSync(hookPath);
+          removedCount++;
+        }
+      }
+
+      // Remove hooks directory if empty
+      try {
+        const remaining = fs.readdirSync(hooksDir);
+        if (remaining.length === 0) {
+          fs.rmdirSync(hooksDir);
+        }
+      } catch (e) {
+        // Ignore
+      }
+
+      if (removedCount > 0) {
+        console.log(`🧹 Removed ${removedCount} old hook file(s) from .claude/hooks/`);
+      }
+    }
+
+    // === CLEANUP: Clear hook configuration from settings.json ===
     let settings: Record<string, unknown> = {};
 
     if (fs.existsSync(settingsPath)) {
       try {
         settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        const hadHooks = settings.hooks && Object.keys(settings.hooks as object).length > 0;
+
+        // Clear hooks - v0.9.0+ uses Skills instead
+        settings.hooks = {};
+        settings.hooksVersion = '2.0.0';
+
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+        if (hadHooks) {
+          console.log('🧹 Cleared old hook configuration from .claude/settings.json');
+        }
       } catch (e) {
-        settings = {};
-      }
-    }
-
-    const CURRENT_HOOKS_VERSION = '1.0.0';
-    const needsUpdate = force || !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
-
-    if (needsUpdate) {
-      settings.hooksVersion = CURRENT_HOOKS_VERSION;
-      settings.hooks = {
-        PreToolUse: [
-          {
-            matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
-            hooks: [
-              {
-                type: "command",
-                command: `python3 ${path.join(hooksDir, 'memory_enforcer.py')}`,
-              }
-            ]
-          }
-        ]
-      };
-
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log('✅ Configured hook in .claude/settings.json');
-      if (force) {
-        console.log('   → Force flag: overwrote existing configuration');
+        // If settings.json is invalid, create fresh one
+        if (!fs.existsSync(claudeDir)) {
+          fs.mkdirSync(claudeDir, { recursive: true });
+        }
+        fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {}, hooksVersion: '2.0.0' }, null, 2));
       }
     } else {
-      console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION}`);
+      // Create new settings.json without hooks
+      if (!fs.existsSync(claudeDir)) {
+        fs.mkdirSync(claudeDir, { recursive: true });
+      }
+      fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {}, hooksVersion: '2.0.0' }, null, 2));
     }
 
-    // Copy skills directory
+    // === INSTALL: Copy skills directory ===
     if (fs.existsSync(packageSkillsDir)) {
       const skillsDir = path.join(claudeDir, 'skills');
       copyDirRecursive(packageSkillsDir, skillsDir);
@@ -695,19 +705,20 @@ async function main() {
       console.log(`⚠️  Skills not found at: ${packageSkillsDir}`);
     }
 
-    console.log('\n✅ Installation complete!\n');
+    console.log('\n✅ Setup complete!\n');
+    console.log('ℹ️  v0.9.0+ uses native Claude Skills instead of hooks.');
     console.log('Restart Claude Code to activate.\n');
   }
 
-  // Setup command - shows activation instructions or installs hooks/skills
+  // Setup command - shows activation instructions or installs skills
   program
     .command('setup')
-    .description('Show activation instructions or install hooks/skills')
-    .option('--install', 'Install hooks and skills to current project')
+    .description('Show activation instructions or install skills')
+    .option('--install', 'Install skills and clean up old hooks')
     .action((options) => {
       if (options.install) {
-        // Install hooks and skills to current project
-        installHooksAndSkills();
+        // Install skills and clean up old hooks
+        installSkillsAndCleanupHooks();
       } else {
         // Show activation instructions
         console.log('\n✅ Claude Recall Setup\n');
@@ -732,13 +743,13 @@ async function main() {
       process.exit(0);
     });
 
-  // Repair command - simple alias for setup --install
+  // Repair command - cleans up old hooks and installs skills
   program
     .command('repair')
-    .description('Repair broken or missing hooks and skills')
-    .option('--force', 'Force overwrite existing hook configuration')
+    .description('Clean up old hooks and install skills (v0.9.0+ migration)')
+    .option('--force', 'Force overwrite existing configuration')
     .action((options) => {
-      installHooksAndSkills(options.force || false);
+      installSkillsAndCleanupHooks(options.force || false);
       process.exit(0);
     });
 
