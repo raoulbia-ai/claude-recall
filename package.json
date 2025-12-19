@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Persistent memory for Claude Code with native Skills integration, automatic capture, failure learning, and project scoping via MCP server",
   "main": "dist/index.js",
   "bin": {
@@ -49,12 +49,7 @@
     "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:test": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}' | npm run mcp:start",
-    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start",
-    "agent:start": "node dist/pubnub/agent-cli.js start",
-    "agent:stop": "node dist/pubnub/agent-cli.js stop",
-    "agent:status": "node dist/pubnub/agent-cli.js status",
-    "agent:logs": "node dist/pubnub/agent-cli.js logs",
-    "test:pubnub": "node dist/pubnub/test-integration.js"
+    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start"
   },
   "keywords": [
     "claude-code",
@@ -94,7 +89,6 @@
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
-    "commander": "^12.1.0",
-    "pubnub": "^10.2.3"
+    "commander": "^12.1.0"
   }
 }
