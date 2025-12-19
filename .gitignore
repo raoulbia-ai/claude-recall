@@ -67,8 +67,11 @@ STAGE*.md
 task-phase-*.md
 swarm-tasks/
 .claude-flow/
-.claude/
+# Ignore .claude but include hooks and skills for packaging
+.claude/*
 !.claude/hooks/
+!.claude/skills/
+.claude/settings.local.json
 test-instructions-*.md
 CLAUDE.md
 

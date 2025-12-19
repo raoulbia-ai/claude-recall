@@ -104,22 +104,22 @@ try {
     console.log('⚠️  Failed to register project (non-fatal):', error.message);
   }
 
-  // Install skills and clean up old hooks (v0.9.0+ uses Skills, not hooks)
+  // Install skills + minimal enforcement hook (v0.9.3+ hybrid approach)
   try {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
     const packageSkillsDir = path.join(__dirname, '../.claude/skills');
+    const packageHooksDir = path.join(__dirname, '../.claude/hooks');
 
     if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
       const claudeDir = path.join(cwd, '.claude');
       const hooksDir = path.join(claudeDir, 'hooks');
       const settingsPath = path.join(claudeDir, 'settings.json');
 
-      // === CLEANUP: Remove old hooks (v0.9.0+ doesn't use hooks) ===
+      // === CLEANUP: Remove OLD hooks (not the new search_enforcer.py) ===
       if (fs.existsSync(hooksDir)) {
-        // Remove known hook files from previous versions
         const oldHooks = [
-          'memory_enforcer.py',
+          'memory_enforcer.py',  // Old v0.8.x hook
           'pre_tool_search_enforcer.py',
           'mcp_tool_tracker.py',
           'pubnub_pre_tool_hook.py',
@@ -137,47 +137,55 @@ try {
           }
         }
 
-        // Remove hooks directory if empty
-        try {
-          const remaining = fs.readdirSync(hooksDir);
-          if (remaining.length === 0) {
-            fs.rmdirSync(hooksDir);
-          }
-        } catch (e) {
-          // Ignore
-        }
-
         if (removedCount > 0) {
-          console.log(`🧹 Removed ${removedCount} old hook file(s) from .claude/hooks/`);
+          console.log(`🧹 Removed ${removedCount} old hook file(s)`);
         }
       }
 
-      // === CLEANUP: Clear hook configuration from settings.json ===
+      // === INSTALL: New minimal search_enforcer.py ===
+      if (!fs.existsSync(hooksDir)) {
+        fs.mkdirSync(hooksDir, { recursive: true });
+      }
+
+      const hookSource = path.join(packageHooksDir, 'search_enforcer.py');
+      const hookDest = path.join(hooksDir, 'search_enforcer.py');
+
+      if (fs.existsSync(hookSource)) {
+        fs.copyFileSync(hookSource, hookDest);
+        fs.chmodSync(hookDest, 0o755);
+        console.log('✅ Installed search_enforcer.py to .claude/hooks/');
+      }
+
+      // === CONFIGURE: Update settings.json with new hook ===
+      let settings = {};
       if (fs.existsSync(settingsPath)) {
         try {
-          let settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-          const hadHooks = settings.hooks && Object.keys(settings.hooks).length > 0;
-
-          // Clear hooks - v0.9.0+ uses Skills instead
-          settings.hooks = {};
-          settings.hooksVersion = '2.0.0'; // Bump version to indicate skills-based
-
-          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-
-          if (hadHooks) {
-            console.log('🧹 Cleared old hook configuration from .claude/settings.json');
-          }
+          settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
         } catch (e) {
-          // If settings.json is invalid, create fresh one
-          fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {}, hooksVersion: '2.0.0' }, null, 2));
+          settings = {};
         }
-      } else {
-        // Create new settings.json without hooks
-        if (!fs.existsSync(claudeDir)) {
-          fs.mkdirSync(claudeDir, { recursive: true });
-        }
-        fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {}, hooksVersion: '2.0.0' }, null, 2));
       }
+
+      settings.hooksVersion = '3.0.0';  // v3 = hybrid (skill + minimal hook)
+      settings.hooks = {
+        PreToolUse: [
+          {
+            matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
+            hooks: [
+              {
+                type: "command",
+                command: `python3 ${hookDest}`
+              }
+            ]
+          }
+        ]
+      };
+
+      if (!fs.existsSync(claudeDir)) {
+        fs.mkdirSync(claudeDir, { recursive: true });
+      }
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      console.log('✅ Configured search enforcement hook');
 
       // === INSTALL: Copy skills directory ===
       if (fs.existsSync(packageSkillsDir)) {
@@ -187,7 +195,7 @@ try {
       }
     }
   } catch (error) {
-    console.log('⚠️  Failed to install skills (non-fatal):', error.message);
+    console.log('⚠️  Failed to install (non-fatal):', error.message);
   }
 
   console.log('\n✅ Installation complete!\n');
@@ -201,7 +209,7 @@ try {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('ℹ️  v0.9.0+ uses native Claude Skills instead of hooks.');
+  console.log('ℹ️  v0.9.3+ uses Skills (guidance) + minimal hook (enforcement).');
   console.log('💡 Your memories persist across conversations and restarts.\n');
 
 } catch (error) {
