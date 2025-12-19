@@ -1,7 +1,7 @@
 {
   "name": "claude-recall",
-  "version": "0.8.27",
-  "description": "Persistent memory for Claude Code with fire-and-forget PubNub architecture, automatic capture, failure learning, and project scoping via MCP server",
+  "version": "0.9.0",
+  "description": "Persistent memory for Claude Code with native Skills integration, automatic capture, failure learning, and project scoping via MCP server",
   "main": "dist/index.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"
@@ -10,7 +10,6 @@
     "dist/",
     ".claude/",
     "scripts/postinstall.js",
-    "scripts/postinstall-claude-md.js",
     "scripts/uninstall.js",
     "README.md",
     "LICENSE",

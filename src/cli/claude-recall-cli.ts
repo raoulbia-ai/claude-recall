@@ -635,31 +635,16 @@ async function main() {
       fs.mkdirSync(hooksDir, { recursive: true });
     }
 
-    // Copy hook scripts
-    const hookScripts = [
-      'mcp_tool_tracker.py',
-      'pre_tool_search_enforcer.py',
-      'pubnub_pre_tool_hook.py',
-      'pubnub_prompt_hook.py',
-      'user_prompt_reminder.py'
-    ];
+    // Copy single enforcement hook
+    const hookSource = path.join(packageHooksDir, 'memory_enforcer.py');
+    const hookDest = path.join(hooksDir, 'memory_enforcer.py');
 
-    let hooksInstalled = 0;
-    for (const script of hookScripts) {
-      const source = path.join(packageHooksDir, script);
-      const dest = path.join(hooksDir, script);
-
-      if (fs.existsSync(source)) {
-        fs.copyFileSync(source, dest);
-        fs.chmodSync(dest, 0o755);
-        hooksInstalled++;
-      }
-    }
-
-    if (hooksInstalled > 0) {
-      console.log(`✅ Installed ${hooksInstalled} hook scripts to .claude/hooks/`);
+    if (fs.existsSync(hookSource)) {
+      fs.copyFileSync(hookSource, hookDest);
+      fs.chmodSync(hookDest, 0o755);
+      console.log('✅ Installed memory_enforcer.py to .claude/hooks/');
     } else {
-      console.log(`⚠️  No hook scripts found at: ${packageHooksDir}`);
+      console.log(`⚠️  Hook not found at: ${packageHooksDir}`);
     }
 
     // Create or update .claude/settings.json with hook configuration
@@ -667,55 +652,26 @@ async function main() {
     let settings: Record<string, unknown> = {};
 
     if (fs.existsSync(settingsPath)) {
-      const settingsContent = fs.readFileSync(settingsPath, 'utf8');
-      settings = JSON.parse(settingsContent);
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      } catch (e) {
+        settings = {};
+      }
     }
 
-    // Version-based hook configuration
-    // Update hooks if: no hooks, older version, or force flag
-    const CURRENT_HOOKS_VERSION = '0.8.25';
+    const CURRENT_HOOKS_VERSION = '1.0.0';
     const needsUpdate = force || !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
 
     if (needsUpdate) {
-      // Use ABSOLUTE paths so hooks work from any subdirectory
       settings.hooksVersion = CURRENT_HOOKS_VERSION;
       settings.hooks = {
         PreToolUse: [
           {
-            // Track MCP tool calls (especially search) for enforcement
-            matcher: "mcp__claude-recall__.*",
+            matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
             hooks: [
               {
                 type: "command",
-                command: `python3 ${path.join(hooksDir, 'mcp_tool_tracker.py')}`
-              }
-            ]
-          },
-          {
-            // Enforce memory search before significant actions
-            matcher: "Write|Edit|Bash|Task",
-            hooks: [
-              {
-                type: "command",
-                command: `python3 ${path.join(hooksDir, 'pre_tool_search_enforcer.py')}`
-              },
-              {
-                type: "command",
-                command: `python3 ${path.join(hooksDir, 'pubnub_pre_tool_hook.py')}`
-              }
-            ]
-          }
-        ],
-        UserPromptSubmit: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: `python3 ${path.join(hooksDir, 'user_prompt_reminder.py')}`
-              },
-              {
-                type: "command",
-                command: `python3 ${path.join(hooksDir, 'pubnub_prompt_hook.py')}`
+                command: `python3 ${path.join(hooksDir, 'memory_enforcer.py')}`,
               }
             ]
           }
@@ -723,28 +679,25 @@ async function main() {
       };
 
       fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log('✅ Configured hooks in .claude/settings.json');
-      console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
-      console.log('   → PreToolUse (Write|Edit|Bash|Task): Enforces memory search first');
-      console.log('   → UserPromptSubmit: Reminder + preference capture');
+      console.log('✅ Configured hook in .claude/settings.json');
       if (force) {
         console.log('   → Force flag: overwrote existing configuration');
       }
     } else {
-      console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION} (skipped)`);
+      console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION}`);
     }
 
     // Copy skills directory
     if (fs.existsSync(packageSkillsDir)) {
       const skillsDir = path.join(claudeDir, 'skills');
       copyDirRecursive(packageSkillsDir, skillsDir);
-      console.log('✅ Installed skills to .claude/skills/');
+      console.log('✅ Installed SKILL.md to .claude/skills/');
     } else {
-      console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
+      console.log(`⚠️  Skills not found at: ${packageSkillsDir}`);
     }
 
     console.log('\n✅ Installation complete!\n');
-    console.log('Restart Claude Code to activate hooks and skills.\n');
+    console.log('Restart Claude Code to activate.\n');
   }
 
   // Setup command - shows activation instructions or installs hooks/skills

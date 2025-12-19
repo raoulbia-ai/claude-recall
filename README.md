@@ -1,6 +1,6 @@
 # Claude Recall
 
-### Persistent, local memory for Claude Code — powered by realtime event orchestration.
+### Persistent, local memory for Claude Code — powered by native Claude Skills.
 
 Claude Recall is a **local memory engine + MCP server** that gives Claude Code something it's missing by default:
 **the ability to learn from you over time.**
@@ -9,7 +9,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 > **TL;DR**
 > Claude Recall stores and searches your past preferences and project knowledge.
-> Install it → restart Claude Code → Claude is reminded to search memory on every turn.
+> Install it → restart Claude Code → Claude knows when to search memory via native Skills integration.
 
 ---
 
@@ -29,94 +29,25 @@ Everything stays **local**.
 
 ---
 
-## ⚡ Realtime Memory Intelligence (PubNub Event Bus)
+## 🎯 Native Claude Skills Integration
 
-Claude Recall uses a lightweight, metadata-only PubNub layer to provide **instant, asynchronous memory intelligence**.
+Claude Recall uses Claude Code's native Skills system for seamless memory guidance.
 
-### What PubNub enables
+### How it works
 
-* **Hooks become <10ms**
-  Instead of slow, blocking MCP or CLI calls (50–500ms), hooks now publish a tiny packet and return instantly.
+* **No hooks required** — Skills are built into Claude Code
+* **Non-blocking** — Claude decides when to search/store based on skill guidance
+* **Self-directed** — Claude understands when memory is relevant to the task
+* **Zero latency** — No external processes or enforcement overhead
 
-* **The Memory Agent works in the background**
-  The Agent subscribes to PubNub channels, processes events in real time, updates memory, and sends suggestions back to Claude without slowing anything down.
+### What the Skill teaches Claude
 
-* **Claude stays fast and responsive**
-  Even under heavy editing or repeated tool runs.
+* Search memory before writing/editing code
+* Apply learned conventions and avoid past mistakes
+* Capture corrections when users fix mistakes
+* Store learning cycles (fail → fix → success)
 
-### Why only Write/Edit, not Search?
-
-* **Write/Edit (capture)** → async via PubNub
-  Hooks fire metadata and return instantly. Memory Agent processes in background. Non-blocking.
-
-* **Search (retrieval)** → sync via MCP
-  Claude needs results immediately to inform its response. Must be synchronous. No benefit to PubNub here.
-
-The pattern: **capture async, retrieve sync**.
-
-### What PubNub actually carries (metadata-only)
-
-* tool name
-* file path
-* event type
-* prompt token counts (no text)
-* memory suggestion IDs
-* Agent heartbeat
-
-### What PubNub does *not* carry
-
-🚫 code
-🚫 conversation text
-🚫 file contents
-🚫 memory content
-🚫 embeddings
-🚫 prompts
-🚫 anything sensitive
-
-PubNub is **not** storage — it is a realtime coordination channel.
-
----
-
-## 💬 Why use PubNub at all?
-
-Developers often ask this. Here's the clear answer:
-
-### ✔ **Persistent memory doesn't require PubNub**
-
-The core idea (Claude remembering preferences and project knowledge) could be implemented with:
-
-* direct MCP calls
-* local HTTP server
-* sockets / pipes
-* a local queue
-* synchronous CLI calls
-
-### ✔ **But PubNub gives a dramatically better UX**
-
-Without PubNub:
-
-* hooks block while waiting for the Memory Agent to finish
-* every file write/edit stalls Claude
-* the editor feels sluggish
-* memory suggestions arrive too late to help
-* cross-platform performance varies wildly
-
-With PubNub:
-
-* hooks return in **6–10ms**
-* memory is processed asynchronously
-* Claude gets suggestions in real time
-* no need to bundle/maintain a local broker
-* works the same on macOS, Windows, Linux, WSL
-
-### ✔ **Local-first design is preserved**
-
-PubNub only transmits metadata — no user content ever leaves your machine.
-
-### ✔ **Implementation detail, not a hard dependency**
-
-In the future the event bus can be swapped (local-only transport, WebSockets, NATS, etc.).
-PubNub is simply the fastest path to a great developer experience today.
+The skill is automatically installed to `.claude/skills/memory-management/SKILL.md` on package install.
 
 ---
 
@@ -141,21 +72,19 @@ Switch projects → Claude switches memory.
 * All memory stored locally in SQLite
 * No cloud sync
 * No telemetry
-* PubNub carries **ephemeral metadata only**
-* Entire system works offline (except realtime coordination)
+* Entire system works offline
 
 ---
 
 ## 💻 Claude Code–Native Integration
 
-Claude Recall integrates tightly via:
+Claude Recall integrates via:
 
-* MCP server (search, store, evolve)
-* UserPromptSubmit hooks (reminder on every turn)
-* PreToolUse hooks (enforce search before Write/Edit)
-* PubNub event subscriber (Memory Agent)
+* **MCP server** — search, store, retrieve memories
+* **Native Skills** — guides Claude on when to use memory tools
+* **Automatic capture** — extracts preferences from conversations
 
-Claude sees a memory search reminder on every conversation turn, with suggested keywords extracted from your prompt.
+Claude knows to search memory before significant actions, with no enforcement overhead.
 
 ---
 
@@ -163,12 +92,10 @@ Claude sees a memory search reminder on every conversation turn, with suggested 
 
 ### Requirements
 
-| Component | Version                 | Notes                          |
-| --------- | ----------------------- | ------------------------------ |
-| Node.js   | **20+**                 | required for better-sqlite3    |
-| Python    | **3.x**                 | required for Claude Code hooks |
-| PubNub    | included via npm        | metadata only                  |
-| OS        | macOS / Linux / Windows | WSL supported                  |
+| Component | Version                 | Notes                       |
+| --------- | ----------------------- | --------------------------- |
+| Node.js   | **20+**                 | required for better-sqlite3 |
+| OS        | macOS / Linux / Windows | WSL supported               |
 
 ---
 
@@ -188,7 +115,7 @@ npx claude-recall setup
 ### Upgrade
 
 ```bash
-npm uninstall claude-recall && npm install claude-recall && npx claude-recall repair --force
+npm uninstall claude-recall && npm install claude-recall
 ```
 
 ---
@@ -211,23 +138,6 @@ claude mcp remove claude-recall
 
 ---
 
-### Automatic Capture (Optional)
-
-For automatic preference/pattern capture from conversations, start the Memory Agent:
-
-```bash
-npx claude-recall agent start
-```
-
-The Memory Agent:
-- Listens to conversation events via PubNub
-- Extracts preferences ("I prefer TypeScript", "always use Jest")
-- Stores learnings automatically
-
-Without the agent, you can still manually store memories via MCP tools.
-
----
-
 ### Verify
 
 In Claude Code, ask: *"Search my memories"*
@@ -244,17 +154,19 @@ Claude Recall consists of:
 
 Stores and evolves preferences, patterns, decisions, corrections.
 
-### 2. Realtime Event Bus (PubNub)
+### 2. MCP Server
 
-Makes hooks fast and enables the Memory Agent to work asynchronously.
+Exposes memory tools to Claude Code:
+- `mcp__claude-recall__search` — find relevant memories
+- `mcp__claude-recall__store_memory` — save new knowledge
+- `mcp__claude-recall__retrieve_memory` — get specific memories
 
-### 3. Memory Agent
+### 3. Native Claude Skill
 
-Subscribes to PubNub, updates memory, sends suggestions to Claude.
-
-### 4. Claude Code Hooks
-
-Inject memory pre-action, perform structured planning, capture post-action learnings.
+Teaches Claude when and how to use memory:
+- Search before writing/editing code
+- Store corrections and learning cycles
+- Apply preferences and patterns
 
 ---
 
@@ -263,8 +175,7 @@ Inject memory pre-action, perform structured planning, capture post-action learn
 Claude Recall is built for local-first workflows:
 
 * SQLite memory never leaves your machine
-* PubNub sends metadata only
-* No storage of PubNub messages
+* No external services required
 * No prompts, code, or memory content is transmitted
 * Full transparency via CLI (`list`, `inspect`, `export`)
 
@@ -282,7 +193,7 @@ All docs in `/docs`:
 * Learning Loop
 * Memory Types
 * CLI Reference
-* Hooks
+* Skills Integration
 * Project Scoping
 * Troubleshooting
 * Security

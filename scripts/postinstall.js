@@ -32,7 +32,6 @@ try {
   // Set up database location in user's home directory
   const dbDir = path.join(os.homedir(), '.claude-recall');
 
-  // Create directory if it doesn't exist
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
     console.log(`📁 Created database directory: ${dbDir}`);
@@ -40,67 +39,45 @@ try {
 
   // Register MCP server using official Claude CLI
   try {
-    // Remove existing registration first (in case of update)
     try {
       execSync('claude mcp remove claude-recall', { stdio: 'ignore' });
     } catch (e) {
       // Ignore if not registered
     }
 
-    // Register using official CLI
     execSync('claude mcp add claude-recall -- npx claude-recall mcp start', {
       stdio: 'inherit'
     });
     console.log('✅ Registered Claude Recall MCP server');
   } catch (mcpError) {
     console.log('⚠️  Could not auto-register MCP server.');
-    console.log('   Please run manually:');
-    console.log('   claude mcp add claude-recall -- npx claude-recall mcp start');
+    console.log('   Run manually: claude mcp add claude-recall -- npx claude-recall mcp start');
   }
-  
-  // Update project CLAUDE.md with minimal instructions
+
+  // Auto-register project
   try {
-    execSync('node ' + path.join(__dirname, 'postinstall-claude-md.js'), { stdio: 'inherit' });
-  } catch (error) {
-    // Don't fail installation if CLAUDE.md update fails
-  }
-  
-  // Auto-register project if this is a local install
-  try {
-    // Detect if we're in a project (not global install, not claude-recall itself)
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 
-    // Skip registration if:
-    // 1. We're inside claude-recall itself
-    // 2. We're in node_modules (global install)
     if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
       const registryPath = path.join(dbDir, 'projects.json');
 
-      // Read or create registry
       let registry = { version: 1, projects: {} };
       if (fs.existsSync(registryPath)) {
-        const registryContent = fs.readFileSync(registryPath, 'utf8');
-        registry = JSON.parse(registryContent);
+        registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
       }
 
-      // Get version from package.json
-      const packageJsonPath = path.join(__dirname, '../package.json');
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-      const version = packageJson.version;
-
-      // Register project
+      const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
       const now = new Date().toISOString();
       const existing = registry.projects[projectName];
 
       registry.projects[projectName] = {
         path: cwd,
         registeredAt: existing ? existing.registeredAt : now,
-        version: version,
+        version: packageJson.version,
         lastSeen: now
       };
 
-      // Write registry atomically
       const tempPath = registryPath + '.tmp';
       fs.writeFileSync(tempPath, JSON.stringify(registry, null, 2));
       fs.renameSync(tempPath, registryPath);
@@ -108,22 +85,16 @@ try {
       console.log(`📋 Registered project: ${projectName}`);
     }
   } catch (error) {
-    // Don't fail installation if registration fails
     console.log('⚠️  Failed to register project (non-fatal):', error.message);
   }
 
-  // Install hook scripts and skills to .claude/ directory
+  // Install hook and skill to .claude/ directory
   try {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
     const packageHooksDir = path.join(__dirname, '../.claude/hooks');
     const packageSkillsDir = path.join(__dirname, '../.claude/skills');
 
-    // Debug logging to help diagnose installation issues
-    console.log(`📍 Detected project: ${projectName}`);
-    console.log(`📍 Working directory: ${cwd}`);
-
-    // Only install hooks/skills for actual projects (not in claude-recall itself or node_modules)
     if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
       const claudeDir = path.join(cwd, '.claude');
       const hooksDir = path.join(claudeDir, 'hooks');
@@ -133,91 +104,48 @@ try {
         fs.mkdirSync(hooksDir, { recursive: true });
       }
 
-      // Copy hook scripts from package (packageHooksDir defined above)
-      const hookScripts = [
-        'mcp_tool_tracker.py',
-        'pre_tool_search_enforcer.py',
-        'pubnub_pre_tool_hook.py',
-        'pubnub_prompt_hook.py',
-        'user_prompt_reminder.py'
-      ];
+      // Copy single enforcement hook
+      const hookSource = path.join(packageHooksDir, 'memory_enforcer.py');
+      const hookDest = path.join(hooksDir, 'memory_enforcer.py');
 
-      for (const script of hookScripts) {
-        const source = path.join(packageHooksDir, script);
-        const dest = path.join(hooksDir, script);
-
-        if (fs.existsSync(source)) {
-          fs.copyFileSync(source, dest);
-          // Make executable
-          fs.chmodSync(dest, 0o755);
-        }
+      if (fs.existsSync(hookSource)) {
+        fs.copyFileSync(hookSource, hookDest);
+        fs.chmodSync(hookDest, 0o755);
+        console.log('✅ Installed memory_enforcer.py to .claude/hooks/');
       }
 
-      console.log('✅ Installed hook scripts to .claude/hooks/');
-
-      // Copy skills directory (always, not just on version update)
+      // Copy skills directory
       if (fs.existsSync(packageSkillsDir)) {
         const skillsDir = path.join(claudeDir, 'skills');
         copyDirRecursive(packageSkillsDir, skillsDir);
-        console.log('✅ Installed skills to .claude/skills/');
-      } else {
-        console.log(`⚠️  Skills source not found at: ${packageSkillsDir}`);
+        console.log('✅ Installed SKILL.md to .claude/skills/');
       }
 
-      // Create or update .claude/settings.json with hook configuration
+      // Create .claude/settings.json with hook configuration
       const settingsPath = path.join(claudeDir, 'settings.json');
       let settings = {};
 
       if (fs.existsSync(settingsPath)) {
-        const settingsContent = fs.readFileSync(settingsPath, 'utf8');
-        settings = JSON.parse(settingsContent);
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        } catch (e) {
+          settings = {};
+        }
       }
 
-      // Version-based hook configuration
-      // Update hooks if: no hooks, or older version
-      const CURRENT_HOOKS_VERSION = '0.8.25';
+      const CURRENT_HOOKS_VERSION = '1.0.0';
       const needsUpdate = !settings.hooks || settings.hooksVersion !== CURRENT_HOOKS_VERSION;
 
       if (needsUpdate) {
-        // Use ABSOLUTE paths so hooks work from any subdirectory
         settings.hooksVersion = CURRENT_HOOKS_VERSION;
         settings.hooks = {
           PreToolUse: [
             {
-              // Track MCP tool calls (especially search) for enforcement
-              matcher: "mcp__claude-recall__.*",
+              matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
               hooks: [
                 {
                   type: "command",
-                  command: `python3 ${path.join(hooksDir, 'mcp_tool_tracker.py')}`
-                }
-              ]
-            },
-            {
-              // Enforce memory search before significant actions
-              matcher: "Write|Edit|Bash|Task",
-              hooks: [
-                {
-                  type: "command",
-                  command: `python3 ${path.join(hooksDir, 'pre_tool_search_enforcer.py')}`
-                },
-                {
-                  type: "command",
-                  command: `python3 ${path.join(hooksDir, 'pubnub_pre_tool_hook.py')}`
-                }
-              ]
-            }
-          ],
-          UserPromptSubmit: [
-            {
-              hooks: [
-                {
-                  type: "command",
-                  command: `python3 ${path.join(hooksDir, 'user_prompt_reminder.py')}`
-                },
-                {
-                  type: "command",
-                  command: `python3 ${path.join(hooksDir, 'pubnub_prompt_hook.py')}`
+                  command: `python3 ${path.join(hooksDir, 'memory_enforcer.py')}`
                 }
               ]
             }
@@ -225,19 +153,12 @@ try {
         };
 
         fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-        console.log('✅ Configured hooks in .claude/settings.json');
-        console.log('   → PreToolUse (mcp__claude-recall__*): Tracks search calls');
-        console.log('   → PreToolUse (Write|Edit|Bash|Task): Enforces memory search first');
-        console.log('   → UserPromptSubmit: Reminder + preference capture');
-        if (settings.hooksVersion) {
-          console.log(`   → Updated from previous version to ${CURRENT_HOOKS_VERSION}`);
-        }
+        console.log('✅ Configured hook in .claude/settings.json');
       } else {
-        console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION} (skipped)`);
+        console.log(`ℹ️  Hooks already at version ${CURRENT_HOOKS_VERSION}`);
       }
     }
   } catch (error) {
-    // Don't fail installation if hook/skill setup fails
     console.log('⚠️  Failed to install hooks/skills (non-fatal):', error.message);
   }
 
@@ -248,23 +169,14 @@ try {
   console.log('');
   console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
   console.log('');
-  console.log('  Then restart Claude Code (exit and re-enter the session).');
+  console.log('  Then restart Claude Code.');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('');
-  console.log('🤖 Optional: Start the memory agent for real-time capture:');
-  console.log('   npx claude-recall agent start');
   console.log('');
   console.log('💡 Your memories persist across conversations and restarts.\n');
 
 } catch (error) {
-  console.error('❌ Error updating ~/.claude.json:', error.message);
-  console.log('\nPlease manually add Claude Recall to your ~/.claude.json file:');
-  console.log(JSON.stringify({
-    "claude-recall": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["claude-recall", "mcp", "start"]
-    }
-  }, null, 2));
+  console.error('❌ Error during setup:', error.message);
+  console.log('\nPlease run manually:');
+  console.log('  claude mcp add claude-recall -- npx claude-recall mcp start');
 }

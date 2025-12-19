@@ -81,4 +81,4 @@ scripts/*
 
 # User-specific
 .claude-recall.json
-claude-recall.db
+claude-recall.db*.tgz
