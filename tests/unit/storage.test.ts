@@ -110,9 +110,9 @@ describe('MemoryStorage', () => {
   });
   
   it('should get stats', () => {
-    storage.save({ key: 'pref1', value: {}, type: 'preference' });
-    storage.save({ key: 'pref2', value: {}, type: 'preference' });
-    storage.save({ key: 'code1', value: {}, type: 'code' });
+    storage.save({ key: 'pref1', value: { name: 'pref1' }, type: 'preference' });
+    storage.save({ key: 'pref2', value: { name: 'pref2' }, type: 'preference' });
+    storage.save({ key: 'code1', value: { name: 'code1' }, type: 'code' });
     
     const stats = storage.getStats();
     expect(stats.total).toBe(3);

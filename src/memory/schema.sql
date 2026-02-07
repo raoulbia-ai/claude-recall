@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS memories (
   superseded_at INTEGER,
   confidence_score REAL,
   sophistication_level INTEGER DEFAULT 1,
-  scope TEXT CHECK(scope IN ('universal', 'project', NULL))
+  scope TEXT CHECK(scope IN ('universal', 'project', NULL)),
+  content_hash TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
@@ -26,3 +27,4 @@ CREATE INDEX IF NOT EXISTS idx_memories_preference_key ON memories(preference_ke
 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(is_active);
 CREATE INDEX IF NOT EXISTS idx_memories_superseded ON memories(superseded_by);
 CREATE INDEX IF NOT EXISTS idx_memories_sophistication ON memories(sophistication_level);
+CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash);

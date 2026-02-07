@@ -218,37 +218,62 @@ export class DatabaseManager {
    */
   private deduplicateMemories(db: Database.Database, dryRun: boolean): number {
     try {
-      // Find duplicates
-      const duplicates = db.prepare(`
-        SELECT type, key, value, COUNT(*) as count, GROUP_CONCAT(id) as ids
+      let totalRemoved = 0;
+
+      // Content-hash based dedup (primary path)
+      const hashDuplicates = db.prepare(`
+        SELECT content_hash, COUNT(*) as count, GROUP_CONCAT(id) as ids
         FROM memories
-        GROUP BY type, key, value
+        WHERE content_hash IS NOT NULL
+        GROUP BY content_hash
         HAVING COUNT(*) > 1
       `).all() as any[];
-      
-      let totalRemoved = 0;
-      
-      for (const dup of duplicates) {
+
+      for (const dup of hashDuplicates) {
         const ids = dup.ids.split(',').map((id: string) => parseInt(id));
         const keepId = Math.min(...ids); // Keep the oldest
         const removeIds = ids.filter((id: number) => id !== keepId);
-        
+
         if (!dryRun) {
           const stmt = db.prepare('DELETE FROM memories WHERE id = ?');
           for (const id of removeIds) {
             stmt.run(id);
           }
         }
-        
+
         totalRemoved += removeIds.length;
       }
-      
+
+      // Fallback for pre-migration rows where content_hash IS NULL
+      const legacyDuplicates = db.prepare(`
+        SELECT type, key, value, COUNT(*) as count, GROUP_CONCAT(id) as ids
+        FROM memories
+        WHERE content_hash IS NULL
+        GROUP BY type, key, value
+        HAVING COUNT(*) > 1
+      `).all() as any[];
+
+      for (const dup of legacyDuplicates) {
+        const ids = dup.ids.split(',').map((id: string) => parseInt(id));
+        const keepId = Math.min(...ids);
+        const removeIds = ids.filter((id: number) => id !== keepId);
+
+        if (!dryRun) {
+          const stmt = db.prepare('DELETE FROM memories WHERE id = ?');
+          for (const id of removeIds) {
+            stmt.run(id);
+          }
+        }
+
+        totalRemoved += removeIds.length;
+      }
+
       this.logger.info('DatabaseManager', `Deduplicated ${totalRemoved} memories`);
       if (totalRemoved > 0 && !dryRun) {
         console.log(`🔄 Deduplicated ${totalRemoved} identical memories`);
       }
       return totalRemoved;
-      
+
     } catch (error) {
       this.logger.error('DatabaseManager', 'Error deduplicating memories', error);
       return 0;

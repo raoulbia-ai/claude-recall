@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -27,6 +28,7 @@ export interface Memory {
   confidence_score?: number;
   sophistication_level?: number;  // 1-4: Procedural → Compositional
   scope?: 'universal' | 'project' | null;  // v0.8.0: Memory scope
+  content_hash?: string;
 }
 
 export class MemoryStorage {
@@ -103,18 +105,76 @@ export class MemoryStorage {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_scope_project ON memories(scope, project_id)');
         console.log('✅ Added scope column');
       }
+
+      // Add content_hash if missing (content dedup)
+      if (!columnNames.includes('content_hash')) {
+        console.log('📋 Migrating database schema: Adding content_hash column...');
+        this.db.exec('ALTER TABLE memories ADD COLUMN content_hash TEXT');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash)');
+
+        // Backfill existing records
+        const rows = this.db.prepare('SELECT id, value, type FROM memories WHERE content_hash IS NULL').all() as Array<{id: number; value: string; type: string}>;
+        if (rows.length > 0) {
+          const updateStmt = this.db.prepare('UPDATE memories SET content_hash = ? WHERE id = ?');
+          const backfillTransaction = this.db.transaction(() => {
+            for (const row of rows) {
+              const hash = this.computeContentHash(JSON.parse(row.value), row.type);
+              updateStmt.run(hash, row.id);
+            }
+          });
+          backfillTransaction();
+          console.log(`✅ Added content_hash column, backfilled ${rows.length} records`);
+        } else {
+          console.log('✅ Added content_hash column');
+        }
+      }
     } catch (error) {
       console.error('⚠️  Schema migration error:', error);
       // Don't throw - let the database continue with existing schema
     }
   }
   
+  /**
+   * Compute a SHA-256 content hash from the meaningful fields of a memory.
+   * Includes type + canonical JSON of value. Excludes metadata (key, timestamps, project_id, scope, etc.)
+   */
+  private computeContentHash(value: any, type: string): string {
+    // Use a replacer function to sort object keys at every level for canonical serialization
+    const canonical = JSON.stringify({ type, value }, (_key, val) => {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        const sorted: Record<string, any> = {};
+        for (const k of Object.keys(val).sort()) {
+          sorted[k] = val[k];
+        }
+        return sorted;
+      }
+      return val;
+    });
+    return crypto.createHash('sha256').update(canonical).digest('hex');
+  }
+
   save(memory: Memory): void {
+    const contentHash = this.computeContentHash(memory.value, memory.type);
+
+    // Write-time dedup: check if identical content already exists under a different key
+    const existing = this.db.prepare(
+      'SELECT key, id FROM memories WHERE content_hash = ? AND key != ?'
+    ).get(contentHash, memory.key) as { key: string; id: number } | undefined;
+
+    if (existing) {
+      // Bump the existing memory's timestamp and access_count to keep it fresh
+      this.db.prepare(
+        'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
+      ).run(Date.now(), existing.key);
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      return;
+    }
+
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
-       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -132,7 +192,8 @@ export class MemoryStorage {
       memory.superseded_at || null,
       memory.confidence_score || null,
       memory.sophistication_level || 1,
-      memory.scope || null
+      memory.scope || null,
+      contentHash
     );
 
     // Force a WAL checkpoint to ensure the data is written to the main database file
@@ -182,7 +243,8 @@ export class MemoryStorage {
       superseded_at: row.superseded_at,
       confidence_score: row.confidence_score,
       sophistication_level: row.sophistication_level || 1,
-      scope: row.scope || null
+      scope: row.scope || null,
+      content_hash: row.content_hash || null
     };
   }
   
