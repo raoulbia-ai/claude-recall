@@ -1,6 +1,8 @@
 module.exports = {
-  preset: 'ts-jest',
   testEnvironment: 'node',
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { diagnostics: false }]
+  },
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts', '**/*.test.js'],
   collectCoverageFrom: [

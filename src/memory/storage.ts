@@ -270,10 +270,17 @@ export class MemoryStorage {
     
     // Add keyword search in value field
     if (context.keywords && context.keywords.length > 0) {
-      const keywordConditions = context.keywords.map(() => 'value LIKE ?').join(' OR ');
-      query += ` AND (${keywordConditions})`;
-      
-      // Add parameters for each keyword
+      if (context.keywords.length >= 3) {
+        // Many keywords (likely conversational input): require at least 2 to match.
+        // Build a SUM of CASE expressions and require the total >= 2.
+        const cases = context.keywords.map(() => "(CASE WHEN value LIKE ? THEN 1 ELSE 0 END)").join(' + ');
+        query += ` AND (${cases}) >= 2`;
+      } else {
+        // Few keywords: match any (original behaviour)
+        const keywordConditions = context.keywords.map(() => 'value LIKE ?').join(' OR ');
+        query += ` AND (${keywordConditions})`;
+      }
+
       for (const keyword of context.keywords) {
         params.push(`%${keyword}%`);
       }

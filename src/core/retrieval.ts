@@ -20,26 +20,55 @@ export class MemoryRetrieval {
   // Extract keywords from user query for better semantic search
   private extractKeywords(query: string): string[] {
     if (!query) return [];
-    
-    // Common database-related keywords
-    const dbKeywords = ['database', 'db', 'postgres', 'postgresql', 'mysql', 'sqlite', 
-                        'mongodb', 'redis', 'sql', 'nosql', 'storage'];
-    
-    // Convert query to lowercase for matching
+
     const lowerQuery = query.toLowerCase();
-    
-    // Extract matching database keywords
-    const keywords = dbKeywords.filter(keyword => lowerQuery.includes(keyword));
-    
-    // Also extract significant words (3+ chars, not common words)
-    const commonWords = ['the', 'what', 'which', 'how', 'when', 'where', 'are', 'is', 
-                         'do', 'we', 'use', 'using', 'for', 'and', 'or', 'in', 'to'];
-    
-    const words = lowerQuery.split(/\s+/)
-      .filter(word => word.length >= 3 && !commonWords.includes(word));
-    
-    // Combine keywords and significant words
-    return [...new Set([...keywords, ...words])];
+
+    // Stop words — common English words that match too broadly in LIKE queries
+    const stopWords = new Set([
+      // Articles, pronouns, prepositions
+      'the', 'a', 'an', 'this', 'that', 'these', 'those',
+      'i', 'me', 'my', 'we', 'our', 'you', 'your', 'it', 'its',
+      'he', 'she', 'his', 'her', 'they', 'them', 'their',
+      'in', 'on', 'at', 'to', 'of', 'by', 'up', 'as', 'if',
+      'or', 'and', 'but', 'not', 'no', 'so', 'do', 'be',
+      // Common verbs / conversational filler
+      'is', 'are', 'was', 'were', 'am', 'been', 'being',
+      'has', 'have', 'had', 'does', 'did', 'will', 'would',
+      'can', 'could', 'shall', 'should', 'may', 'might', 'must',
+      'get', 'got', 'set', 'let', 'put', 'say', 'said',
+      'use', 'used', 'using', 'make', 'made', 'take', 'see',
+      'yes', 'no', 'ok', 'okay', 'sure', 'just', 'also',
+      'any', 'all', 'some', 'each', 'every', 'both', 'few',
+      // Question words
+      'what', 'which', 'how', 'when', 'where', 'who', 'why',
+      // Common dev-conversation noise
+      'want', 'need', 'know', 'think', 'try', 'like',
+      'file', 'code', 'work', 'thing', 'way', 'one', 'new',
+      'first', 'into', 'with', 'from', 'about', 'then', 'there',
+      'here', 'only', 'very', 'much', 'more', 'most', 'well',
+      'now', 'out', 'over', 'own', 'same', 'than', 'too',
+      'create', 'run', 'add', 'change', 'check', 'look',
+      'before', 'after', 'still', 'already', 'yet',
+    ]);
+
+    // Domain keywords — always include if present in the query
+    const domainKeywords = [
+      'database', 'postgres', 'postgresql', 'mysql', 'sqlite', 'mongodb', 'redis',
+      'nosql', 'authentication', 'auth', 'jwt', 'oauth', 'docker', 'kubernetes',
+      'typescript', 'javascript', 'python', 'react', 'webpack', 'eslint', 'prettier',
+      'api', 'rest', 'graphql', 'grpc', 'websocket', 'migration', 'schema',
+      'deploy', 'ci', 'pipeline', 'terraform', 'nginx',
+    ];
+
+    const matched = domainKeywords.filter(kw => lowerQuery.includes(kw));
+
+    // Extract significant words: 4+ chars, not stop words, alphanumeric only
+    const words = lowerQuery
+      .split(/\s+/)
+      .map(w => w.replace(/[^a-z0-9-]/g, ''))
+      .filter(w => w.length >= 4 && !stopWords.has(w));
+
+    return [...new Set([...matched, ...words])];
   }
   
   findRelevant(context: Context, sortBy: 'relevance' | 'timestamp' = 'relevance'): ScoredMemory[] {
@@ -96,17 +125,26 @@ export class MemoryRetrieval {
     if (context.keywords && context.keywords.length > 0) {
       const memoryStr = JSON.stringify(memory.value).toLowerCase();
       let keywordMatches = 0;
-      
+
       for (const keyword of context.keywords) {
         if (memoryStr.includes(keyword.toLowerCase())) {
           keywordMatches++;
-          score *= 2.0;  // Double score for each keyword match
         }
       }
-      
-      // Extra boost if all keywords match
-      if (keywordMatches === context.keywords.length) {
-        score *= 1.5;
+
+      if (keywordMatches > 0) {
+        // Scale boost by the fraction of keywords matched.
+        // 1 of 5 keywords → modest boost; 5 of 5 → large boost.
+        const matchRatio = keywordMatches / context.keywords.length;
+        score *= 1 + matchRatio * 3.0;  // Up to 4x for full match
+
+        // Extra boost if ALL keywords match
+        if (keywordMatches === context.keywords.length) {
+          score *= 1.5;
+        }
+      } else {
+        // No keyword overlap — penalise so these rank below matching results
+        score *= 0.3;
       }
     }
     
