@@ -1,9 +1,15 @@
 import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
+import { ConfigService } from '../../services/config';
 import { SearchMonitor } from '../../services/search-monitor';
 import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
+  private static readonly CITATION_DIRECTIVE =
+    'When you apply any of the above rules or memories to your work, ' +
+    'add a brief inline citation: "(applied from memory: [one-line summary])". ' +
+    'Only cite memories you actually use.';
+
   private tools: MCPTool[] = [];
   private searchMonitor: SearchMonitor;
   
@@ -13,6 +19,12 @@ export class MemoryTools {
   ) {
     this.searchMonitor = SearchMonitor.getInstance();
     this.registerTools();
+  }
+
+  private getCitationDirective(): string | undefined {
+    const config = ConfigService.getInstance();
+    if (config.getConfig().citations?.enabled === false) return undefined;
+    return MemoryTools.CITATION_DIRECTIVE;
   }
 
   // Claude-flow pattern: Validate input against schema
@@ -241,6 +253,20 @@ export class MemoryTools {
           }
         },
         handler: this.handleGetRecentCaptures.bind(this)
+      },
+      {
+        name: 'mcp__claude-recall__load_rules',
+        description: 'Load all active rules (preferences, corrections, failures, devops) before starting work. No query needed. Use this instead of search at the start of every task.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: {
+              type: 'string',
+              description: 'Optional project ID override. Defaults to current project.'
+            }
+          }
+        },
+        handler: this.handleLoadRules.bind(this)
       }
     ];
   }
@@ -336,6 +362,7 @@ export class MemoryTools {
   private async handleRetrieveMemory(input: any, context: MCPContext): Promise<any> {
     try {
       let { query, id, limit = 10, sortBy } = input;
+      const citationDirective = this.getCitationDirective();
 
       // Smart detection: Auto-detect timestamp sorting from query keywords
       if (!sortBy && query) {
@@ -366,7 +393,8 @@ export class MemoryTools {
 
         return {
           memories: [memory],
-          count: 1
+          count: 1,
+          ...(citationDirective && { _citationDirective: citationDirective })
         };
       }
 
@@ -382,7 +410,8 @@ export class MemoryTools {
           })),
           count: limitedResults.length,
           totalFound: results.length,
-          sortBy
+          sortBy,
+          ...(citationDirective && { _citationDirective: citationDirective })
         };
       }
 
@@ -401,7 +430,8 @@ export class MemoryTools {
           relevanceScore: r.score
         })),
         count: limitedResults.length,
-        sortBy
+        sortBy,
+        ...(citationDirective && { _citationDirective: citationDirective })
       };
 
     } catch (error) {
@@ -413,6 +443,7 @@ export class MemoryTools {
   private async handleSearch(input: any, context: MCPContext): Promise<any> {
     try {
       const { query, filters, limit = 20 } = input;
+      const citationDirective = this.getCitationDirective();
       
       if (!query) {
         throw new Error('Query is required');
@@ -483,9 +514,10 @@ export class MemoryTools {
           estimatedTokens: resultTokens,
           estimatedTokensSaved: tokensSaved,
           efficiency: tokensSaved > 0 ? `${Math.round((tokensSaved / (tokensSaved + resultTokens)) * 100)}%` : '0%'
-        }
+        },
+        ...(citationDirective && { _citationDirective: citationDirective })
       };
-      
+
     } catch (error) {
       this.logger.error('MemoryTools', 'Search failed', error);
       throw error;
@@ -724,6 +756,81 @@ export class MemoryTools {
       }
     }
     return 0.5; // Default confidence
+  }
+
+  /**
+   * Load all active rules by category - deterministic, no query needed
+   */
+  private async handleLoadRules(input: any, context: MCPContext): Promise<any> {
+    try {
+      const { projectId } = input;
+      const citationDirective = this.getCitationDirective();
+      const rules = this.memoryService.loadActiveRules(projectId || context.projectId);
+
+      // Format categorized markdown sections
+      const sections: string[] = [];
+
+      if (rules.preferences.length > 0) {
+        sections.push('## Preferences\n' + rules.preferences.map(m => {
+          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          return `- ${m.preference_key || m.key}: ${val}`;
+        }).join('\n'));
+      }
+
+      if (rules.corrections.length > 0) {
+        sections.push('## Corrections\n' + rules.corrections.map(m => {
+          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          return `- ${val}`;
+        }).join('\n'));
+      }
+
+      if (rules.failures.length > 0) {
+        sections.push('## Failures\n' + rules.failures.map(m => {
+          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          return `- ${val}`;
+        }).join('\n'));
+      }
+
+      if (rules.devops.length > 0) {
+        sections.push('## DevOps Rules\n' + rules.devops.map(m => {
+          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          return `- ${val}`;
+        }).join('\n'));
+      }
+
+      const totalRules = rules.preferences.length + rules.corrections.length +
+        rules.failures.length + rules.devops.length;
+
+      const resultTokens = this.estimateTokens([
+        ...rules.preferences, ...rules.corrections,
+        ...rules.failures, ...rules.devops
+      ]);
+
+      // Record to SearchMonitor so monitoring/stats still work
+      this.searchMonitor.recordSearch(
+        'load_rules',
+        totalRules,
+        context.sessionId,
+        'mcp',
+        { tool: 'load_rules', tokenMetrics: { resultTokens, tokensSaved: totalRules > 0 ? totalRules * 200 : 0 } }
+      );
+
+      return {
+        rules: sections.length > 0 ? sections.join('\n\n') : 'No active rules found. This may be a new project.',
+        counts: {
+          preferences: rules.preferences.length,
+          corrections: rules.corrections.length,
+          failures: rules.failures.length,
+          devops: rules.devops.length,
+          total: totalRules
+        },
+        summary: rules.summary,
+        ...(citationDirective && { _citationDirective: citationDirective })
+      };
+    } catch (error) {
+      this.logger.error('MemoryTools', 'Failed to load rules', error);
+      throw error;
+    }
   }
 
   getTools(): MCPTool[] {

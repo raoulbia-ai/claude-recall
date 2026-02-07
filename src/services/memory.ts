@@ -18,6 +18,14 @@ export interface MemoryServiceContext {
   globalSearch?: boolean;  // v0.8.0: For CLI --global flag
 }
 
+export interface ActiveRules {
+  preferences: Memory[];
+  corrections: Memory[];
+  failures: Memory[];
+  devops: Memory[];
+  summary: string;
+}
+
 export interface MemoryStoreRequest {
   key: string;
   value: any;
@@ -388,6 +396,55 @@ export class MemoryService {
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'getActivePreferences', error as Error);
       return [];
+    }
+  }
+
+  /**
+   * Load all active rules deterministically by category.
+   * Returns preferences, corrections, failures, and devops rules
+   * scoped to current project + universal + unscoped memories.
+   */
+  loadActiveRules(projectId?: string): ActiveRules {
+    try {
+      const pid = projectId || this.config.getProjectId();
+      const searchContext = { project_id: pid };
+
+      // Preferences: active only
+      const allPreferences = this.storage.searchByContext({ ...searchContext, type: 'preference' });
+      const preferences = allPreferences.filter(m => m.is_active !== false);
+
+      // Corrections: top 10 by timestamp
+      const allCorrections = this.storage.searchByContext({ ...searchContext, type: 'correction' });
+      const corrections = allCorrections
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 10);
+
+      // Failures: top 5 by timestamp
+      const allFailures = this.storage.searchByContext({ ...searchContext, type: 'failure' });
+      const failures = allFailures
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 5);
+
+      // DevOps: all rules
+      const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' });
+
+      const counts = [
+        preferences.length && `${preferences.length} preferences`,
+        corrections.length && `${corrections.length} corrections`,
+        failures.length && `${failures.length} failures`,
+        devops.length && `${devops.length} devops rules`,
+      ].filter(Boolean);
+
+      const summary = counts.length > 0
+        ? `Loaded ${counts.join(', ')}`
+        : 'No active rules found';
+
+      this.logger.info('MemoryService', summary, { projectId: pid });
+
+      return { preferences, corrections, failures, devops, summary };
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'loadActiveRules', error as Error);
+      return { preferences: [], corrections: [], failures: [], devops: [], summary: 'Error loading rules' };
     }
   }
 

@@ -49,6 +49,11 @@ export interface ClaudeRecallConfig {
     timeout: number;
     enabled: boolean;
   };
+
+  // Citation configuration
+  citations: {
+    enabled: boolean;
+  };
 }
 
 export class ConfigService {
@@ -104,6 +109,9 @@ export class ConfigService {
       hooks: {
         timeout: parseInt(process.env.CLAUDE_RECALL_HOOK_TIMEOUT || '5000'),
         enabled: process.env.CLAUDE_RECALL_HOOKS_ENABLED !== 'false'
+      },
+      citations: {
+        enabled: process.env.CLAUDE_RECALL_CITE_MEMORIES !== 'false'
       }
     };
     
@@ -145,7 +153,8 @@ export class ConfigService {
       logging: { ...defaultConfig.logging, ...customConfig.logging },
       memory: { ...defaultConfig.memory, ...customConfig.memory },
       project: { ...defaultConfig.project, ...customConfig.project },
-      hooks: { ...defaultConfig.hooks, ...customConfig.hooks }
+      hooks: { ...defaultConfig.hooks, ...customConfig.hooks },
+      citations: { ...defaultConfig.citations, ...customConfig.citations }
     };
   }
   

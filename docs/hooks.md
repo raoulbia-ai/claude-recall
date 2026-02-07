@@ -11,7 +11,7 @@ Located at `.claude/hooks/search_enforcer.py`, this is a PreToolUse hook that bl
 1. Claude invokes a tool (e.g., `Write`)
 2. The hook checks a per-session state file for a recent search timestamp
 3. If no search occurred within the TTL window, the hook blocks with exit code 2
-4. Once Claude performs `mcp__claude-recall__search` or `mcp__claude-recall__retrieve_memory`, the state file is updated and subsequent tool calls are allowed
+4. Once Claude performs `mcp__claude-recall__load_rules`, `mcp__claude-recall__search`, or `mcp__claude-recall__retrieve_memory`, the state file is updated and subsequent tool calls are allowed
 
 ### State File
 
@@ -71,8 +71,8 @@ Common read-only commands are exempt from enforcement:
 
 The hook works alongside the memory-management skill (`.claude/skills/memory-management/SKILL.md`):
 
-- **Skill** teaches Claude _when_ and _how_ to search memory
-- **Hook** enforces the search as a hard gate, catching cases where the skill guidance is skipped
+- **Skill** teaches Claude to use `load_rules` at task start and `search` for targeted lookups
+- **Hook** enforces that at least one memory call (`load_rules`, `search`, or `retrieve_memory`) occurs before code-modifying operations
 
 ### Installation
 

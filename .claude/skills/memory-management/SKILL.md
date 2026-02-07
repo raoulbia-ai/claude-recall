@@ -1,7 +1,7 @@
 ---
 name: memory-management
 description: Persistent memory for Claude across conversations. Use when starting any task, before writing or editing code, before making decisions, when user mentions preferences or conventions, when user corrects your work, or when completing a task that overcame challenges. Ensures Claude never repeats mistakes and always applies learned patterns.
-version: "1.0.0"
+version: "1.1.0"
 license: "MIT"
 ---
 
@@ -11,9 +11,7 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 ## When to Use This Skill
 
-Invoke memory search in these situations:
-
-- **Starting any task** - Check for existing patterns, preferences, past failures
+- **Starting any task** - Load rules for preferences, corrections, past failures
 - **Before writing/editing code** - Apply learned conventions and avoid past mistakes
 - **Before making architectural decisions** - Check for established patterns
 - **When user mentions preferences** - Store for future sessions
@@ -22,25 +20,30 @@ Invoke memory search in these situations:
 
 ## Key Directives
 
-1. **ALWAYS search before acting** - Call `mcp__claude-recall__search` before Write, Edit, or significant Bash operations
-2. **Apply what you find** - Use retrieved preferences, patterns, and corrections
-3. **Capture corrections immediately** - User fixes are highest priority
-4. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
-5. **Never store secrets** - No API keys, passwords, tokens, or PII
+1. **ALWAYS load rules before acting** - Call `mcp__claude-recall__load_rules` before Write, Edit, or significant Bash operations
+2. **Use `search` for specific lookups** - Mid-task targeted queries ("what did we decide about auth?")
+3. **Apply what you find** - Use retrieved preferences, patterns, and corrections
+4. **Capture corrections immediately** - User fixes are highest priority
+5. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
+6. **Never store secrets** - No API keys, passwords, tokens, or PII
 
 ## Quick Reference
 
-### Search (Before Every Task)
+### Load Rules (Before Every Task)
 
 ```
-mcp__claude-recall__search({ "query": "[task] [domain] preferences patterns" })
+mcp__claude-recall__load_rules({})
 ```
 
-Examples:
-- Before tests: `"testing tdd framework location"`
-- Before git: `"git commit branch workflow"`
-- Before deploy: `"deploy docker build ci/cd"`
-- Before coding: `"[language] style conventions preferences"`
+Returns all active preferences, recent corrections, recent failures, and devops rules in one call. No query needed — deterministic and complete.
+
+### Search (For Specific Lookups)
+
+```
+mcp__claude-recall__search({ "query": "authentication jwt session" })
+```
+
+Use when you need targeted information mid-task, not for task-start enforcement.
 
 ### Store (When Something Important Happens)
 
@@ -107,14 +110,31 @@ Safe to store:
 ```
 1. User: "Add user authentication"
 
-2. Search first:
-   mcp__claude-recall__search({ "query": "authentication auth jwt session preferences" })
+2. Load rules first:
+   mcp__claude-recall__load_rules({})
 
-3. Found: "We use JWT for auth, store tokens in httpOnly cookies"
+3. Response includes:
+   ## Preferences
+   - auth_method: JWT with httpOnly cookies
+   ## Corrections
+   - Never use localStorage for auth tokens
 
-4. Implement using JWT + httpOnly cookies (not sessions)
+4. Implement using JWT + httpOnly cookies (not sessions, not localStorage)
 
 5. User approves → Done (no need to store, just applied existing knowledge)
+```
+
+### Mid-Task Specific Lookup
+
+```
+1. Working on auth, need to check a specific decision
+
+2. Search for it:
+   mcp__claude-recall__search({ "query": "oauth provider google azure" })
+
+3. Found: "We use Google OAuth, not Azure AD"
+
+4. Continue implementation with Google OAuth
 ```
 
 ### User Corrects Your Work
@@ -150,7 +170,21 @@ Safe to store:
    })
 ```
 
+## Inline Citations
+
+When `load_rules`, `search`, or `retrieve_memory` returns memories, the response includes a `_citationDirective` instructing you to cite any memory you actually apply. When you use a retrieved memory in your work, add a brief inline note:
+
+> (applied from memory: always use httpOnly cookies for auth tokens)
+
+This gives the user visibility into which stored knowledge is influencing your decisions. Only cite memories you actually use — don't cite every memory returned.
+
+To disable citations, set the environment variable `CLAUDE_RECALL_CITE_MEMORIES=false`.
+
 ## Troubleshooting
+
+**Load rules returns nothing:**
+- This may be a new project with no history yet
+- Try `search` with broad keywords to check
 
 **Search returns nothing relevant:**
 - Broaden keywords: include domain + task + "preferences patterns"
@@ -158,7 +192,7 @@ Safe to store:
 
 **Automatic capture missed something:**
 - Store it manually with appropriate type
-- Future searches will find it
+- Future loads/searches will find it
 
 **Check what's been captured:**
 ```
@@ -167,4 +201,4 @@ mcp__claude-recall__get_recent_captures({ "limit": 10 })
 
 ---
 
-**The Learning Loop**: Search → Apply → Execute → Capture outcomes → Better next time
+**The Learning Loop**: Load rules → Apply → Execute → Capture outcomes → Better next time
