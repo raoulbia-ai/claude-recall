@@ -222,7 +222,10 @@ export class MemoryTools {
       if (rules.preferences.length > 0) {
         sections.push('## Preferences\n' + rules.preferences.map(m => {
           const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
-          return `- ${m.preference_key || m.key}: ${val}`;
+          // Only show key prefix if it's a meaningful name (not auto-generated)
+          const key = m.preference_key || m.key || '';
+          const isAutoKey = key.startsWith('memory_') || key.startsWith('auto_') || key.startsWith('pref_');
+          return isAutoKey ? `- ${val}` : `- ${key}: ${val}`;
         }).join('\n'));
       }
 
