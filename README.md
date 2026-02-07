@@ -13,82 +13,19 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ---
 
-## 🚀 Features
+## Features
 
-### 🌱 Continuous Learning (Local SQLite)
-
-Claude learns your:
-
-* coding patterns
-* tool preferences
-* corrections
-* architectural decisions
-* workflow habits
-
-Everything stays **local**.
+- **Continuous Learning** — captures coding patterns, tool preferences, corrections, architectural decisions, and workflow habits in local SQLite
+- **Native Claude Skills** — no hooks required; Claude decides when to search/store based on built-in skill guidance
+- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches memory
+- **Failure Learning** — captures failures with counterfactual reasoning (what failed, why, what to do instead)
+- **Memory Evolution** — tracks agent progression over time across sophistication levels (L1–L4)
+- **Zero Cloud Storage** — all memory stored locally, no telemetry, works fully offline
+- **Process Management** — automatic server lifecycle management with stale process cleanup
 
 ---
 
-## 🎯 Native Claude Skills Integration
-
-Claude Recall uses Claude Code's native Skills system for seamless memory guidance.
-
-### How it works
-
-* **No hooks required** — Skills are built into Claude Code
-* **Non-blocking** — Claude decides when to search/store based on skill guidance
-* **Self-directed** — Claude understands when memory is relevant to the task
-* **Zero latency** — No external processes or enforcement overhead
-
-### What the Skill teaches Claude
-
-* Search memory before writing/editing code
-* Apply learned conventions and avoid past mistakes
-* Capture corrections when users fix mistakes
-* Store learning cycles (fail → fix → success)
-
-The skill is automatically installed to `.claude/skills/memory-management/SKILL.md` on package install.
-
----
-
-## 📂 Project-Scoped Knowledge
-
-Each project gets its own memory namespace:
-
-* architecture
-* tech stack
-* conventions
-* past decisions
-* known pitfalls
-* previous fixes
-* preferences unique to that codebase
-
-Switch projects → Claude switches memory.
-
----
-
-## 🔌 Zero Cloud Storage
-
-* All memory stored locally in SQLite
-* No cloud sync
-* No telemetry
-* Entire system works offline
-
----
-
-## 💻 Claude Code–Native Integration
-
-Claude Recall integrates via:
-
-* **MCP server** — search, store, retrieve memories
-* **Native Skills** — guides Claude on when to use memory tools
-* **Automatic capture** — extracts preferences from conversations
-
-Claude knows to search memory before significant actions, with no enforcement overhead.
-
----
-
-## ⚡ Quick Start
+## Quick Start
 
 ### Requirements
 
@@ -97,9 +34,7 @@ Claude knows to search memory before significant actions, with no enforcement ov
 | Node.js   | **20+**                 | required for better-sqlite3 |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
----
-
-### Install (per project)
+### Install
 
 ```bash
 cd your-project
@@ -112,17 +47,9 @@ npx claude-recall --version
 npx claude-recall setup
 ```
 
-### Upgrade
-
-```bash
-npm uninstall claude-recall && npm install claude-recall
-```
-
----
-
 ### Activate
 
-Register MCP server:
+Register MCP server with Claude Code:
 
 ```bash
 claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
@@ -136,77 +63,179 @@ Already registered? Remove first:
 claude mcp remove claude-recall
 ```
 
----
-
 ### Verify
 
-In Claude Code, ask: *"Search my memories"*
+In Claude Code, ask: *"Load my rules"*
 
-Claude should call `mcp__claude-recall__search`. If it works → you're ready.
+Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
+
+### Upgrade
+
+```bash
+npm uninstall claude-recall && npm install claude-recall
+```
 
 ---
 
-## 🧠 How It Works (High-Level)
+## How It Works
 
-Claude Recall consists of:
+Claude Recall has three layers:
 
 ### 1. Local Memory Engine (SQLite)
 
-Stores and evolves preferences, patterns, decisions, corrections.
+Stores and evolves preferences, patterns, decisions, corrections, and failure learnings. Uses WAL mode for concurrency, content-hash deduplication, and automatic compaction.
 
-### 2. MCP Server
+### 2. MCP Server (2 tools)
 
-Exposes memory tools to Claude Code:
-- `mcp__claude-recall__search` — find relevant memories
-- `mcp__claude-recall__store_memory` — save new knowledge
-- `mcp__claude-recall__retrieve_memory` — get specific memories
+Exposes two tools to Claude Code:
+
+| Tool | Purpose |
+| ---- | ------- |
+| `load_rules` | Load all active rules (preferences, corrections, failures, devops) at the start of a task |
+| `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
 
 ### 3. Native Claude Skill
 
-Teaches Claude when and how to use memory:
-- Search before writing/editing code
-- Store corrections and learning cycles
-- Apply preferences and patterns
+Installed automatically to `.claude/skills/memory-management/SKILL.md`. Teaches Claude:
+- Load rules before writing/editing code
+- Apply learned conventions and avoid past mistakes
+- Capture corrections when users fix mistakes
+- Store learning cycles (fail → fix → success)
 
 ---
 
-## 🔐 Security & Privacy
+## CLI Reference
 
-Claude Recall is built for local-first workflows:
+### Core Commands
 
-* SQLite memory never leaves your machine
-* No external services required
-* No prompts, code, or memory content is transmitted
-* Full transparency via CLI (`list`, `inspect`, `export`)
+```bash
+npx claude-recall stats                  # Memory statistics
+npx claude-recall search "query"         # Search memories
+npx claude-recall store "content"        # Store memory directly
+npx claude-recall export backup.json     # Export memories to JSON
+npx claude-recall import backup.json     # Import memories from JSON
+npx claude-recall clear --force          # Clear all memories
+```
 
-Full details in `/docs/security.md`.
+### Analysis
+
+```bash
+npx claude-recall evolution              # Memory evolution metrics (L1-L4)
+npx claude-recall evolution --days 60    # Custom time window
+npx claude-recall failures               # View failure memories
+npx claude-recall failures --limit 20    # Limit results
+npx claude-recall monitor                # Memory search monitoring stats
+```
+
+### MCP Server Management
+
+```bash
+npx claude-recall mcp status             # Current project's server status
+npx claude-recall mcp ps                 # List all running servers
+npx claude-recall mcp stop               # Stop server
+npx claude-recall mcp stop --force       # Force stop
+npx claude-recall mcp restart            # Restart server
+npx claude-recall mcp cleanup            # Remove stale PID files
+npx claude-recall mcp cleanup --all      # Stop all servers
+```
+
+### Project Management
+
+```bash
+npx claude-recall project show           # Current project info
+npx claude-recall project list           # All registered projects
+npx claude-recall project register       # Register current project
+npx claude-recall project clean          # Remove stale registry entries
+```
+
+### Setup & Diagnostics
+
+```bash
+npx claude-recall setup                  # Show activation instructions
+npx claude-recall status                 # Installation and system status
+npx claude-recall repair                 # Clean up old hooks, install skills
+```
 
 ---
 
-## 📚 Full Documentation
+## How Project Scoping Works
 
-All docs in `/docs`:
+Each project gets isolated memory based on its working directory:
 
-* Installation
-* Quickstart
-* Architecture
-* Learning Loop
-* Memory Types
-* CLI Reference
-* Skills Integration
-* Project Scoping
-* Troubleshooting
-* Security
-* FAQ
+- **Project ID** is derived from the `cwd` that Claude Code passes to the MCP server
+- **Universal memories** (no project scope) are available everywhere
+- **Project memories** are only returned when working in that project
+- Switching projects switches memory automatically — no configuration needed
+
+Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `project_id` column).
 
 ---
 
-## 🛠 Development & Contributions
+## WSL Users
+
+If you hit "invalid ELF header" errors from mixed Windows/WSL `node_modules`, use a global install:
+
+```bash
+# From WSL:
+npm install -g claude-recall
+
+# Update ~/.claude.json to use the global binary:
+{
+  "claude-recall": {
+    "type": "stdio",
+    "command": "claude-recall",
+    "args": ["mcp", "start"],
+    "env": {}
+  }
+}
+```
+
+Global installation does **not** affect project scoping — project ID is still detected from Claude Code's working directory.
+
+---
+
+## Security & Privacy
+
+- SQLite memory never leaves your machine
+- No external services required
+- No prompts, code, or memory content is transmitted
+- Full transparency via CLI (`stats`, `search`, `export`)
+- Never stores secrets (API keys, passwords, tokens)
+
+Details in [docs/security.md](docs/security.md).
+
+---
+
+## Documentation
+
+All docs in [`/docs`](docs/):
+
+- [Installation](docs/installation.md)
+- [Quickstart](docs/quickstart.md)
+- [CLI Reference](docs/cli.md)
+- [Memory Types](docs/memory-types.md)
+- [Learning Loop](docs/learning-loop.md)
+- [Project Scoping](docs/project-scoping.md)
+- [Content Hashing](docs/content-hashing.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Security](docs/security.md)
+- [FAQ](docs/faq.md)
+
+---
+
+## Development & Contributions
 
 PRs welcome — Claude Recall is open to contributors.
 
+```bash
+npm run build          # Compile TypeScript
+npm test               # Run all tests
+npm run test:watch     # Watch mode
+npm run mcp:dev        # Start MCP server in dev mode
+```
+
 ---
 
-## 📝 License
+## License
 
 MIT.
