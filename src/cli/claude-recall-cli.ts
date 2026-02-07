@@ -17,7 +17,6 @@ import { MemoryEvolution, SophisticationLevel } from '../services/memory-evoluti
 import { FailureExtractor } from '../services/failure-extractor';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
-import { HookCommands } from './commands/hook-commands';
 
 const program = new Command();
 
@@ -633,7 +632,7 @@ async function main() {
     if (fs.existsSync(hooksDir)) {
       const oldHooks = [
         'memory_enforcer.py',  // Old v0.8.x hook
-        'pre_tool_search_enforcer.py',
+        'search_enforcer.py',
         'mcp_tool_tracker.py',
         'pubnub_pre_tool_hook.py',
         'pubnub_prompt_hook.py',
@@ -869,7 +868,7 @@ async function main() {
     let searchDir = process.cwd();
     let enforcerPath: string | null = null;
     while (searchDir !== path.dirname(searchDir)) {
-      const candidate = path.join(searchDir, '.claude/hooks/pre_tool_search_enforcer.py');
+      const candidate = path.join(searchDir, '.claude/hooks/search_enforcer.py');
       if (fs.existsSync(candidate)) {
         enforcerPath = candidate;
         break;
@@ -878,7 +877,7 @@ async function main() {
     }
 
     if (!enforcerPath) {
-      console.log('❌ Could not find pre_tool_search_enforcer.py');
+      console.log('❌ Could not find search_enforcer.py');
       console.log('   Run: npx claude-recall repair\n');
       return;
     }
@@ -1073,9 +1072,6 @@ async function main() {
 
   // Migration commands
   MigrateCommand.register(program);
-
-  // Hook commands (legacy, kept for backwards compatibility)
-  HookCommands.register(program);
 
   // Register live test command
   new LiveTestCommand().register(program);

@@ -1,84 +1,114 @@
-# Hook System
+# hooks
 
-Claude Recall uses three Claude Code hooks:
+Claude Recall v0.9.3+ uses a hybrid approach: **Skills** teach Claude the workflow, and a **minimal hook** enforces memory search before code-modifying operations.
 
-1. Pre-Action Hook
-2. Planning Hook
-3. Post-Action Hook
+## search_enforcer.py
 
-Hooks are extremely fast (<10ms) because they publish to PubNub without waiting.
+Located at `.claude/hooks/search_enforcer.py`, this is a PreToolUse hook that blocks Write, Edit, Bash, and Task operations until a memory search has been performed in the current session.
 
----
+### How It Works
 
-# 1. Pre-Action Hook
+1. Claude invokes a tool (e.g., `Write`)
+2. The hook checks a per-session state file for a recent search timestamp
+3. If no search occurred within the TTL window, the hook blocks with exit code 2
+4. Once Claude performs `mcp__claude-recall__search` or `mcp__claude-recall__retrieve_memory`, the state file is updated and subsequent tool calls are allowed
 
-Triggered before Claude:
+### State File
 
-- writes a file
-- edits a file
-- runs a tool
+Per-session state is stored at:
 
-Responsibilities:
-- publish tool metadata
-- request memory suggestions
-- inject context into planning
+```
+~/.claude-recall/hook-state/{session_id}.json
+```
 
-Payload example:
+Contents:
 
 ```json
 {
-  "event": "pre_action",
-  "tool": "write_file",
-  "path": "src/utils/math.ts"
+  "lastSearchAt": 1700000000000,
+  "searchQuery": "relevant keywords"
 }
 ```
 
----
+### Search TTL
 
-# 2. Planning Hook
+The hook allows tool calls for a configurable window after the last search. Default: **5 minutes** (300,000 ms).
 
-Enforces high-quality reasoning:
+### Protected Tools
 
-* improves plan structure
-* reduces hallucinations
-* ensures memory is incorporated
-* provides Claude with retrieved memories
+The following tools require a prior memory search:
 
----
+- `Write`
+- `Edit`
+- `Bash` (except read-only commands)
+- `Task`
 
-# 3. Post-Action Hook
+### Read-Only Bash Exemptions
 
-Triggered after execution.
+Common read-only commands are exempt from enforcement:
 
-Responsibilities:
+- File inspection: `ls`, `cat`, `head`, `tail`, `wc`, `file`, `stat`
+- Search: `find`, `grep`, `rg`, `ag`
+- Git read operations: `git status`, `git log`, `git diff`, `git show`, `git branch`
+- Package managers: `npm list`, `npm test`, `npm run build`, `pip list`, `pip show`
+- Test runners: `pytest`, `jest`, `cargo test`, `go test`
 
-* detect failures & successes
-* publish metadata about results
-* classify new learnings
-* update/evolve memories asynchronously
+### Configuration
 
-Example metadata:
+| Environment Variable | Default | Description |
+|---|---|---|
+| `CLAUDE_RECALL_SEARCH_TTL` | `300000` (5 min) | Milliseconds a search remains valid |
+| `CLAUDE_RECALL_ENFORCE_MODE` | `block` | `block` (exit 2), `warn` (exit 0 + stderr message), or `off` (disabled) |
+
+### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Allow the tool call |
+| `2` | Block the tool call (triggers Claude to search first) |
+
+### Integration with Skills
+
+The hook works alongside the memory-management skill (`.claude/skills/memory-management/SKILL.md`):
+
+- **Skill** teaches Claude _when_ and _how_ to search memory
+- **Hook** enforces the search as a hard gate, catching cases where the skill guidance is skipped
+
+### Installation
+
+Installed automatically by `npx claude-recall setup --install` or `npx claude-recall repair`. The hook is registered in `.claude/settings.json`:
 
 ```json
 {
-  "event": "post_action",
-  "status": "success",
-  "path": "src/utils/math.ts"
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__claude-recall__.*|Write|Edit|Bash|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/search_enforcer.py"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
----
+### Troubleshooting
 
-# PubNub Integration
-
-Hooks **never block**:
-
-```python
-pubnub.publish(channel="claude-tool-events", message=event)
+**Check hook status:**
+```bash
+npx claude-recall hooks check
 ```
 
-Memory Agent receives events immediately and processes them in the background.
+**Test enforcement end-to-end:**
+```bash
+npx claude-recall hooks test-enforcement
+```
 
----
-
-Next: Learn how memory is scoped in [Project Scoping](project-scoping.md).
+**Disable temporarily:**
+```bash
+CLAUDE_RECALL_ENFORCE_MODE=off claude
+```

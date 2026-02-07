@@ -41,8 +41,6 @@
     "install:global": "npm run build && npm link",
     "stats": "npm run claude-recall stats",
     "search": "npm run claude-recall search",
-    "migrate:service-layer": "ts-node migrate-to-service-layer.ts",
-    "rollback:service-layer": "ts-node -e \"require('./migrate-to-service-layer').ServiceLayerMigration.rollback()\"",
     "preuninstall": "node scripts/uninstall.js",
     "prepare": "npm run build",
     "mcp:start": "node dist/cli/claude-recall-cli.js mcp start",
