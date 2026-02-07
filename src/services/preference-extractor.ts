@@ -65,19 +65,16 @@ export class PreferenceExtractor {
         // Pattern: "our X is Y"
         { pattern: /our\s+([\w\s]+)\s+(?:is|:)\s+([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 },
         // Pattern: "we're using X for Y" or "we use X"
-        { pattern: /we(?:'re| are)?\s+using\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "tool" },
-        // Pattern: "X: Y" (generic key-value)
-        { pattern: /([\w\s]{3,20}):\s*([^\s,;]+)/i, keyIndex: 1, valueIndex: 2 }
+        { pattern: /we(?:'re| are)?\s+using\s+([^\s,;.]+)/i, keyIndex: 0, valueIndex: 1, keyDefault: "tool" }
       ]
     },
     devops: {
       // DevOps workflows, development practices, git conventions, testing approaches
       // All patterns are generic and work across any project domain
       triggers: [
-        "this is", "built with", "uses", "requires", "depends on",
-        "develop on", "test on", "deploy", "workflow", "always", "must", "never",
-        "architecture", "approach", "strategy", "git", "commit", "branch",
-        "tdd", "testing", "build", "environment"
+        "built with", "develop on", "test on", "deploy", "workflow",
+        "always", "must", "never", "architecture", "strategy",
+        "git", "commit", "branch", "tdd", "testing"
       ],
       patterns: [
         // Project identity patterns
@@ -86,7 +83,6 @@ export class PreferenceExtractor {
 
         // Tech stack patterns
         { pattern: /built\s+with\s+(.+?)(?:\.|,|and|$)/i, category: "tech_stack" },
-        { pattern: /uses?\s+([\w\s+]+?)\s+(?:for|as|to)/i, category: "tech_stack" },
         { pattern: /(?:frontend|backend|database|framework).*?(?:is|uses?)\s+(.+?)(?:\.|,|$)/i, category: "tech_stack" },
 
         // Dev environment patterns
@@ -161,12 +157,10 @@ export class PreferenceExtractor {
     
     // Check for preference indicators
     const preferenceIndicators = [
-      "prefer", "use", "save", "store", "put", "place", "create", "make",
-      "should", "want", "like", "love", "always", "never", "from now on",
+      "prefer", "always", "never", "from now on",
       "moving forward", "going forward", "henceforth",
       // Team/project context
-      "our", "we're using", "we have", "we use", "configured", "set up",
-      "using", "enabled", "installed", "established"
+      "our", "we're using", "we have", "we use"
     ];
     
     return preferenceIndicators.some(indicator => lower.includes(indicator));

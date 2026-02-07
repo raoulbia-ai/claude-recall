@@ -95,7 +95,7 @@ export class MemoryCaptureMiddleware {
         futureTense: ["will", "going to", "from now on"]
       },
       captureSettings: {
-        minConfidence: 0.5,
+        minConfidence: 0.75,
         requireExplicitConfirmation: false,
         batchProcessingDelay: 1000,
         maxMemoriesPerSession: 50,
@@ -145,25 +145,12 @@ export class MemoryCaptureMiddleware {
   }
 
   private extractContent(request: MCPRequest, response: MCPResponse): string | null {
-    let content = '';
-
-    // Extract from request
+    // Only analyze request content, not response text.
+    // Claude's response describes implementation details, not user preferences.
     if (request.params?.arguments?.content) {
-      content += request.params.arguments.content + '\n';
+      return request.params.arguments.content.trim() || null;
     }
-
-    // Extract from response
-    if (response.result?.content) {
-      if (Array.isArray(response.result.content)) {
-        response.result.content.forEach((item: any) => {
-          if (item.text) content += item.text + '\n';
-        });
-      } else if (typeof response.result.content === 'string') {
-        content += response.result.content + '\n';
-      }
-    }
-
-    return content.trim() || null;
+    return null;
   }
 
   private async analyzeContent(content: string, sessionId: string): Promise<any[]> {
