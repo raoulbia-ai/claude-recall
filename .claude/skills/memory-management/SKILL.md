@@ -1,7 +1,7 @@
 ---
 name: memory-management
 description: Persistent memory for Claude across conversations. Use when starting any task, before writing or editing code, before making decisions, when user mentions preferences or conventions, when user corrects your work, or when completing a task that overcame challenges. Ensures Claude never repeats mistakes and always applies learned patterns.
-version: "1.1.0"
+version: "2.0.0"
 license: "MIT"
 ---
 
@@ -9,23 +9,26 @@ license: "MIT"
 
 Persistent memory system that ensures Claude never repeats mistakes and always applies learned patterns across conversations.
 
-## When to Use This Skill
+## 2 Tools Only
 
-- **Starting any task** - Load rules for preferences, corrections, past failures
-- **Before writing/editing code** - Apply learned conventions and avoid past mistakes
-- **Before making architectural decisions** - Check for established patterns
-- **When user mentions preferences** - Store for future sessions
-- **When user corrects your work** - Store correction with highest priority
-- **After overcoming a challenge** - Store the learning cycle (fail → fix → success)
+- `mcp__claude-recall__load_rules` - Load all active rules before starting work. No query needed.
+- `mcp__claude-recall__store_memory` - Store a rule or learning. Immediately active in this conversation.
+
+## When to Use
+
+- **Starting any task** - Call `load_rules` before Write, Edit, or significant Bash operations
+- **When user corrects your work** - Call `store_memory` with `metadata.type: "correction"`
+- **When user mentions preferences** - Call `store_memory` with `metadata.type: "preference"`
+- **After overcoming a challenge** - Call `store_memory` with `metadata.type: "failure"`
+- **DevOps/workflow rules** - Call `store_memory` with `metadata.type: "devops"`
 
 ## Key Directives
 
-1. **ALWAYS load rules before acting** - Call `mcp__claude-recall__load_rules` before Write, Edit, or significant Bash operations
-2. **Use `search` for specific lookups** - Mid-task targeted queries ("what did we decide about auth?")
-3. **Apply what you find** - Use retrieved preferences, patterns, and corrections
-4. **Capture corrections immediately** - User fixes are highest priority
-5. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
-6. **Never store secrets** - No API keys, passwords, tokens, or PII
+1. **ALWAYS load rules before acting** - Call `load_rules` before Write, Edit, or significant Bash operations
+2. **Apply what you find** - Use retrieved preferences, patterns, and corrections
+3. **Capture corrections immediately** - User fixes are highest priority
+4. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
+5. **Never store secrets** - No API keys, passwords, tokens, or PII
 
 ## Quick Reference
 
@@ -35,33 +38,35 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 mcp__claude-recall__load_rules({})
 ```
 
-Returns all active preferences, recent corrections, recent failures, and devops rules in one call. No query needed — deterministic and complete.
+Returns all active preferences, corrections, failures, and devops rules in one call. Deterministic and complete.
 
-### Search (For Specific Lookups)
-
-```
-mcp__claude-recall__search({ "query": "authentication jwt session" })
-```
-
-Use when you need targeted information mid-task, not for task-start enforcement.
-
-### Store (When Something Important Happens)
+### Store Memory (When Something Important Happens)
 
 ```
 mcp__claude-recall__store_memory({
   "content": "Description of what to remember",
-  "metadata": { "type": "preference|correction|devops|success|failure" }
+  "metadata": { "type": "preference|correction|devops|failure" }
 })
 ```
+
+Returns the stored rule with an `activeRule` field and `_directive` to apply it immediately. No need to call `load_rules` again.
+
+## Same-Session Rules
+
+When you call `store_memory`, the response includes:
+- `activeRule`: The stored content formatted as a rule
+- `_directive`: Instructions to apply the rule immediately
+
+This means rules stored mid-conversation are active right away without reloading.
 
 ## What Gets Stored
 
 ### Automatic Capture (You Don't Need to Store)
 
 The system auto-captures when users say:
-- "I prefer X" / "Always use X" / "Never do X" → Preferences
-- "We use X for Y" / "Tests go in X" → Project conventions
-- "This is a [type] project" → Project context
+- "I prefer X" / "Always use X" / "Never do X" -> Preferences
+- "We use X for Y" / "Tests go in X" -> Project conventions
+- "This is a [type] project" -> Project context
 
 ### Manual Storage Required
 
@@ -70,17 +75,20 @@ Store these explicitly:
 **Corrections** (highest priority):
 ```
 User: "No, put tests in __tests__/ not tests/"
-→ Store: "CORRECTION: Test files go in __tests__/ directory, not tests/"
+-> Store: "CORRECTION: Test files go in __tests__/ directory, not tests/"
+   metadata: { "type": "correction" }
 ```
 
 **Complex workflows**:
 ```
-→ Store: "Deploy process: 1) npm test 2) docker build 3) push to ECR 4) kubectl apply"
+-> Store: "Deploy process: 1) npm test 2) docker build 3) push to ECR 4) kubectl apply"
+   metadata: { "type": "devops" }
 ```
 
-**Learning cycles** (fail → fix → success):
+**Learning cycles** (fail -> fix -> success):
 ```
-→ Store: "REST API failed due to CORS. Solution: Use GraphQL endpoint instead."
+-> Store: "REST API failed due to CORS. Solution: Use GraphQL endpoint instead."
+   metadata: { "type": "failure" }
 ```
 
 ## Memory Priority Order
@@ -88,7 +96,7 @@ User: "No, put tests in __tests__/ not tests/"
 1. **Corrections** - User explicitly fixed a mistake (HIGHEST)
 2. **DevOps** - Git, testing, deploy, architecture patterns
 3. **Preferences** - Code style, tool choices, conventions
-4. **Success/Failure** - Learning cycles and past mistakes
+4. **Failures** - Learning cycles and past mistakes
 
 ## What NOT to Store
 
@@ -121,20 +129,7 @@ Safe to store:
 
 4. Implement using JWT + httpOnly cookies (not sessions, not localStorage)
 
-5. User approves → Done (no need to store, just applied existing knowledge)
-```
-
-### Mid-Task Specific Lookup
-
-```
-1. Working on auth, need to check a specific decision
-
-2. Search for it:
-   mcp__claude-recall__search({ "query": "oauth provider google azure" })
-
-3. Found: "We use Google OAuth, not Azure AD"
-
-4. Continue implementation with Google OAuth
+5. User approves -> Done (no need to store, just applied existing knowledge)
 ```
 
 ### User Corrects Your Work
@@ -151,6 +146,8 @@ Safe to store:
      "content": "CORRECTION: Always use httpOnly cookies for auth tokens, never localStorage",
      "metadata": { "type": "correction" }
    })
+
+5. Response includes activeRule - apply it immediately
 ```
 
 ### Overcoming a Challenge
@@ -161,22 +158,22 @@ Safe to store:
 
 2. User suggested: "Try stateless JWT"
 
-3. Implemented JWT → Works!
+3. Implemented JWT -> Works!
 
 4. Store the learning:
    mcp__claude-recall__store_memory({
      "content": "Auth in k8s: Redis sessions failed (sync issues). JWT stateless tokens work correctly.",
-     "metadata": { "type": "success", "learning_cycle": true }
+     "metadata": { "type": "failure", "learning_cycle": true }
    })
 ```
 
 ## Inline Citations
 
-When `load_rules`, `search`, or `retrieve_memory` returns memories, the response includes a `_citationDirective` instructing you to cite any memory you actually apply. When you use a retrieved memory in your work, add a brief inline note:
+When `load_rules` returns memories, the response includes a `_citationDirective` instructing you to cite any memory you actually apply. When you use a retrieved memory in your work, add a brief inline note:
 
 > (applied from memory: always use httpOnly cookies for auth tokens)
 
-This gives the user visibility into which stored knowledge is influencing your decisions. Only cite memories you actually use — don't cite every memory returned.
+This gives the user visibility into which stored knowledge is influencing your decisions. Only cite memories you actually use.
 
 To disable citations, set the environment variable `CLAUDE_RECALL_CITE_MEMORIES=false`.
 
@@ -184,21 +181,12 @@ To disable citations, set the environment variable `CLAUDE_RECALL_CITE_MEMORIES=
 
 **Load rules returns nothing:**
 - This may be a new project with no history yet
-- Try `search` with broad keywords to check
-
-**Search returns nothing relevant:**
-- Broaden keywords: include domain + task + "preferences patterns"
-- This may be a new project with no history yet
+- Store rules as you learn them with `store_memory`
 
 **Automatic capture missed something:**
 - Store it manually with appropriate type
-- Future loads/searches will find it
-
-**Check what's been captured:**
-```
-mcp__claude-recall__get_recent_captures({ "limit": 10 })
-```
+- Future `load_rules` calls will find it
 
 ---
 
-**The Learning Loop**: Load rules → Apply → Execute → Capture outcomes → Better next time
+**The Learning Loop**: Load rules -> Apply -> Execute -> Capture outcomes -> Better next time

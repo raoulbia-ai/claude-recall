@@ -10,8 +10,6 @@ import { MemoryCaptureMiddleware } from './memory-capture-middleware';
 import { QueueIntegrationService } from '../services/queue-integration';
 import { ResourcesHandler } from './resources-handler';
 import { PromptsHandler } from './prompts-handler';
-import { PreferenceAnalyzer } from '../services/preference-analyzer';
-import { ContextEnhancer } from '../services/context-enhancer';
 import { ConversationContextManager } from '../services/conversation-context-manager';
 import { ProcessManager } from '../services/process-manager';
 import { ConfigService } from '../services/config';
@@ -66,8 +64,6 @@ export class MCPServer {
   private queueIntegration: QueueIntegrationService;
   private resourcesHandler: ResourcesHandler;
   private promptsHandler: PromptsHandler;
-  private preferenceAnalyzer: PreferenceAnalyzer;
-  private contextEnhancer: ContextEnhancer;
   private conversationContext: ConversationContextManager;
   private processManager: ProcessManager;
   private config: ConfigService;
@@ -89,12 +85,6 @@ export class MCPServer {
     this.queueIntegration = QueueIntegrationService.getInstance();
     this.resourcesHandler = new ResourcesHandler();
     this.promptsHandler = new PromptsHandler();
-    this.preferenceAnalyzer = new PreferenceAnalyzer(
-      this.logger,
-      this.memoryService,
-      this.sessionManager
-    );
-    this.contextEnhancer = ContextEnhancer.getInstance();
     this.conversationContext = ConversationContextManager.getInstance();
     this.processManager = ProcessManager.getInstance();
     this.config = ConfigService.getInstance();
@@ -161,36 +151,40 @@ export class MCPServer {
 
   private registerTools(): void {
     const memoryTools = new MemoryTools(this.memoryService, this.logger);
-    const testTools = new TestTools(this.memoryService, this.logger);
-    const liveTestingTools = new LiveTestingTools();
-    
-    // Register memory tools
+
+    // Register memory tools (always: load_rules + store_memory)
     for (const tool of memoryTools.getTools()) {
       this.tools.set(tool.name, tool);
     }
-    
-    // Register test tools
-    for (const tool of testTools.getTools()) {
-      this.tools.set(tool.name, tool);
+
+    // Register test/live-testing tools only when explicitly enabled
+    if (process.env.CLAUDE_RECALL_ENABLE_TEST_TOOLS === 'true') {
+      const testTools = new TestTools(this.memoryService, this.logger);
+      const liveTestingTools = new LiveTestingTools();
+
+      for (const tool of testTools.getTools()) {
+        this.tools.set(tool.name, tool);
+      }
+
+      for (const toolDef of liveTestingTools.getToolDefinitions()) {
+        const tool: MCPTool = {
+          name: toolDef.name,
+          description: toolDef.description,
+          inputSchema: {
+            type: "object",
+            properties: toolDef.parameters.properties,
+            required: toolDef.parameters.required
+          },
+          handler: async (input: any, context: MCPContext) => {
+            return await liveTestingTools.handleToolCall(toolDef.name, input);
+          }
+        };
+        this.tools.set(tool.name, tool);
+      }
+
+      this.logger.info('MCPServer', `Test tools enabled: registered ${this.tools.size} tools`);
     }
-    
-    // Register live testing tools
-    for (const toolDef of liveTestingTools.getToolDefinitions()) {
-      const tool: MCPTool = {
-        name: toolDef.name,
-        description: toolDef.description,
-        inputSchema: {
-          type: "object",
-          properties: toolDef.parameters.properties,
-          required: toolDef.parameters.required
-        },
-        handler: async (input: any, context: MCPContext) => {
-          return await liveTestingTools.handleToolCall(toolDef.name, input);
-        }
-      };
-      this.tools.set(tool.name, tool);
-    }
-    
+
     this.logger.info('MCPServer', `Registered ${this.tools.size} tools`, {
       tools: Array.from(this.tools.keys())
     });
@@ -233,32 +227,24 @@ export class MCPServer {
   }
 
   private async handleToolsList(request: MCPRequest): Promise<MCPResponse> {
-    // Phase 3A: Get tool list with basic descriptions
     const toolList = Array.from(this.tools.values()).map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema
     }));
 
-    // Phase 3A: Enhance tool descriptions with relevant memories
-    const sessionId = request.params?.sessionId || this.generateSessionId();
-    const enhancedTools = await this.contextEnhancer.enhanceToolsList(toolList, sessionId);
-
-    this.logger.debug('MCPServer', `Listing ${enhancedTools.length} tools (enhanced with memories)`);
+    this.logger.debug('MCPServer', `Listing ${toolList.length} tools`);
 
     return {
       jsonrpc: "2.0",
       id: request.id,
       result: {
-        tools: enhancedTools
+        tools: toolList
       }
     };
   }
 
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
-    // Phase 3B: Proactively inject relevant memories before tool execution
-    request = await this.memoryCaptureMiddleware.enhanceRequestWithMemories(request);
-
     const { name, arguments: toolArgs } = request.params || {};
 
     if (!name || typeof name !== 'string') {
@@ -356,9 +342,6 @@ export class MCPServer {
       // Record successful request for rate limiting
       this.rateLimiter.recordRequest(sessionId, true);
 
-      // Phase 2: Track conversation and detect preference signals
-      this.trackConversationTurn(sessionId, name, toolArgs, result);
-
       // Phase 4: Record action for duplicate detection
       this.conversationContext.recordAction(sessionId, name, toolArgs, result);
 
@@ -433,47 +416,6 @@ export class MCPServer {
 
   private generateSessionId(): string {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Phase 2: Track conversation turns and detect preference signals
-   */
-  private trackConversationTurn(
-    sessionId: string,
-    toolName: string,
-    input: any,
-    output: any
-  ): void {
-    try {
-      // Detect preference signals in the conversation
-      const signals = this.preferenceAnalyzer.detectPreferenceSignals(input, output);
-      const hasSignals = signals.length > 0;
-
-      // Add turn to session history
-      this.sessionManager.addConversationTurn(
-        sessionId,
-        toolName,
-        input,
-        output,
-        hasSignals
-      );
-
-      // Check if we should suggest analysis
-      this.preferenceAnalyzer.checkAndSuggestAnalysis(sessionId)
-        .catch(err => {
-          this.logger.error('MCPServer', 'Failed to check analysis suggestion', err);
-        });
-
-      if (hasSignals) {
-        this.logger.debug('MCPServer', 'Preference signals detected', {
-          sessionId,
-          tool: toolName,
-          signalCount: signals.length
-        });
-      }
-    } catch (error) {
-      this.logger.error('MCPServer', 'Failed to track conversation turn', error);
-    }
   }
 
   private async handleHealthCheck(request: MCPRequest): Promise<MCPResponse> {

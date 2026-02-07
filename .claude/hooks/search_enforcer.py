@@ -22,10 +22,6 @@ ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')  # block, w
 SEARCH_TOOLS = [
     'mcp__claude-recall__load_rules',
     'mcp__claude-recall__mcp__claude-recall__load_rules',
-    'mcp__claude-recall__search',
-    'mcp__claude-recall__mcp__claude-recall__search',
-    'mcp__claude-recall__retrieve_memory',
-    'mcp__claude-recall__mcp__claude-recall__retrieve_memory',
 ]
 
 # Tools that require search first
@@ -132,13 +128,10 @@ def main():
     # Block or warn
     msg = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 LOAD RULES REQUIRED before {tool_name}
+LOAD RULES REQUIRED before {tool_name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Run: mcp__claude-recall__load_rules({{}})
-
-Or for a specific lookup:
-  mcp__claude-recall__search({{"query": "relevant keywords"}})
 
 This ensures you apply user preferences and avoid past mistakes.
 

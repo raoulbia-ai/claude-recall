@@ -56,15 +56,13 @@ describe('Claude Code MCP Integration', () => {
 
     it('should list all registered tools', async () => {
       const response = await client.request('tools/list', {});
-      // Server now includes memory tools + queue tools + live testing tools
-      expect(response.result.tools.length).toBeGreaterThanOrEqual(5);
+      // Server registers 2 core memory tools (load_rules + store_memory)
+      expect(response.result.tools.length).toBeGreaterThanOrEqual(2);
 
       // Verify core memory tools are present
-      expect(response.result.tools.map((t: any) => t.name)).toContain('mcp__claude-recall__store_memory');
-      expect(response.result.tools.map((t: any) => t.name)).toContain('mcp__claude-recall__search');
-      expect(response.result.tools.map((t: any) => t.name)).toContain('mcp__claude-recall__retrieve_memory');
-      expect(response.result.tools.map((t: any) => t.name)).toContain('mcp__claude-recall__get_stats');
-      expect(response.result.tools.map((t: any) => t.name)).toContain('mcp__claude-recall__clear_context');
+      const toolNames = response.result.tools.map((t: any) => t.name);
+      expect(toolNames).toContain('mcp__claude-recall__store_memory');
+      expect(toolNames).toContain('mcp__claude-recall__load_rules');
     });
 
     it('should have proper tool schemas', async () => {
@@ -86,31 +84,28 @@ describe('Claude Code MCP Integration', () => {
         name: 'mcp__claude-recall__store_memory',
         arguments: {
           content: 'Test memory content',
-          metadata: { test: true }
+          metadata: { type: 'preference', test: true }
         }
       });
 
-      expect(storeResponse.result.content[0].text).toContain('"success": true');
+      const storeResult = JSON.parse(storeResponse.result.content[0].text);
+      expect(storeResult.success).toBe(true);
+      expect(storeResult.activeRule).toContain('Test memory content');
+      expect(storeResult.type).toBe('preference');
 
-      // Retrieve it
-      const retrieveResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__search',
-        arguments: {
-          query: 'Test memory content'
-        }
+      // Retrieve it via load_rules
+      const rulesResponse = await client.request('tools/call', {
+        name: 'mcp__claude-recall__load_rules',
+        arguments: {}
       });
 
-      const results = JSON.parse(retrieveResponse.result.content[0].text);
-      expect(results.results.length).toBeGreaterThan(0);
-
-      // Handle different memory schema formats
-      const firstResult = results.results[0];
-      const content = firstResult.content?.content || firstResult.content || '';
-      expect(content).toContain('Test memory content');
+      const rules = JSON.parse(rulesResponse.result.content[0].text);
+      expect(rules.counts.total).toBeGreaterThan(0);
     });
 
     it('should handle metadata correctly', async () => {
       const metadata = {
+        type: 'correction',
         tags: ['test', 'integration'],
         priority: 'high'
       };
@@ -123,79 +118,52 @@ describe('Claude Code MCP Integration', () => {
         }
       });
 
-      expect(storeResponse.result.content[0].text).toContain('"success": true');
-
-      // Search and verify metadata
-      const searchResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__search',
-        arguments: {
-          query: 'Memory with complex metadata'
-        }
-      });
-
-      const results = JSON.parse(searchResponse.result.content[0].text);
-      expect(results.results[0].content).toMatchObject(expect.objectContaining(metadata));
+      const storeResult = JSON.parse(storeResponse.result.content[0].text);
+      expect(storeResult.success).toBe(true);
+      expect(storeResult.type).toBe('correction');
     });
 
-    it('should retrieve recent memories', async () => {
+    it('should store multiple memories and load via rules', async () => {
       // Store multiple memories with unique timestamp
       const timestamp = Date.now();
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 3; i++) {
         await client.request('tools/call', {
           name: 'mcp__claude-recall__store_memory',
           arguments: {
-            content: `Test memory ${timestamp}-${i}`,
-            metadata: { index: i, testRun: timestamp }
+            content: `Test preference ${timestamp}-${i}`,
+            metadata: { type: 'preference', index: i, testRun: timestamp }
           }
         });
       }
 
-      // Retrieve recent memories
-      const retrieveResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__retrieve_memory',
-        arguments: {
-          limit: 10
-        }
+      // Load rules to verify they're included
+      const rulesResponse = await client.request('tools/call', {
+        name: 'mcp__claude-recall__load_rules',
+        arguments: {}
       });
 
-      const results = JSON.parse(retrieveResponse.result.content[0].text);
-      expect(results.memories).toBeDefined();
-      expect(results.memories.length).toBeGreaterThanOrEqual(3);
-      
-      // Check that our test memories are in the results
-      const testMemories = results.memories.filter((m: any) => {
-        // Handle both nested and flat content structures
-        const content = m.value?.content || m.content?.content || m.content || '';
-        return content.includes(`Test memory ${timestamp}`);
-      });
-      
-      // If no test memories found, this test might be affected by previous test data
-      // Just verify we got some memories back
-      if (testMemories.length === 0) {
-        expect(results.memories.length).toBeGreaterThanOrEqual(3);
-      } else {
-        expect(testMemories.length).toBeGreaterThanOrEqual(3);
-      }
+      const rules = JSON.parse(rulesResponse.result.content[0].text);
+      expect(rules.counts.preferences).toBeGreaterThanOrEqual(3);
     });
   });
 
   describe('Session Persistence', () => {
     it('should maintain session across restarts', async () => {
-      // Get initial stats
-      const stats1 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__get_stats',
+      // Load initial rules count
+      const rules1 = await client.request('tools/call', {
+        name: 'mcp__claude-recall__load_rules',
         arguments: {}
       });
 
-      const initialCount = JSON.parse(stats1.result.content[0].text).totalMemories;
+      const initialTotal = JSON.parse(rules1.result.content[0].text).counts.total;
 
       // Store a unique memory
-      const uniqueContent = `Session test memory ${Date.now()}`;
+      const uniqueContent = `Session test preference ${Date.now()}`;
       await client.request('tools/call', {
         name: 'mcp__claude-recall__store_memory',
         arguments: {
           content: uniqueContent,
-          metadata: { sessionTest: true }
+          metadata: { type: 'preference', sessionTest: true }
         }
       });
 
@@ -206,30 +174,14 @@ describe('Claude Code MCP Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait for startup
       await client.reconnect();
 
-      // Verify session persisted
-      const stats2 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__get_stats',
+      // Verify session persisted via load_rules
+      const rules2 = await client.request('tools/call', {
+        name: 'mcp__claude-recall__load_rules',
         arguments: {}
       });
 
-      const newCount = JSON.parse(stats2.result.content[0].text).totalMemories;
-      expect(newCount).toBeGreaterThan(initialCount);
-
-      // Search for the specific memory
-      const searchResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__search',
-        arguments: {
-          query: uniqueContent
-        }
-      });
-
-      const results = JSON.parse(searchResponse.result.content[0].text);
-      expect(results.results.length).toBeGreaterThan(0);
-
-      // Handle different memory schema formats
-      const firstResult = results.results[0];
-      const content = firstResult.content?.content || firstResult.content || '';
-      expect(content).toBe(uniqueContent);
+      const newTotal = JSON.parse(rules2.result.content[0].text).counts.total;
+      expect(newTotal).toBeGreaterThan(initialTotal);
     });
   });
 
@@ -257,25 +209,15 @@ describe('Claude Code MCP Integration', () => {
       expect(resultText).toContain('required');
     });
 
-    it('should handle clear context with confirmation', async () => {
-      // Without confirmation
-      const response1 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__clear_context',
-        arguments: {}
-      });
-
-      const result1 = JSON.parse(response1.result.content[0].text);
-      expect(result1.cleared).toBe(false);
-      expect(result1.message).toContain('Confirmation required');
-
-      // With confirmation
-      const response2 = await client.request('tools/call', {
+    it('should handle calling removed tools gracefully', async () => {
+      // Calling a removed tool should return "Tool not found"
+      const response = await client.request('tools/call', {
         name: 'mcp__claude-recall__clear_context',
         arguments: { confirm: true }
       });
 
-      const result2 = JSON.parse(response2.result.content[0].text);
-      expect(result2.cleared).toBe(true);
+      expect(response.error).toBeDefined();
+      expect(response.error?.message).toContain('Tool not found');
     });
   });
 
@@ -288,8 +230,8 @@ describe('Claude Code MCP Integration', () => {
       expect(response.result.status).toBe('healthy');
       expect(response.result.version).toBeDefined();
       expect(response.result.uptime).toBeGreaterThan(0);
-      // Tool count includes memory + queue + live testing tools
-      expect(response.result.toolsRegistered).toBeGreaterThanOrEqual(5);
+      // Tool count: 2 core memory tools (test tools not enabled by default)
+      expect(response.result.toolsRegistered).toBeGreaterThanOrEqual(2);
       expect(response.result.database).toBe('connected');
     });
 
