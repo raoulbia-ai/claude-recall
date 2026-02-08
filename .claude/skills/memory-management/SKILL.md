@@ -26,9 +26,10 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 1. **ALWAYS load rules before acting** - Call `load_rules` before Write, Edit, or significant Bash operations
 2. **Apply what you find** - Use retrieved preferences, patterns, and corrections
-3. **Capture corrections immediately** - User fixes are highest priority
-4. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
-5. **Never store secrets** - No API keys, passwords, tokens, or PII
+3. **Ask before storing** - Before calling `store_memory`, briefly tell the user what you plan to store and ask for confirmation. Example: *"I'd like to remember that you prefer tabs over spaces. Store this?"* Only call the tool after the user agrees.
+4. **Capture corrections immediately** - User fixes are highest priority (still ask first)
+5. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
+6. **Never store secrets** - No API keys, passwords, tokens, or PII
 
 ## Quick Reference
 
@@ -141,13 +142,17 @@ Safe to store:
 
 3. Fix the code
 
-4. Store the correction:
+4. Ask: "I'd like to remember: always use httpOnly cookies for auth tokens, never localStorage. Store this?"
+
+5. User: "Yes"
+
+6. Store the correction:
    mcp__claude-recall__store_memory({
      "content": "CORRECTION: Always use httpOnly cookies for auth tokens, never localStorage",
      "metadata": { "type": "correction" }
    })
 
-5. Response includes activeRule - apply it immediately
+7. Response includes activeRule - apply it immediately
 ```
 
 ### Overcoming a Challenge
@@ -160,7 +165,11 @@ Safe to store:
 
 3. Implemented JWT -> Works!
 
-4. Store the learning:
+4. Ask: "I'd like to remember: Redis sessions fail in k8s due to sync issues; use stateless JWT instead. Store this?"
+
+5. User: "Yes"
+
+6. Store the learning:
    mcp__claude-recall__store_memory({
      "content": "Auth in k8s: Redis sessions failed (sync issues). JWT stateless tokens work correctly.",
      "metadata": { "type": "failure", "learning_cycle": true }
