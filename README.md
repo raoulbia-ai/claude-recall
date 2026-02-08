@@ -17,6 +17,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 - **Continuous Learning** — captures coding patterns, tool preferences, corrections, architectural decisions, and workflow habits in local SQLite
 - **Native Claude Skills** — no hooks required; Claude decides when to search/store based on built-in skill guidance
+- **User-Confirmed Storage** — Claude asks for your permission before storing any memory
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches memory
 - **Failure Learning** — captures failures with counterfactual reasoning (what failed, why, what to do instead)
 - **Memory Evolution** — tracks agent progression over time across sophistication levels (L1–L4)
@@ -99,6 +100,7 @@ Exposes two tools to Claude Code:
 Installed automatically to `.claude/skills/memory-management/SKILL.md`. Teaches Claude:
 - Load rules before writing/editing code
 - Apply learned conventions and avoid past mistakes
+- **Ask the user for confirmation before storing any memory**
 - Capture corrections when users fix mistakes
 - Store learning cycles (fail → fix → success)
 
