@@ -15,9 +15,10 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ## Features
 
+- **Automatic Memory Capture** — hooks on UserPromptSubmit, Stop, and PreCompact events capture corrections, preferences, failures, and project knowledge without manual intervention
 - **Continuous Learning** — captures coding patterns, tool preferences, corrections, architectural decisions, and workflow habits in local SQLite
-- **Native Claude Skills** — no hooks required; Claude decides when to search/store based on built-in skill guidance
-- **User-Confirmed Storage** — Claude asks for your permission before storing any memory
+- **Native Claude Skills** — Claude decides when to search/store based on built-in skill guidance
+- **User-Confirmed Storage** — Claude asks for your permission before storing via MCP tools; hooks auto-capture only high-confidence patterns
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches memory
 - **Failure Learning** — captures failures with counterfactual reasoning (what failed, why, what to do instead)
 - **Skill Crystallization** — automatically generates `.claude/skills/auto-*/` files when enough memories accumulate, so learned patterns load natively without tool calls
@@ -159,6 +160,16 @@ npx claude-recall project list           # All registered projects
 npx claude-recall project register       # Register current project
 npx claude-recall project clean          # Remove stale registry entries
 ```
+
+### Automatic Capture Hooks
+
+```bash
+npx claude-recall hook run correction-detector   # UserPromptSubmit hook
+npx claude-recall hook run memory-stop           # Stop hook
+npx claude-recall hook run precompact-preserve   # PreCompact hook
+```
+
+These are registered automatically via `npx claude-recall setup --install` and run as Claude Code hooks. You don't need to invoke them manually.
 
 ### Setup & Diagnostics
 

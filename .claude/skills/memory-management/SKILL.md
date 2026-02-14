@@ -128,6 +128,24 @@ a SKILL.md file that Claude Code loads automatically.
 - `npx claude-recall skills generate --force` — force regeneration
 - `npx claude-recall skills clean --force` — remove all auto-generated skills
 
+## Automatic Capture Hooks
+
+Claude Recall registers hooks on three Claude Code events to capture memories automatically — no MCP tool call needed:
+
+| Hook | Event | What it captures |
+|------|-------|-----------------|
+| `correction-detector` | UserPromptSubmit | User corrections ("no, ...", "wrong, ...") and preferences ("always ...", "remember to ...") |
+| `memory-stop` | Stop | Corrections, preferences, failures, and devops patterns from the last 6 transcript entries |
+| `precompact-preserve` | PreCompact | Broader sweep of up to 50 transcript entries before context compression |
+
+**Key behaviors:**
+- All classification uses regex (no LLM calls) for speed (<1s)
+- Near-duplicate detection via Jaccard similarity (55% threshold) prevents redundant storage
+- Per-event limits: 3 (Stop), 5 (PreCompact) to prevent DB flooding
+- Always exits 0 — hooks never block Claude
+
+**Setup:** Run `npx claude-recall setup --install` to register hooks in `.claude/settings.json`.
+
 ## Example Workflows
 
 ### Starting a New Task

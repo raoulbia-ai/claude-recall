@@ -15,6 +15,7 @@ import { FailureExtractor } from '../services/failure-extractor';
 import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
+import { HookCommands } from './commands/hook-commands';
 
 const program = new Command();
 
@@ -616,7 +617,7 @@ async function main() {
       }
     }
 
-    settings.hooksVersion = '3.0.0';  // v3 = hybrid (skill + minimal hook)
+    settings.hooksVersion = '4.0.0';  // v4 = hybrid (skill + enforcement hook + auto-capture hooks)
     settings.hooks = {
       PreToolUse: [
         {
@@ -625,6 +626,38 @@ async function main() {
             {
               type: "command",
               command: `python3 ${hookDest}`
+            }
+          ]
+        }
+      ],
+      UserPromptSubmit: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: "npx claude-recall@latest hook run correction-detector"
+            }
+          ]
+        }
+      ],
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: "npx claude-recall@latest hook run memory-stop",
+              timeout: 30
+            }
+          ]
+        }
+      ],
+      PreCompact: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: "npx claude-recall@latest hook run precompact-preserve",
+              timeout: 60
             }
           ]
         }
@@ -1120,6 +1153,9 @@ async function main() {
 
   // Project management commands
   ProjectCommands.register(program);
+
+  // Hook commands (automatic memory capture)
+  HookCommands.register(program);
 
   // Migration commands
   MigrateCommand.register(program);
