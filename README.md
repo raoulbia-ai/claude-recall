@@ -111,38 +111,39 @@ Installed automatically to `.claude/skills/memory-management/SKILL.md`. Teaches 
 
 ## CLI Reference
 
-### Core Commands
-
 ```bash
+# ── Upgrade ──────────────────────────────────────────────────────────
+npm uninstall claude-recall              # Remove old version
+npm cache clean --force                  # Clear npm cache
+npm install claude-recall@latest         # Install latest
+npx claude-recall setup --install        # Re-register hooks + skills
+npx claude-recall --version              # Verify
+
+# ── Setup & Diagnostics ─────────────────────────────────────────────
+npx claude-recall setup                  # Show activation instructions
+npx claude-recall setup --install        # Install skills + hooks
+npx claude-recall status                 # Installation and system status
+npx claude-recall repair                 # Clean up old hooks, install skills
+
+# ── Memory ───────────────────────────────────────────────────────────
 npx claude-recall stats                  # Memory statistics
 npx claude-recall search "query"         # Search memories
 npx claude-recall store "content"        # Store memory directly
 npx claude-recall export backup.json     # Export memories to JSON
 npx claude-recall import backup.json     # Import memories from JSON
 npx claude-recall clear --force          # Clear all memories
-```
-
-### Analysis
-
-```bash
 npx claude-recall failures               # View failure memories
 npx claude-recall failures --limit 20    # Limit results
 npx claude-recall monitor                # Memory search monitoring stats
-```
 
-### Auto-Generated Skills
-
-```bash
-npx claude-recall skills generate        # Generate skills from accumulated memories
+# ── Skills ───────────────────────────────────────────────────────────
+npx claude-recall skills generate        # Generate skills from memories
 npx claude-recall skills generate --dry-run  # Preview without writing
 npx claude-recall skills generate --force    # Regenerate even if unchanged
 npx claude-recall skills list            # List generated skills
 npx claude-recall skills clean --force   # Remove all auto-generated skills
-```
 
-### MCP Server Management
-
-```bash
+# ── MCP Server ───────────────────────────────────────────────────────
 npx claude-recall mcp status             # Current project's server status
 npx claude-recall mcp ps                 # List all running servers
 npx claude-recall mcp stop               # Stop server
@@ -150,33 +151,17 @@ npx claude-recall mcp stop --force       # Force stop
 npx claude-recall mcp restart            # Restart server
 npx claude-recall mcp cleanup            # Remove stale PID files
 npx claude-recall mcp cleanup --all      # Stop all servers
-```
 
-### Project Management
-
-```bash
+# ── Project ──────────────────────────────────────────────────────────
 npx claude-recall project show           # Current project info
 npx claude-recall project list           # All registered projects
 npx claude-recall project register       # Register current project
 npx claude-recall project clean          # Remove stale registry entries
-```
 
-### Automatic Capture Hooks
-
-```bash
+# ── Auto-Capture Hooks (registered via setup --install, run automatically) ──
 npx claude-recall hook run correction-detector   # UserPromptSubmit hook
 npx claude-recall hook run memory-stop           # Stop hook
 npx claude-recall hook run precompact-preserve   # PreCompact hook
-```
-
-These are registered automatically via `npx claude-recall setup --install` and run as Claude Code hooks. You don't need to invoke them manually.
-
-### Setup & Diagnostics
-
-```bash
-npx claude-recall setup                  # Show activation instructions
-npx claude-recall status                 # Installation and system status
-npx claude-recall repair                 # Clean up old hooks, install skills
 ```
 
 ---
