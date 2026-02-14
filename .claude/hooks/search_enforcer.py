@@ -21,7 +21,6 @@ ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')  # block, w
 # Tools that count as "search performed"
 SEARCH_TOOLS = [
     'mcp__claude-recall__load_rules',
-    'mcp__claude-recall__mcp__claude-recall__load_rules',
 ]
 
 # Tools that require search first
