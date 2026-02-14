@@ -2,6 +2,7 @@ import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
 import { SearchMonitor } from '../../services/search-monitor';
+import { SkillGenerator, GenerationResult } from '../../services/skill-generator';
 import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
@@ -136,6 +137,33 @@ export class MemoryTools {
           required: ['content']
         },
         handler: this.handleStoreMemory.bind(this)
+      },
+      {
+        name: 'mcp__claude-recall__search_memory',
+        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query (keywords to match against stored memories)'
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum results to return (default: 10, max: 25)'
+            },
+            type: {
+              type: 'string',
+              description: 'Filter by memory type: preference, correction, devops, failure, project-knowledge'
+            },
+            projectId: {
+              type: 'string',
+              description: 'Optional project ID override. Defaults to current project.'
+            }
+          },
+          required: ['query']
+        },
+        handler: this.handleSearchMemory.bind(this)
       }
     ];
   }
@@ -194,12 +222,28 @@ export class MemoryTools {
         sessionId: context.sessionId
       });
 
+      // Auto-generate skills if thresholds are met
+      let skillResults: GenerationResult[] = [];
+      try {
+        const generator = SkillGenerator.getInstance();
+        const projectDir = ConfigService.getInstance().getConfig().project.rootDir;
+        skillResults = generator.checkAndGenerate(projectDir, context.projectId);
+      } catch (e) {
+        // Non-critical — don't fail the store
+        this.logger.debug('MemoryTools', 'Skill generation check failed', e);
+      }
+
       return {
         id: key,
         success: true,
         activeRule: `Stored as active rule:\n- ${content}`,
         type: detectedType,
-        _directive: 'Apply this rule immediately. No need to call load_rules again.'
+        _directive: 'Apply this rule immediately. No need to call load_rules again.',
+        ...(skillResults.length > 0 && {
+          _skillsGenerated: skillResults
+            .filter(r => r.action === 'created' || r.action === 'updated')
+            .map(r => r.topicId)
+        })
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to store memory', error);
@@ -281,6 +325,61 @@ export class MemoryTools {
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to load rules', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search memories by keyword query
+   */
+  private async handleSearchMemory(input: any, context: MCPContext): Promise<any> {
+    try {
+      const { query, limit: rawLimit, type, projectId } = input;
+
+      if (!query || typeof query !== 'string') {
+        throw new Error('Query is required and must be a string');
+      }
+
+      const limit = Math.min(Math.max(rawLimit || 10, 1), 25);
+
+      const searchContext: any = {
+        query,
+        projectId: projectId || context.projectId,
+        timestamp: Date.now()
+      };
+      if (type) {
+        searchContext.type = type;
+      }
+
+      const results = this.memoryService.findRelevant(searchContext);
+      const topResults = results.slice(0, limit);
+
+      // Record to SearchMonitor
+      this.searchMonitor.recordSearch(
+        query,
+        topResults.length,
+        context.sessionId,
+        'mcp',
+        { tool: 'search_memory', type: type || 'all' }
+      );
+
+      const formatted = topResults.map(r => {
+        const val = typeof r.value === 'object'
+          ? (r.value.content || r.value.value || JSON.stringify(r.value))
+          : r.value;
+        return `- [${r.type}] (score: ${r.score.toFixed(3)}) ${val}`;
+      });
+
+      return {
+        results: formatted.length > 0
+          ? formatted.join('\n')
+          : `No memories found matching "${query}".`,
+        count: topResults.length,
+        totalMatches: results.length,
+        query
+      };
+    } catch (error) {
+      this.logger.error('MemoryTools', 'Failed to search memory', error);
       throw error;
     }
   }

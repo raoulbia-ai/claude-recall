@@ -9,10 +9,11 @@ license: "MIT"
 
 Persistent memory system that ensures Claude never repeats mistakes and always applies learned patterns across conversations.
 
-## 2 Tools Only
+## 3 Tools
 
 - `mcp__claude-recall__load_rules` - Load all active rules before starting work. No query needed.
 - `mcp__claude-recall__store_memory` - Store a rule or learning. Immediately active in this conversation.
+- `mcp__claude-recall__search_memory` - Search memories by keyword. Use to find specific memories before making decisions.
 
 ## When to Use
 
@@ -111,6 +112,20 @@ Safe to store:
 - "We use JWT for auth" (pattern, not credentials)
 - "API base URL is https://api.example.com" (non-sensitive)
 - "PostgreSQL for production, SQLite for tests" (tool choice)
+
+## Skill Crystallization
+
+As memories accumulate, Claude Recall automatically generates skill files in `.claude/skills/auto-*/`.
+These load natively in future sessions — no tool call needed.
+
+**How it works:** After each `store_memory`, the system checks if any topic has enough
+memories to form a skill (3+ for most types, 5+ for preferences). If so, it writes
+a SKILL.md file that Claude Code loads automatically.
+
+**CLI commands:**
+- `npx claude-recall skills list` — see generated skills
+- `npx claude-recall skills generate --force` — force regeneration
+- `npx claude-recall skills clean --force` — remove all auto-generated skills
 
 ## Example Workflows
 

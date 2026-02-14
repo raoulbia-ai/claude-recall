@@ -4,7 +4,6 @@ import { ActionPatternDetector } from '../services/action-pattern-detector';
 import { MemoryService } from '../services/memory';
 import { LoggingService } from '../services/logging';
 import { FailureExtractor } from '../services/failure-extractor';
-import { MemoryEvolution } from '../services/memory-evolution';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -38,7 +37,6 @@ export class MemoryCaptureMiddleware {
   private memoryService: MemoryService;
   private logger: LoggingService;
   private failureExtractor: FailureExtractor;
-  private memoryEvolution: MemoryEvolution;
   private config!: MemoryPatternConfig;
   private recentCaptures: Map<string, number> = new Map();
   private sessionMemoryCount: Map<string, number> = new Map();
@@ -49,7 +47,6 @@ export class MemoryCaptureMiddleware {
     this.memoryService = MemoryService.getInstance();
     this.logger = LoggingService.getInstance();
     this.failureExtractor = FailureExtractor.getInstance();
-    this.memoryEvolution = MemoryEvolution.getInstance();
     this.loadConfig();
   }
 

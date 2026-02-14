@@ -11,10 +11,8 @@ import { PatternService } from '../services/pattern-service';
 import { MigrateCommand } from './commands/migrate';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
-import { LiveTestCommand } from './commands/live-test';
-import { QueueIntegrationService } from '../services/queue-integration';
-import { MemoryEvolution, SophisticationLevel } from '../services/memory-evolution';
 import { FailureExtractor } from '../services/failure-extractor';
+import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 
@@ -181,69 +179,6 @@ class ClaudeRecallCLI {
     console.log('\n💰 Estimated Token Savings:');
     console.log(`  Total saved: ~${totalSavings.toLocaleString()} tokens`);
     console.log(`  (vs repeating preferences or loading all reference files)`);
-  }
-
-  /**
-   * Show memory evolution metrics (v0.7.0)
-   */
-  showEvolution(options: { project?: string; days?: number }): void {
-    const evolution = MemoryEvolution.getInstance();
-    const metrics = evolution.getEvolutionMetrics(
-      options.project,
-      options.days || 30
-    );
-
-    console.log('\n📈 Memory Evolution\n');
-    console.log(`Analysis Period: Last ${options.days || 30} days`);
-    if (options.project) {
-      console.log(`Project: ${options.project}`);
-    }
-    console.log(`Total Memories: ${metrics.totalMemories}`);
-    console.log(`Progression Score: ${metrics.progressionScore}/100\n`);
-
-    if (metrics.totalMemories === 0) {
-      console.log('No memories found for this period.\n');
-      return;
-    }
-
-    console.log('Sophistication Breakdown:');
-    const total = metrics.totalMemories;
-    const levels = [
-      { level: 1, name: 'Procedural (L1)' },
-      { level: 2, name: 'Self-Reflection (L2)' },
-      { level: 3, name: 'Adaptive (L3)' },
-      { level: 4, name: 'Compositional (L4)' }
-    ];
-
-    for (const { level, name } of levels) {
-      const count = metrics.sophisticationBreakdown[level as SophisticationLevel];
-      const pct = ((count / total) * 100).toFixed(1);
-      console.log(`  ${name}: ${count.toString().padStart(3)} (${pct.padStart(5)}%)`);
-    }
-
-    console.log('');
-
-    // Confidence trend
-    const confidenceArrow = metrics.confidenceTrend === 'improving' ? '↗' :
-                            metrics.confidenceTrend === 'declining' ? '↘' : '→';
-    console.log(`Average Confidence: ${metrics.averageConfidence.toFixed(2)} ${confidenceArrow}`);
-
-    // Failure trend
-    const failureArrow = metrics.failureTrend === 'improving' ? '↗ Better' :
-                         metrics.failureTrend === 'worsening' ? '↘ Worse' : '→';
-    console.log(`Failure Rate: ${metrics.failureRate.toFixed(1)}% ${failureArrow}\n`);
-
-    // Interpretation
-    if (metrics.progressionScore >= 75) {
-      console.log('✓ Agent demonstrating sophisticated reasoning');
-    } else if (metrics.progressionScore >= 50) {
-      console.log('○ Agent developing adaptive patterns');
-    } else {
-      console.log('◌ Agent in early learning phase');
-    }
-
-    console.log('');
-    this.logger.info('CLI', 'Evolution metrics displayed', metrics);
   }
 
   /**
@@ -995,6 +930,126 @@ async function main() {
       process.exit(0);
     });
 
+  // Skills command group
+  const skillsCmd = program
+    .command('skills')
+    .description('Auto-generated skill management (subcommands: generate, list, clean)');
+
+  skillsCmd
+    .command('generate')
+    .description('Generate skills from accumulated memories')
+    .option('--topic <id>', 'Generate a specific topic only')
+    .option('--dry-run', 'Preview what would be generated without writing')
+    .option('--force', 'Regenerate even if content is unchanged')
+    .action((options) => {
+      const generator = SkillGenerator.getInstance();
+      const projectDir = process.cwd();
+      const configService = ConfigService.getInstance();
+      const projectId = configService.getProjectId();
+
+      if (options.dryRun) {
+        console.log('\n📋 Skills Generation Preview (dry run)\n');
+        const ready = generator.getReadyTopics(projectId);
+        if (ready.length === 0) {
+          console.log('No topics have enough memories to generate skills yet.\n');
+          const topics = SkillGenerator.getTopics();
+          console.log('Topic thresholds:');
+          for (const topic of topics) {
+            console.log(`  ${topic.id}: needs ${topic.threshold}+ memories`);
+          }
+        } else {
+          for (const { topic, count } of ready) {
+            console.log(`  ✅ ${topic.id}: ${count} memories (threshold: ${topic.threshold}) → .claude/skills/${topic.skillDir}/`);
+          }
+        }
+        console.log('');
+        process.exit(0);
+      }
+
+      if (options.topic) {
+        console.log(`\n📦 Generating skill: ${options.topic}\n`);
+        const result = generator.generateTopic(options.topic, projectDir, options.force || false, projectId);
+        if (result.action === 'skipped') {
+          console.log(`⏭️  Skipped: not enough memories (${result.memoryCount} found)`);
+        } else if (result.action === 'unchanged') {
+          console.log(`✅ Unchanged: skill is up to date (${result.memoryCount} memories)`);
+        } else {
+          console.log(`✅ ${result.action === 'created' ? 'Created' : 'Updated'}: ${result.skillPath}`);
+          console.log(`   ${result.memoryCount} memories`);
+        }
+      } else {
+        console.log('\n📦 Generating all qualifying skills\n');
+        const results = generator.generateAll(projectDir, options.force || false, projectId);
+        let generated = 0;
+        for (const result of results) {
+          if (result.action === 'created' || result.action === 'updated') {
+            console.log(`  ✅ ${result.action}: ${result.skillPath} (${result.memoryCount} memories)`);
+            generated++;
+          } else if (result.action === 'unchanged') {
+            console.log(`  ✔️  ${result.topicId}: unchanged`);
+          }
+          // Don't print skipped topics to reduce noise
+        }
+        if (generated === 0) {
+          console.log('  No new skills generated.');
+        }
+      }
+      console.log('');
+      process.exit(0);
+    });
+
+  skillsCmd
+    .command('list')
+    .description('List all auto-generated skills')
+    .action(() => {
+      const generator = SkillGenerator.getInstance();
+      const projectDir = process.cwd();
+      const skills = generator.listGeneratedSkills(projectDir);
+
+      console.log('\n📋 Auto-Generated Skills\n');
+
+      if (skills.length === 0) {
+        console.log('No auto-generated skills found.\n');
+        console.log('Run `npx claude-recall skills generate` to create skills from memories.\n');
+      } else {
+        for (const skill of skills) {
+          console.log(`  ${skill.skillDir}/`);
+          console.log(`    Topic: ${skill.topicId}`);
+          console.log(`    Memories: ${skill.manifest.memoryCount}`);
+          console.log(`    Generated: ${skill.manifest.generatedAt}`);
+          console.log('');
+        }
+      }
+      process.exit(0);
+    });
+
+  skillsCmd
+    .command('clean')
+    .description('Remove all auto-generated skills')
+    .option('--force', 'Confirm deletion')
+    .action((options) => {
+      if (!options.force) {
+        console.log('⚠️  This will remove all auto-generated skill files.');
+        console.log('Use --force to confirm.\n');
+        process.exit(0);
+      }
+
+      const generator = SkillGenerator.getInstance();
+      const projectDir = process.cwd();
+      const removed = generator.cleanGeneratedSkills(projectDir);
+
+      if (removed.length === 0) {
+        console.log('\nNo auto-generated skills found to remove.\n');
+      } else {
+        console.log(`\n🧹 Removed ${removed.length} auto-generated skill(s):\n`);
+        for (const dir of removed) {
+          console.log(`  - .claude/skills/${dir}/`);
+        }
+        console.log('');
+      }
+      process.exit(0);
+    });
+
   // MCP command
   const mcpCmd = program
     .command('mcp')
@@ -1005,10 +1060,6 @@ async function main() {
     .description('Start Claude Recall as an MCP server')
     .action(async () => {
       try {
-        // Initialize queue integration service for background processing
-        const queueIntegration = QueueIntegrationService.getInstance();
-        await queueIntegration.initialize();
-
         const server = new MCPServer();
         server.setupSignalHandlers();
         await server.start();
@@ -1073,9 +1124,6 @@ async function main() {
   // Migration commands
   MigrateCommand.register(program);
 
-  // Register live test command
-  new LiveTestCommand().register(program);
-
   // Search command
   program
     .command('search <query>')
@@ -1106,21 +1154,6 @@ async function main() {
       cli.showStats({
         project: options.project,
         global: options.global
-      });
-      process.exit(0);
-    });
-
-  // Evolution command
-  program
-    .command('evolution')
-    .description('View memory evolution and sophistication metrics')
-    .option('--project <id>', 'Filter by project ID')
-    .option('--days <number>', 'Number of days to analyze', '30')
-    .action((options) => {
-      const cli = new ClaudeRecallCLI(program.opts());
-      cli.showEvolution({
-        project: options.project,
-        days: parseInt(options.days)
       });
       process.exit(0);
     });

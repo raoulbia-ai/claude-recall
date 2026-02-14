@@ -46,11 +46,7 @@ tmp/
 temp/
 .tmp/
 
-# Test files and directory
-tests/
-test-*.js
-test-*.ts
-test-*.sh
+# Test artifacts (NOT tests/ directory — test files are part of the repo)
 debug-*.js
 debug-*.ts
 demo-*.ts
@@ -59,8 +55,6 @@ verify-*.js
 live-*.js
 simple-*.ts
 final-*.js
-*-test.js
-*-test.ts
 
 # Development files
 STAGE*.md

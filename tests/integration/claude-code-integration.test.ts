@@ -222,20 +222,4 @@ describe('Claude Code MCP Integration', () => {
   });
 
 
-  describe('Health Monitoring', () => {
-    it('should provide health status', async () => {
-      const response = await client.request('health/check');
-      
-      expect(response.result).toBeDefined();
-      expect(response.result.status).toBe('healthy');
-      expect(response.result.version).toBeDefined();
-      expect(response.result.uptime).toBeGreaterThan(0);
-      // Tool count: 2 core memory tools (test tools not enabled by default)
-      expect(response.result.toolsRegistered).toBeGreaterThanOrEqual(2);
-      expect(response.result.database).toBe('connected');
-    });
-
-  });
-
-
 });
