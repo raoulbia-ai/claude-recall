@@ -113,9 +113,7 @@ Installed automatically to `.claude/skills/memory-management/SKILL.md`. Teaches 
 
 ```bash
 # ── Upgrade ──────────────────────────────────────────────────────────
-npm uninstall claude-recall              # Remove old version
-npm cache clean --force                  # Clear npm cache
-npm install claude-recall@latest         # Install latest
+npm install claude-recall@latest         # Install latest (overwrites old)
 npx claude-recall setup --install        # Re-register hooks + skills
 npx claude-recall --version              # Verify
 
