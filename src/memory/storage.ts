@@ -303,6 +303,13 @@ export class MemoryStorage {
     return rows.map(row => this.rowToMemory(row));
   }
   
+  deleteByKey(key: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM memories WHERE key = ?');
+    const result = stmt.run(key);
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return result.changes > 0;
+  }
+
   clear(type?: string): number {
     let stmt;
     let result;

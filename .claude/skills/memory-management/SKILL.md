@@ -9,11 +9,12 @@ license: "MIT"
 
 Persistent memory system that ensures Claude never repeats mistakes and always applies learned patterns across conversations.
 
-## 3 Tools
+## 4 Tools
 
 - `mcp__claude-recall__load_rules` - Load all active rules before starting work. No query needed.
 - `mcp__claude-recall__store_memory` - Store a rule or learning. Immediately active in this conversation.
 - `mcp__claude-recall__search_memory` - Search memories by keyword. Use to find specific memories before making decisions.
+- `mcp__claude-recall__delete_memory` - Delete a specific memory by ID. Use search_memory first to find the ID.
 
 ## When to Use
 

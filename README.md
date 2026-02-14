@@ -86,15 +86,16 @@ Claude Recall has three layers:
 
 Stores and evolves preferences, patterns, decisions, corrections, and failure learnings. Uses WAL mode for concurrency, content-hash deduplication, and automatic compaction.
 
-### 2. MCP Server (3 tools)
+### 2. MCP Server (4 tools)
 
-Exposes three tools to Claude Code:
+Exposes four tools to Claude Code:
 
 | Tool | Purpose |
 | ---- | ------- |
 | `load_rules` | Load all active rules (preferences, corrections, failures, devops) at the start of a task |
 | `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
 | `search_memory` | Search memories by keyword, ranked by relevance |
+| `delete_memory` | Delete a specific memory by ID (use `search_memory` first to find the ID) |
 
 ### 3. Native Claude Skill
 

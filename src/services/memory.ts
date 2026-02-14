@@ -220,6 +220,25 @@ export class MemoryService {
   }
   
   /**
+   * Delete a single memory by key
+   */
+  delete(key: string): boolean {
+    try {
+      const deleted = this.storage.deleteByKey(key);
+
+      this.logger.logMemoryOperation('DELETE', {
+        key,
+        deleted
+      });
+
+      return deleted;
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'delete', error as Error, { key });
+      throw error;
+    }
+  }
+
+  /**
    * Clear memories
    */
   clear(type?: string): number {

@@ -164,6 +164,21 @@ export class MemoryTools {
           required: ['query']
         },
         handler: this.handleSearchMemory.bind(this)
+      },
+      {
+        name: 'mcp__claude-recall__delete_memory',
+        description: 'Delete a specific memory by its ID (key). Use search_memory first to find the ID of the memory to delete.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: 'The memory ID (key) to delete. Get this from search_memory or store_memory results.'
+            }
+          },
+          required: ['id']
+        },
+        handler: this.handleDeleteMemory.bind(this)
       }
     ];
   }
@@ -367,7 +382,7 @@ export class MemoryTools {
         const val = typeof r.value === 'object'
           ? (r.value.content || r.value.value || JSON.stringify(r.value))
           : r.value;
-        return `- [${r.type}] (score: ${r.score.toFixed(3)}) ${val}`;
+        return `- [${r.type}] (id: ${r.key}) ${val}`;
       });
 
       return {
@@ -380,6 +395,43 @@ export class MemoryTools {
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to search memory', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a memory by ID
+   */
+  private async handleDeleteMemory(input: any, context: MCPContext): Promise<any> {
+    try {
+      const { id } = input;
+
+      if (!id || typeof id !== 'string') {
+        throw new Error('Memory ID is required and must be a string');
+      }
+
+      const deleted = this.memoryService.delete(id);
+
+      if (deleted) {
+        this.logger.info('MemoryTools', 'Memory deleted', {
+          id,
+          sessionId: context.sessionId
+        });
+
+        return {
+          success: true,
+          id,
+          message: `Memory "${id}" deleted.`
+        };
+      } else {
+        return {
+          success: false,
+          id,
+          message: `Memory "${id}" not found.`
+        };
+      }
+    } catch (error) {
+      this.logger.error('MemoryTools', 'Failed to delete memory', error);
       throw error;
     }
   }
