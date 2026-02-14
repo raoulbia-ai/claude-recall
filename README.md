@@ -20,7 +20,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 - **User-Confirmed Storage** — Claude asks for your permission before storing any memory
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches memory
 - **Failure Learning** — captures failures with counterfactual reasoning (what failed, why, what to do instead)
-- **Memory Evolution** — tracks agent progression over time across sophistication levels (L1–L4)
+- **Skill Crystallization** — automatically generates `.claude/skills/auto-*/` files when enough memories accumulate, so learned patterns load natively without tool calls
 - **Zero Cloud Storage** — all memory stored locally, no telemetry, works fully offline
 - **Process Management** — automatic server lifecycle management with stale process cleanup
 
@@ -86,14 +86,15 @@ Claude Recall has three layers:
 
 Stores and evolves preferences, patterns, decisions, corrections, and failure learnings. Uses WAL mode for concurrency, content-hash deduplication, and automatic compaction.
 
-### 2. MCP Server (2 tools)
+### 2. MCP Server (3 tools)
 
-Exposes two tools to Claude Code:
+Exposes three tools to Claude Code:
 
 | Tool | Purpose |
 | ---- | ------- |
 | `load_rules` | Load all active rules (preferences, corrections, failures, devops) at the start of a task |
 | `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
+| `search_memory` | Search memories by keyword, ranked by relevance |
 
 ### 3. Native Claude Skill
 
@@ -122,11 +123,19 @@ npx claude-recall clear --force          # Clear all memories
 ### Analysis
 
 ```bash
-npx claude-recall evolution              # Memory evolution metrics (L1-L4)
-npx claude-recall evolution --days 60    # Custom time window
 npx claude-recall failures               # View failure memories
 npx claude-recall failures --limit 20    # Limit results
 npx claude-recall monitor                # Memory search monitoring stats
+```
+
+### Auto-Generated Skills
+
+```bash
+npx claude-recall skills generate        # Generate skills from accumulated memories
+npx claude-recall skills generate --dry-run  # Preview without writing
+npx claude-recall skills generate --force    # Regenerate even if unchanged
+npx claude-recall skills list            # List generated skills
+npx claude-recall skills clean --force   # Remove all auto-generated skills
 ```
 
 ### MCP Server Management
