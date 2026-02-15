@@ -40,7 +40,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ```bash
 cd your-project
-npm install claude-recall
+npm cache clean --force && npm install claude-recall@latest
 claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 npx claude-recall setup --install
 npx claude-recall --version
