@@ -546,12 +546,12 @@ async function main() {
     }
   }
 
-  // Install skills + minimal enforcement hook (v0.9.3+ hybrid approach)
+  // Install skills + minimal enforcement hook
   function installSkillsAndHook(force: boolean = false): void {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 
-    console.log('\n📦 Claude Recall v0.9.3+ Setup\n');
+    console.log('\n📦 Claude Recall Setup\n');
     console.log(`📍 Project: ${projectName}`);
     console.log(`📍 Directory: ${cwd}\n`);
 
@@ -680,7 +680,7 @@ async function main() {
     }
 
     console.log('\n✅ Setup complete!\n');
-    console.log('ℹ️  v0.9.3+ uses Skills (guidance) + minimal hook (enforcement).');
+    console.log('ℹ️  Uses Skills (guidance) + hooks (auto-capture with LLM classification).');
     console.log('Restart Claude Code to activate.\n');
   }
 
