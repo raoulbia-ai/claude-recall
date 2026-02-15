@@ -36,34 +36,16 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 | Node.js   | **20+**                 | required for better-sqlite3 |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
-### Install
+### Install & Activate
 
 ```bash
 cd your-project
 npm install claude-recall
-
-# Check installed version:
-npx claude-recall --version
-
-# Show activation instructions:
-npx claude-recall setup
-```
-
-### Activate
-
-Register MCP server with Claude Code:
-
-```bash
-claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
+claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
+npx claude-recall setup --install
 ```
 
 Then restart your terminal or Claude Code session.
-
-Already registered? Remove first:
-
-```bash
-claude mcp remove claude-recall
-```
 
 ### Verify
 
