@@ -7,23 +7,15 @@ Claude Recall is a **local memory engine + MCP server** that gives Claude Code s
 
 Your preferences, project structure, workflows, corrections, and coding style are captured automatically and applied in future sessions — **securely stored on your machine**.
 
-> **TL;DR**
-> Claude Recall stores and searches your past preferences and project knowledge.
-> Install it → restart Claude Code → Claude knows when to search memory via native Skills integration.
-
 ---
 
 ## Features
 
-- **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with regex fallback when API is unavailable
-- **Continuous Learning** — captures coding patterns, tool preferences, corrections, architectural decisions, and workflow habits in local SQLite
-- **Native Claude Skills** — Claude decides when to search/store based on built-in skill guidance
-- **User-Confirmed Storage** — Claude asks for your permission before storing via MCP tools; hooks auto-capture only high-confidence patterns
-- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches memory
-- **Failure Learning** — captures failures with counterfactual reasoning (what failed, why, what to do instead)
-- **Skill Crystallization** — automatically generates `.claude/skills/auto-*/` files when enough memories accumulate, so learned patterns load natively without tool calls
-- **Zero Cloud Storage** — all memory stored locally, no telemetry, works fully offline
-- **Process Management** — automatic server lifecycle management with stale process cleanup
+- **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with silent regex fallback
+- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches context automatically
+- **Failure Learning** — captures what failed, why, and what to do instead — so Claude doesn't repeat mistakes
+- **Skill Crystallization** — when enough memories accumulate, auto-generates `.claude/skills/auto-*/` files that load natively without tool calls
+- **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
 
 ---
 
@@ -54,49 +46,62 @@ In Claude Code, ask: *"Load my rules"*
 
 Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
 
-### Upgrade
+---
+
+## What to Expect
+
+Once installed, Claude Recall works automatically in the background:
+
+1. **First prompt** — the `search_enforcer` hook ensures Claude loads your stored rules before taking any action
+2. **As you work** — the `correction-detector` hook classifies every prompt you type. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored automatically
+3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns
+4. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
+
+All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude Code session) with silent regex fallback. No configuration needed.
+
+**Next session:** `load_rules` returns everything captured previously — Claude applies your preferences without being told twice.
 
 ```bash
-npm uninstall claude-recall && npm install claude-recall
+# Verify it's working
+cat ~/.claude-recall/hook-logs/correction-detector.log
+npx claude-recall stats
+npx claude-recall search "preference"
 ```
 
 ---
 
 ## How It Works
 
-Claude Recall has three layers:
-
-### 1. Local Memory Engine (SQLite)
-
-Stores and evolves preferences, patterns, decisions, corrections, and failure learnings. Uses WAL mode for concurrency, content-hash deduplication, and automatic compaction.
-
-### 2. MCP Server (4 tools)
-
-Exposes four tools to Claude Code:
+Claude Recall runs as an MCP server exposing four tools, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. A native Claude Skill (`.claude/skills/memory-management/SKILL.md`) teaches Claude when to load, store, and search memories.
 
 | Tool | Purpose |
 | ---- | ------- |
 | `load_rules` | Load all active rules (preferences, corrections, failures, devops) at the start of a task |
 | `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
 | `search_memory` | Search memories by keyword, ranked by relevance |
-| `delete_memory` | Delete a specific memory by ID (use `search_memory` first to find the ID) |
-
-### 3. Native Claude Skill
-
-Installed automatically to `.claude/skills/memory-management/SKILL.md`. Teaches Claude:
-- Load rules before writing/editing code
-- Apply learned conventions and avoid past mistakes
-- **Ask the user for confirmation before storing any memory**
-- Capture corrections when users fix mistakes
-- Store learning cycles (fail → fix → success)
+| `delete_memory` | Delete a specific memory by ID |
 
 ---
 
 ## CLI Reference
 
+### Common Commands
+
+```bash
+npx claude-recall stats                  # Memory statistics
+npx claude-recall search "query"         # Search memories
+npx claude-recall failures               # View failure memories
+npx claude-recall export backup.json     # Export memories to JSON
+npx claude-recall import backup.json     # Import memories from JSON
+npx claude-recall --version              # Check version
+```
+
+<details>
+<summary>All commands</summary>
+
 ```bash
 # ── Upgrade ──────────────────────────────────────────────────────────
-npm install claude-recall@latest         # Install latest (overwrites old)
+npm cache clean --force && npm install claude-recall@latest
 npx claude-recall setup --install        # Re-register hooks + skills
 npx claude-recall --version              # Verify
 
@@ -139,36 +144,47 @@ npx claude-recall project list           # All registered projects
 npx claude-recall project register       # Register current project
 npx claude-recall project clean          # Remove stale registry entries
 
-# ── Auto-Capture Hooks (registered via setup --install, run automatically) ──
+# ── Auto-Capture Hooks (run automatically, registered via setup --install) ──
 npx claude-recall hook run correction-detector   # UserPromptSubmit hook
 npx claude-recall hook run memory-stop           # Stop hook
 npx claude-recall hook run precompact-preserve   # PreCompact hook
 ```
 
+</details>
+
 ---
 
-## How Project Scoping Works
+## Project Scoping
 
-Each project gets isolated memory based on its working directory:
-
-- **Project ID** is derived from the `cwd` that Claude Code passes to the MCP server
-- **Universal memories** (no project scope) are available everywhere
-- **Project memories** are only returned when working in that project
-- Switching projects switches memory automatically — no configuration needed
+Each project gets isolated memory based on its working directory. **Project ID** is derived from the `cwd` that Claude Code passes to the MCP server. Universal memories (no project scope) are available everywhere. Switching projects switches memory automatically.
 
 Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `project_id` column).
 
 ---
 
-## WSL Users
+## Security & Privacy
+
+- SQLite memory never leaves your machine
+- No prompts, code, or memory content is transmitted
+- Full transparency via CLI (`stats`, `search`, `export`)
+- Never stores secrets (API keys, passwords, tokens)
+
+Details in [docs/security.md](docs/security.md).
+
+---
+
+<details>
+<summary>WSL Users</summary>
 
 If you hit "invalid ELF header" errors from mixed Windows/WSL `node_modules`, use a global install:
 
 ```bash
-# From WSL:
 npm install -g claude-recall
+```
 
-# Update ~/.claude.json to use the global binary:
+Update `~/.claude.json` to use the global binary:
+
+```json
 {
   "claude-recall": {
     "type": "stdio",
@@ -181,34 +197,7 @@ npm install -g claude-recall
 
 Global installation does **not** affect project scoping — project ID is still detected from Claude Code's working directory.
 
----
-
-## Security & Privacy
-
-- SQLite memory never leaves your machine
-- No external services required
-- No prompts, code, or memory content is transmitted
-- Full transparency via CLI (`stats`, `search`, `export`)
-- Never stores secrets (API keys, passwords, tokens)
-
-Details in [docs/security.md](docs/security.md).
-
----
-
-## Documentation
-
-All docs in [`/docs`](docs/):
-
-- [Installation](docs/installation.md)
-- [Quickstart](docs/quickstart.md)
-- [CLI Reference](docs/cli.md)
-- [Memory Types](docs/memory-types.md)
-- [Learning Loop](docs/learning-loop.md)
-- [Project Scoping](docs/project-scoping.md)
-- [Content Hashing](docs/content-hashing.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Security](docs/security.md)
-- [FAQ](docs/faq.md)
+</details>
 
 ---
 
