@@ -134,12 +134,15 @@ Claude Recall registers hooks on three Claude Code events to capture memories au
 
 | Hook | Event | What it captures |
 |------|-------|-----------------|
-| `correction-detector` | UserPromptSubmit | User corrections ("no, ...", "wrong, ...") and preferences ("always ...", "remember to ...") |
+| `correction-detector` | UserPromptSubmit | User corrections, preferences, and project knowledge from natural language |
 | `memory-stop` | Stop | Corrections, preferences, failures, and devops patterns from the last 6 transcript entries |
 | `precompact-preserve` | PreCompact | Broader sweep of up to 50 transcript entries before context compression |
 
 **Key behaviors:**
-- All classification uses regex (no LLM calls) for speed (<1s)
+- **LLM-first classification** via Claude Haiku — detects natural statements like "we use tabs here" or "tests go in \_\_tests\_\_/" that regex would miss
+- Automatic zero-config: picks up `ANTHROPIC_API_KEY` from the Claude Code session environment
+- Silent regex fallback when API key is unavailable or API call fails
+- Batch classification: Stop and PreCompact hooks send all texts in a single API call
 - Near-duplicate detection via Jaccard similarity (55% threshold) prevents redundant storage
 - Per-event limits: 3 (Stop), 5 (PreCompact) to prevent DB flooding
 - Always exits 0 — hooks never block Claude

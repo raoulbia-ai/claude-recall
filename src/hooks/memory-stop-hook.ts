@@ -7,7 +7,7 @@
  */
 
 import {
-  classifyContent,
+  classifyBatch,
   isDuplicate,
   storeMemory,
   searchExisting,
@@ -32,15 +32,27 @@ export async function handleMemoryStop(input: any): Promise<void> {
     return;
   }
 
+  // Extract all texts, filter, then batch-classify in one API call
+  const textsWithIndex: { text: string; idx: number }[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const text = extractTextFromEntry(entries[i]);
+    if (text && text.length >= 10 && text.length <= 2000) {
+      textsWithIndex.push({ text, idx: i });
+    }
+  }
+
+  if (textsWithIndex.length === 0) {
+    hookLog('memory-stop', 'No classifiable text in transcript entries');
+    return;
+  }
+
+  const results = await classifyBatch(textsWithIndex.map((t) => t.text));
   let stored = 0;
 
-  for (const entry of entries) {
+  for (let i = 0; i < results.length; i++) {
     if (stored >= MAX_STORE) break;
 
-    const text = extractTextFromEntry(entry);
-    if (!text || text.length < 10 || text.length > 2000) continue;
-
-    const result = classifyContent(text);
+    const result = results[i];
     if (!result) continue;
 
     // Corrections and preferences need higher confidence
@@ -51,7 +63,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
     const existing = searchExisting(result.extract.substring(0, 100));
     if (isDuplicate(result.extract, existing)) continue;
 
-    storeMemory(result.extract, result.type);
+    storeMemory(result.extract, result.type, undefined, result.confidence);
     stored++;
 
     hookLog('memory-stop', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);

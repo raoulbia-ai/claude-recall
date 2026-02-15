@@ -4,6 +4,7 @@ import * as os from 'os';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { ScoredMemory } from '../core/retrieval';
+import { classifyWithLLM, classifyBatchWithLLM } from './llm-classifier';
 
 export interface ClassifyResult {
   type: string;
@@ -65,10 +66,10 @@ export function readStdin(): any {
 }
 
 /**
- * Classify text content by regex patterns.
+ * Classify text content by regex patterns only.
  * Returns the highest-confidence match, prioritizing corrections > preferences.
  */
-export function classifyContent(text: string): ClassifyResult | null {
+export function classifyContentRegex(text: string): ClassifyResult | null {
   // Priority order: correction > preference > failure > devops > project-knowledge
   for (const p of CORRECTION_PATTERNS) {
     const m = text.match(p.regex);
@@ -105,6 +106,27 @@ export function classifyContent(text: string): ClassifyResult | null {
   }
 
   return null;
+}
+
+/**
+ * Classify text content — LLM-first, regex fallback.
+ * Tries Claude Haiku via ANTHROPIC_API_KEY (set by Claude Code automatically).
+ * Falls back to regex patterns if API is unavailable or call fails.
+ */
+export async function classifyContent(text: string): Promise<ClassifyResult | null> {
+  const llmResult = await classifyWithLLM(text);
+  if (llmResult) return llmResult;
+  return classifyContentRegex(text);
+}
+
+/**
+ * Classify multiple texts — single LLM API call, regex fallback per item.
+ */
+export async function classifyBatch(texts: string[]): Promise<(ClassifyResult | null)[]> {
+  const llmResults = await classifyBatchWithLLM(texts);
+  if (llmResults) return llmResults;
+  // Fallback: classify each with regex
+  return texts.map((t) => classifyContentRegex(t));
 }
 
 /**
@@ -146,7 +168,12 @@ export function isDuplicate(
 /**
  * Store a memory via MemoryService (in-process, no subprocess).
  */
-export function storeMemory(content: string, type: string, projectId?: string): void {
+export function storeMemory(
+  content: string,
+  type: string,
+  projectId?: string,
+  confidence: number = 0.8,
+): void {
   const memoryService = MemoryService.getInstance();
   const key = `hook_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -154,7 +181,7 @@ export function storeMemory(content: string, type: string, projectId?: string): 
     key,
     value: {
       content,
-      confidence: 0.8,
+      confidence,
       source: 'hook-auto-capture',
       timestamp: Date.now(),
     },
@@ -163,7 +190,7 @@ export function storeMemory(content: string, type: string, projectId?: string): 
       projectId: projectId || ConfigService.getInstance().getProjectId(),
       timestamp: Date.now(),
     },
-    relevanceScore: 0.8,
+    relevanceScore: confidence,
   });
 }
 

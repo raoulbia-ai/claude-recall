@@ -21,12 +21,12 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   if (prompt.length < 10 || prompt.length > 2000) return;
   if (prompt.startsWith('```') || prompt.startsWith('{')) return;
 
-  const result = classifyContent(prompt);
+  const result = await classifyContent(prompt);
   if (!result) return;
 
-  // Only capture high-confidence corrections and preferences from user prompts
-  if (result.confidence < 0.7) return;
-  if (result.type !== 'correction' && result.type !== 'preference') return;
+  // Corrections and preferences need high confidence; others need moderate
+  if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) return;
+  if (result.confidence < 0.6) return;
 
   // Dedup check
   const existing = searchExisting(result.extract.substring(0, 100));
@@ -35,7 +35,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
     return;
   }
 
-  storeMemory(result.extract, result.type);
+  storeMemory(result.extract, result.type, undefined, result.confidence);
 
   const summary = result.extract.length > 60
     ? result.extract.substring(0, 60) + '...'

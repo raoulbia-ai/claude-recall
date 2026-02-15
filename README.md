@@ -15,7 +15,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ## Features
 
-- **Automatic Memory Capture** — hooks on UserPromptSubmit, Stop, and PreCompact events capture corrections, preferences, failures, and project knowledge without manual intervention
+- **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with regex fallback when API is unavailable
 - **Continuous Learning** — captures coding patterns, tool preferences, corrections, architectural decisions, and workflow habits in local SQLite
 - **Native Claude Skills** — Claude decides when to search/store based on built-in skill guidance
 - **User-Confirmed Storage** — Claude asks for your permission before storing via MCP tools; hooks auto-capture only high-confidence patterns
