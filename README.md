@@ -43,6 +43,7 @@ cd your-project
 npm install claude-recall
 claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
 npx claude-recall setup --install
+npx claude-recall --version
 ```
 
 Then restart your terminal or Claude Code session.
