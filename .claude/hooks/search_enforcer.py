@@ -15,7 +15,7 @@ from pathlib import Path
 from datetime import datetime
 
 STATE_DIR = Path.home() / '.claude-recall' / 'hook-state'
-SEARCH_TTL_MS = int(os.environ.get('CLAUDE_RECALL_SEARCH_TTL', 5 * 60 * 1000))  # 5 min default
+SEARCH_TTL_MS = int(os.environ.get('CLAUDE_RECALL_SEARCH_TTL', 24 * 60 * 60 * 1000))  # 24h default (once per session)
 ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')  # block, warn, off
 
 # Tools that count as "search performed"
