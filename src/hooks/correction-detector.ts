@@ -18,11 +18,14 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   const prompt: string = input?.prompt ?? '';
 
   // Skip trivial / non-text input
-  if (prompt.length < 10 || prompt.length > 2000) return;
+  if (prompt.length < 20 || prompt.length > 2000) return;
   if (prompt.startsWith('```') || prompt.startsWith('{')) return;
 
   const result = await classifyContent(prompt);
   if (!result) return;
+
+  // Reject short/garbage extracts
+  if (result.extract.length < 10) return;
 
   // Corrections and preferences need high confidence; others need moderate
   if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) return;

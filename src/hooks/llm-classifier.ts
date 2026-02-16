@@ -26,7 +26,8 @@ Respond with ONLY valid JSON (no markdown fences). Format:
 
 Rules:
 - Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
-- Questions, observations, complaints, and task instructions are "none" — not preferences
+- Questions, observations, complaints, task instructions, and sentence fragments are "none" — not preferences
+- If the text doesn't make sense as a standalone rule or directive, classify as "none"
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
@@ -47,7 +48,8 @@ Respond with ONLY a valid JSON array (no markdown fences). One object per input 
 
 Rules:
 - Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
-- Questions, observations, complaints, and task instructions are "none" — not preferences
+- Questions, observations, complaints, task instructions, and sentence fragments are "none" — not preferences
+- If the text doesn't make sense as a standalone rule or directive, classify as "none"
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
