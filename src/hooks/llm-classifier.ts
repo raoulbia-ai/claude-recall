@@ -15,7 +15,7 @@ const MODEL = 'claude-haiku-4-5-20251001';
 const SYSTEM_PROMPT = `You are a memory classifier for a developer tool. Classify user text into one of these types:
 
 - correction: User correcting a mistake ("no, use X not Y", "wrong, it should be...")
-- preference: User stating a preference or convention ("we use tabs", "always use TypeScript", "I prefer X")
+- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation. NOT observations, complaints, questions, debugging statements, or one-off instructions like "fix this" or "tell me about X"
 - failure: Something broke or failed ("build failed", "error in deployment")
 - devops: CI/CD, deployment, Docker, git workflow patterns
 - project-knowledge: Architecture, stack, database, API patterns
@@ -25,6 +25,8 @@ Respond with ONLY valid JSON (no markdown fences). Format:
 {"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>"}
 
 Rules:
+- Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
+- Questions, observations, complaints, and task instructions are "none" — not preferences
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
@@ -34,7 +36,7 @@ Rules:
 const BATCH_SYSTEM_PROMPT = `You are a memory classifier for a developer tool. You will receive multiple texts separated by "---ITEM---" markers. Classify each into one of these types:
 
 - correction: User correcting a mistake ("no, use X not Y", "wrong, it should be...")
-- preference: User stating a preference or convention ("we use tabs", "always use TypeScript", "I prefer X")
+- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation. NOT observations, complaints, questions, debugging statements, or one-off instructions like "fix this" or "tell me about X"
 - failure: Something broke or failed ("build failed", "error in deployment")
 - devops: CI/CD, deployment, Docker, git workflow patterns
 - project-knowledge: Architecture, stack, database, API patterns
@@ -44,6 +46,8 @@ Respond with ONLY a valid JSON array (no markdown fences). One object per input 
 [{"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>"}, ...]
 
 Rules:
+- Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
+- Questions, observations, complaints, and task instructions are "none" — not preferences
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
