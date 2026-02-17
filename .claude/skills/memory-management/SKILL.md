@@ -26,12 +26,12 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 ## Key Directives
 
-1. **ALWAYS load rules before acting** - Call `load_rules` before Write, Edit, or significant Bash operations
-2. **Apply what you find** - Use retrieved preferences, patterns, and corrections
-3. **Ask before storing** - Before calling `store_memory`, briefly tell the user what you plan to store and ask for confirmation. Example: *"I'd like to remember that you prefer tabs over spaces. Store this?"* Only call the tool after the user agrees.
-4. **Capture corrections immediately** - User fixes are highest priority (still ask first)
-5. **Store learning cycles** - When you fail then succeed, that's valuable knowledge
-6. **Never store secrets** - No API keys, passwords, tokens, or PII
+1. **ALWAYS load rules before acting** — Call `load_rules` before Write, Edit, or significant Bash operations
+2. **ACT on loaded rules** — After loading, state which rules apply to your current task before proceeding. If a rule conflicts with your plan, follow the rule. If none apply, say so. Loading without applying is the same as not loading.
+3. **Cite applied rules inline** — When a rule influences your work: (applied from memory: <rule>)
+4. **Ask before storing** — Before calling `store_memory`, tell the user what you plan to store and ask for confirmation
+5. **Capture corrections immediately** — User fixes are highest priority (still ask first)
+6. **Never store secrets** — No API keys, passwords, tokens, or PII
 
 ## Quick Reference
 
@@ -212,16 +212,6 @@ Claude Recall registers hooks on three Claude Code events to capture memories au
      "metadata": { "type": "failure", "learning_cycle": true }
    })
 ```
-
-## Inline Citations
-
-When `load_rules` returns memories, the response includes a `_citationDirective` instructing you to cite any memory you actually apply. When you use a retrieved memory in your work, add a brief inline note:
-
-> (applied from memory: always use httpOnly cookies for auth tokens)
-
-This gives the user visibility into which stored knowledge is influencing your decisions. Only cite memories you actually use.
-
-To disable citations, set the environment variable `CLAUDE_RECALL_CITE_MEMORIES=false`.
 
 ## Troubleshooting
 

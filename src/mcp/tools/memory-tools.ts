@@ -6,14 +6,16 @@ import { SkillGenerator, GenerationResult } from '../../services/skill-generator
 import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
-  private static readonly CITATION_DIRECTIVE =
-    'When you apply any of the above rules or memories to your work, ' +
-    'add a brief inline citation: "(applied from memory: [one-line summary])". ' +
-    'Only cite memories you actually use.';
+  private static readonly LOAD_RULES_DIRECTIVE =
+    'IMPORTANT: Before proceeding with your task, scan the rules above and identify which ones apply.\n' +
+    '- State the applicable rules explicitly before taking action.\n' +
+    '- If a rule conflicts with your planned approach, follow the rule — it reflects user preferences or past corrections.\n' +
+    '- If no rules apply, briefly note why.\n' +
+    '- Cite applied rules inline as you work: (applied from memory: <rule summary>)';
 
   private tools: MCPTool[] = [];
   private searchMonitor: SearchMonitor;
-  
+
   constructor(
     private memoryService: MemoryService,
     private logger: LoggingService
@@ -22,10 +24,10 @@ export class MemoryTools {
     this.registerTools();
   }
 
-  private getCitationDirective(): string | undefined {
+  private getLoadRulesDirective(): string | undefined {
     const config = ConfigService.getInstance();
     if (config.getConfig().citations?.enabled === false) return undefined;
-    return MemoryTools.CITATION_DIRECTIVE;
+    return MemoryTools.LOAD_RULES_DIRECTIVE;
   }
 
   // Claude-flow pattern: Validate input against schema
@@ -272,7 +274,7 @@ export class MemoryTools {
   private async handleLoadRules(input: any, context: MCPContext): Promise<any> {
     try {
       const { projectId } = input;
-      const citationDirective = this.getCitationDirective();
+      const directive = this.getLoadRulesDirective();
       const rules = this.memoryService.loadActiveRules(projectId || context.projectId);
 
       // Format categorized markdown sections
@@ -336,7 +338,7 @@ export class MemoryTools {
           total: totalRules
         },
         summary: rules.summary,
-        ...(citationDirective && { _citationDirective: citationDirective })
+        ...(directive && { _directive: directive })
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to load rules', error);
