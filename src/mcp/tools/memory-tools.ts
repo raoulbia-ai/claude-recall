@@ -7,11 +7,12 @@ import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
   private static readonly LOAD_RULES_DIRECTIVE =
-    'IMPORTANT: Before proceeding with your task, scan the rules above and identify which ones apply.\n' +
-    '- State the applicable rules explicitly before taking action.\n' +
-    '- If a rule conflicts with your planned approach, follow the rule — it reflects user preferences or past corrections.\n' +
-    '- If no rules apply, briefly note why.\n' +
-    '- Cite applied rules inline as you work: (applied from memory: <rule summary>)';
+    'INSTRUCTION: Before your FIRST Write, Edit, or Bash action, you MUST output an\n' +
+    '"Applying memories:" section listing which rules below apply to the current task.\n' +
+    'If none apply, say so. Do NOT skip this step — the user expects visible confirmation\n' +
+    'that you checked your memories before acting.\n' +
+    'As you work, cite each applied rule inline: (applied from memory: <rule summary>)\n' +
+    'If a rule conflicts with your plan, follow the rule — it reflects a user decision.';
 
   private tools: MCPTool[] = [];
   private searchMonitor: SearchMonitor;
