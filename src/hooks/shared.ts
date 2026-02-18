@@ -32,29 +32,10 @@ const PREFERENCE_PATTERNS = [
   { regex: /\bI\s+use\s+(.+)/i, confidence: 0.7 },
 ];
 
-const FAILURE_PATTERNS = [
-  { regex: /\bfailed\b/i, confidence: 0.6 },
-  { regex: /\berror\b/i, confidence: 0.6 },
-  { regex: /\bbroke\b/i, confidence: 0.6 },
-  { regex: /\bdoesn'?t\s+work\b/i, confidence: 0.6 },
-  { regex: /\bcrashed\b/i, confidence: 0.6 },
-];
-
-const DEVOPS_PATTERNS = [
-  { regex: /\bdeploy\b/i, confidence: 0.6 },
-  { regex: /\bbuild\b/i, confidence: 0.6 },
-  { regex: /\bpipeline\b/i, confidence: 0.6 },
-  { regex: /\bdocker\b/i, confidence: 0.6 },
-  { regex: /\bci\/cd\b/i, confidence: 0.6 },
-  { regex: /\bgit\b/i, confidence: 0.6 },
-];
-
-const PROJECT_KNOWLEDGE_PATTERNS = [
-  { regex: /\barchitecture\b/i, confidence: 0.6 },
-  { regex: /\bstack\b/i, confidence: 0.6 },
-  { regex: /\bdatabase\b/i, confidence: 0.6 },
-  { regex: /\bour\s+API\b/i, confidence: 0.6 },
-];
+// Failure, devops, and project-knowledge patterns removed — single-keyword
+// matches ("error", "git", "build") are too broad for regex. These types
+// require context that only the LLM classifier can assess. When the LLM is
+// unavailable, regex fallback only captures corrections and preferences.
 
 /**
  * Read and parse JSON from stdin (synchronous for reliability with piped data).
@@ -87,24 +68,7 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
     }
   }
 
-  for (const p of FAILURE_PATTERNS) {
-    if (p.regex.test(text)) {
-      return { type: 'failure', confidence: p.confidence, extract: text.trim() };
-    }
-  }
-
-  for (const p of DEVOPS_PATTERNS) {
-    if (p.regex.test(text)) {
-      return { type: 'devops', confidence: p.confidence, extract: text.trim() };
-    }
-  }
-
-  for (const p of PROJECT_KNOWLEDGE_PATTERNS) {
-    if (p.regex.test(text)) {
-      return { type: 'project-knowledge', confidence: p.confidence, extract: text.trim() };
-    }
-  }
-
+  // Failure, devops, project-knowledge: LLM-only (no regex fallback)
   return null;
 }
 
@@ -152,7 +116,7 @@ export function jaccardSimilarity(a: string, b: string): number {
 export function isDuplicate(
   content: string,
   existingMemories: ScoredMemory[],
-  threshold: number = 0.55
+  threshold: number = 0.7
 ): boolean {
   for (const mem of existingMemories) {
     const memContent = typeof mem.value === 'string'
@@ -240,6 +204,18 @@ export function readTranscriptTail(transcriptPath: string, n: number): object[] 
   } catch {
     return [];
   }
+}
+
+/**
+ * Check if a transcript entry is from the user (not the assistant).
+ * Hooks should only classify user messages — assistant responses are not
+ * user preferences, corrections, or decisions worth storing.
+ */
+export function isUserEntry(entry: any): boolean {
+  if (entry?.role === 'user') return true;
+  if (entry?.message?.role === 'user') return true;
+  if (entry?.type === 'human') return true;
+  return false;
 }
 
 /**

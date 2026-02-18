@@ -24,8 +24,8 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   const result = await classifyContent(prompt);
   if (!result) return;
 
-  // Reject short/garbage extracts
-  if (result.extract.length < 10) return;
+  // Reject short/garbage extracts and raw dumps (not clean rules)
+  if (result.extract.length < 10 || result.extract.length > 200) return;
 
   // Corrections and preferences need high confidence; others need moderate
   if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) return;

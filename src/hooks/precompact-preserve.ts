@@ -14,10 +14,11 @@ import {
   hookLog,
   readTranscriptTail,
   extractTextFromEntry,
+  isUserEntry,
 } from './shared';
 
 const MAX_STORE = 5;
-const MIN_CONFIDENCE = 0.5;
+const MIN_CONFIDENCE = 0.6;
 
 export async function handlePrecompactPreserve(input: any): Promise<void> {
   const transcriptPath: string = input?.transcript_path ?? '';
@@ -33,9 +34,10 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
     return;
   }
 
-  // Extract all texts, filter, then batch-classify in one API call
+  // Extract user-only texts, filter, then batch-classify in one API call
   const textsWithIndex: { text: string; idx: number }[] = [];
   for (let i = 0; i < entries.length; i++) {
+    if (!isUserEntry(entries[i])) continue;
     const text = extractTextFromEntry(entries[i]);
     if (text && text.length >= 10 && text.length <= 2000) {
       textsWithIndex.push({ text, idx: i });
@@ -55,6 +57,7 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
 
     const result = results[i];
     if (!result) continue;
+    if (result.extract.length < 10 || result.extract.length > 200) continue;
     if (result.confidence < MIN_CONFIDENCE) continue;
 
     // Dedup

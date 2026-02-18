@@ -14,6 +14,7 @@ import {
   hookLog,
   readTranscriptTail,
   extractTextFromEntry,
+  isUserEntry,
 } from './shared';
 
 const MAX_STORE = 3;
@@ -32,9 +33,10 @@ export async function handleMemoryStop(input: any): Promise<void> {
     return;
   }
 
-  // Extract all texts, filter, then batch-classify in one API call
+  // Extract user-only texts, filter, then batch-classify in one API call
   const textsWithIndex: { text: string; idx: number }[] = [];
   for (let i = 0; i < entries.length; i++) {
+    if (!isUserEntry(entries[i])) continue;
     const text = extractTextFromEntry(entries[i]);
     if (text && text.length >= 10 && text.length <= 2000) {
       textsWithIndex.push({ text, idx: i });
@@ -54,6 +56,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
     const result = results[i];
     if (!result) continue;
+
+    // Reject extracts that are too short or too long (not clean rules)
+    if (result.extract.length < 10 || result.extract.length > 200) continue;
 
     // Corrections and preferences need higher confidence
     if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) continue;
