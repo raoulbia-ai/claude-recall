@@ -328,8 +328,18 @@ export class MemoryTools {
         { tool: 'load_rules', tokenMetrics: { resultTokens, tokensSaved: totalRules > 0 ? totalRules * 200 : 0 } }
       );
 
+      let rulesText: string;
+      if (sections.length > 0) {
+        const body = sections.join('\n\n');
+        rulesText = directive
+          ? `${directive}\n\n---\n\n${body}`
+          : body;
+      } else {
+        rulesText = 'No active rules found. This may be a new project.';
+      }
+
       return {
-        rules: sections.length > 0 ? sections.join('\n\n') : 'No active rules found. This may be a new project.',
+        rules: rulesText,
         counts: {
           preferences: rules.preferences.length,
           corrections: rules.corrections.length,
@@ -338,7 +348,6 @@ export class MemoryTools {
           total: totalRules
         },
         summary: rules.summary,
-        ...(directive && { _directive: directive })
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to load rules', error);
