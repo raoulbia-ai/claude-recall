@@ -312,6 +312,17 @@ export class MemoryTools {
         }).join('\n'));
       }
 
+      // Add compliance section for rules loaded frequently but never cited
+      const compliance = this.memoryService.getComplianceReport(projectId || context.projectId);
+      const lowCompliance = compliance.rules.filter(r => r.load_count >= 5 && r.cite_count === 0);
+      if (lowCompliance.length > 0) {
+        sections.push('## Rule Health\nThese rules are loaded frequently but never cited — consider rewording or removing:\n' +
+          lowCompliance.map(r => {
+            const val = typeof r.value === 'string' ? (JSON.parse(r.value)?.content || r.value) : r.value;
+            return `- "${String(val).substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
+          }).join('\n'));
+      }
+
       const totalRules = rules.preferences.length + rules.corrections.length +
         rules.failures.length + rules.devops.length;
 

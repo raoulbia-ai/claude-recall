@@ -25,6 +25,23 @@ export interface ActiveRules {
   summary: string;
 }
 
+export interface ComplianceRule {
+  key: string;
+  type: string;
+  value: string;
+  load_count: number;
+  cite_count: number;
+}
+
+export interface ComplianceReport {
+  rules: ComplianceRule[];
+  summary: {
+    totalLoaded: number;
+    totalCited: number;
+    neverCited: number;
+  };
+}
+
 export interface MemoryStoreRequest {
   key: string;
   value: any;
@@ -455,11 +472,57 @@ export class MemoryService {
 
       this.logger.info('MemoryService', summary, { projectId: pid });
 
+      // Increment load_count for all returned rules
+      const allIds = [
+        ...preferences, ...corrections, ...failures, ...devops
+      ].map(m => m.id).filter((id): id is number => id !== undefined);
+      if (allIds.length > 0) {
+        this.storage.incrementLoadCounts(allIds);
+      }
+
       return { preferences, corrections, failures, devops, summary };
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'loadActiveRules', error as Error);
       return { preferences: [], corrections: [], failures: [], devops: [], summary: 'Error loading rules' };
     }
+  }
+
+  /**
+   * Increment cite_count for a rule matched by key.
+   * Called by the citation scanner in the stop hook.
+   */
+  incrementCiteCount(key: string): void {
+    const memory = this.storage.retrieve(key);
+    if (memory?.id) {
+      this.storage.incrementCiteCount(memory.id);
+    }
+  }
+
+  /**
+   * Get compliance report showing load vs cite rates for rules.
+   */
+  getComplianceReport(projectId?: string): ComplianceReport {
+    const pid = projectId || this.config.getProjectId();
+    const rules = this.storage.getRulesWithCompliance(pid);
+
+    const loaded = rules.filter(r => r.load_count > 0);
+    const cited = loaded.filter(r => r.cite_count > 0);
+    const neverCited = loaded.filter(r => r.load_count >= 5 && r.cite_count === 0);
+
+    return {
+      rules: rules.map(r => ({
+        key: r.key,
+        type: r.type,
+        value: r.value,
+        load_count: r.load_count,
+        cite_count: r.cite_count
+      })),
+      summary: {
+        totalLoaded: loaded.length,
+        totalCited: cited.length,
+        neverCited: neverCited.length
+      }
+    };
   }
 
   /**

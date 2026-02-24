@@ -106,6 +106,20 @@ export class MemoryStorage {
         console.log('✅ Added scope column');
       }
 
+      // Add load_count if missing (compliance tracking v0.15.14)
+      if (!columnNames.includes('load_count')) {
+        console.log('📋 Migrating database schema: Adding load_count column...');
+        this.db.exec('ALTER TABLE memories ADD COLUMN load_count INTEGER DEFAULT 0');
+        console.log('✅ Added load_count column');
+      }
+
+      // Add cite_count if missing (compliance tracking v0.15.14)
+      if (!columnNames.includes('cite_count')) {
+        console.log('📋 Migrating database schema: Adding cite_count column...');
+        this.db.exec('ALTER TABLE memories ADD COLUMN cite_count INTEGER DEFAULT 0');
+        console.log('✅ Added cite_count column');
+      }
+
       // Add content_hash if missing (content dedup)
       if (!columnNames.includes('content_hash')) {
         console.log('📋 Migrating database schema: Adding content_hash column...');
@@ -456,6 +470,52 @@ export class MemoryStorage {
     const rows = stmt.all(...params) as any[];
     
     return rows.map(row => this.rowToMemory(row));
+  }
+
+  /**
+   * Bulk-increment load_count for a set of memory IDs.
+   * Called when rules are loaded via load_rules.
+   */
+  incrementLoadCounts(ids: number[]): void {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    this.db.prepare(
+      `UPDATE memories SET load_count = load_count + 1 WHERE id IN (${placeholders})`
+    ).run(...ids);
+  }
+
+  /**
+   * Increment cite_count for a single memory by ID.
+   * Called when a citation is detected in the transcript.
+   */
+  incrementCiteCount(id: number): void {
+    this.db.prepare('UPDATE memories SET cite_count = cite_count + 1 WHERE id = ?').run(id);
+  }
+
+  /**
+   * Get rules with their compliance metrics (load_count, cite_count).
+   * Returns rules that have been loaded at least once.
+   */
+  getRulesWithCompliance(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number}> {
+    let query = 'SELECT id, key, type, value, load_count, cite_count FROM memories WHERE load_count > 0';
+    const params: any[] = [];
+
+    if (projectId) {
+      query += ' AND (project_id = ? OR scope = ? OR project_id IS NULL)';
+      params.push(projectId, 'universal');
+    }
+
+    query += ' ORDER BY load_count DESC';
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+    return rows.map(row => ({
+      id: row.id,
+      key: row.key,
+      type: row.type,
+      value: row.value,
+      load_count: row.load_count,
+      cite_count: row.cite_count
+    }));
   }
 
   getDatabase(): Database.Database {

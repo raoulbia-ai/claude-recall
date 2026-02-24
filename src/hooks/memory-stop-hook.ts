@@ -15,7 +15,9 @@ import {
   readTranscriptTail,
   extractTextFromEntry,
   isUserEntry,
+  jaccardSimilarity,
 } from './shared';
+import { MemoryService } from '../services/memory';
 
 const MAX_STORE = 3;
 
@@ -75,4 +77,59 @@ export async function handleMemoryStop(input: any): Promise<void> {
   }
 
   hookLog('memory-stop', `Session end: stored ${stored} memories from ${entries.length} entries`);
+
+  // Scan for citations in assistant messages to track compliance
+  scanForCitations(transcriptPath);
+}
+
+/**
+ * Scan transcript for (applied from memory: ...) citations and increment cite_count.
+ * Uses a wider window (last 50 entries) since citations appear throughout assistant responses.
+ */
+function scanForCitations(transcriptPath: string): void {
+  try {
+    const entries = readTranscriptTail(transcriptPath, 50);
+    if (entries.length === 0) return;
+
+    const citationRegex = /\(applied from memory:\s*(.+?)\)/g;
+    const citations: string[] = [];
+
+    for (const entry of entries) {
+      // Only scan assistant entries (opposite of isUserEntry)
+      if (isUserEntry(entry)) continue;
+      const text = extractTextFromEntry(entry);
+      if (!text) continue;
+
+      let match;
+      while ((match = citationRegex.exec(text)) !== null) {
+        citations.push(match[1].trim());
+      }
+    }
+
+    if (citations.length === 0) return;
+
+    hookLog('memory-stop', `Found ${citations.length} citation(s) in transcript`);
+
+    const memoryService = MemoryService.getInstance();
+
+    for (const cite of citations) {
+      // Search for rules that match this citation text
+      const existing = searchExisting(cite.substring(0, 100));
+      if (existing.length === 0) continue;
+
+      // Fuzzy-match: citations are often paraphrased, so use a looser threshold
+      for (const mem of existing) {
+        const memContent = typeof mem.value === 'string'
+          ? mem.value
+          : (mem.value?.content || JSON.stringify(mem.value));
+        if (jaccardSimilarity(cite, memContent) >= 0.5) {
+          memoryService.incrementCiteCount(mem.key);
+          hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${mem.key}`);
+          break; // One match per citation
+        }
+      }
+    }
+  } catch (error) {
+    hookLog('memory-stop', `Citation scan error: ${error}`);
+  }
 }

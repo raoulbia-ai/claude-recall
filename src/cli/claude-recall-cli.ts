@@ -84,6 +84,9 @@ class ClaudeRecallCLI {
     // Token Savings Estimate
     this.showTokenSavings(stats);
 
+    // Rule Compliance
+    this.showComplianceStats();
+
     console.log('\n');
     this.logger.info('CLI', 'Stats displayed', stats);
   }
@@ -180,6 +183,35 @@ class ClaudeRecallCLI {
     console.log('\n💰 Estimated Token Savings:');
     console.log(`  Total saved: ~${totalSavings.toLocaleString()} tokens`);
     console.log(`  (vs repeating preferences or loading all reference files)`);
+  }
+
+  /**
+   * Show rule compliance statistics
+   */
+  private showComplianceStats(): void {
+    const report = this.memoryService.getComplianceReport();
+    if (report.rules.length === 0) return;
+
+    console.log('\n📋 Rule Compliance:');
+    const loaded = report.rules.filter(r => r.load_count > 0);
+    const cited = loaded.filter(r => r.cite_count > 0);
+    console.log(`  Rules loaded at least once: ${loaded.length}`);
+    console.log(`  Rules cited at least once: ${cited.length}`);
+
+    const neverCited = loaded.filter(r => r.load_count >= 5 && r.cite_count === 0);
+    if (neverCited.length > 0) {
+      console.log(`  ⚠️  Never cited (loaded 5+ times): ${neverCited.length}`);
+      neverCited.slice(0, 3).forEach(r => {
+        let val: string;
+        try {
+          const parsed = JSON.parse(r.value);
+          val = parsed?.content || parsed?.value || r.value;
+        } catch {
+          val = r.value;
+        }
+        console.log(`     - "${String(val).substring(0, 60)}..." (loaded ${r.load_count}x)`);
+      });
+    }
   }
 
   /**
