@@ -8,7 +8,6 @@ Claude Recall maintains a registry of all projects using it.
 
 Each project gets:
 - a unique ID
-- a PubNub presence channel
 - its own memory namespace
 - its own context directory inside `~/.claude-recall/projects`
 
@@ -30,21 +29,6 @@ No user configuration needed.
 
 ---
 
-## Presence Channel
-
-Memory Agent publishes heartbeats:
-
-```
-claude-presence:<projectId>
-```
-
-Used to ensure:
-- at most one Agent per project
-- consistent event processing
-- clean agent shutdown
-
----
-
 ## Monorepos
 
 Claude Recall:
@@ -57,7 +41,6 @@ Claude Recall:
 ## Multi-Project Workflows
 
 Switching projects inside VSCode triggers:
-- PubNub presence update
 - registry notification
 - memory namespace change
 

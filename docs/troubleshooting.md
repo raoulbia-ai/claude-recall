@@ -26,43 +26,23 @@ nvm install 20
 
 ---
 
-## PubNub connection errors
-
-Symptoms:
-
-* Agent not receiving events
-* No memory suggestions
-* watch mode shows nothing
-
-Solution:
-
-* restart clamps
-* check network firewall
-* ensure project-specific keys exist in `~/.claude-recall/keys.json`
-
-PubNub uses outbound-only connections.
-
----
-
 ## Memory not updating
 
-Ensure the Memory Agent is running:
+Check MCP server status:
 
 ```bash
-npx claude-recall watch
-```
-
-Look for:
-
-```
-[agent] heartbeat ok
+npx claude-recall mcp status
 ```
 
 ---
 
 ## Hooks not firing
 
-Check `.claude/hooks/` directory exists.
+Check `.claude/hooks/` directory exists and `search_enforcer.py` is present:
+
+```bash
+npx claude-recall hooks check
+```
 
 ---
 

@@ -41,8 +41,6 @@ Claude Recall will:
 
 * capture the preference
 * store it locally in SQLite
-* route metadata via PubNub
-* evolve memory asynchronously
 * apply it the next time Claude generates tests
 
 ---

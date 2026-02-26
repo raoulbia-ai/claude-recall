@@ -7,10 +7,9 @@ Claude Recall uses a 5-phase learning process that improves over time.
 ## 1. Pre-Action Search
 Before Claude writes or edits a file:
 
-- Hook sends metadata to PubNub
-- Agent receives event
-- Searches SQLite memory
-- Sends relevant memories back
+- Hook enforces `load_rules` call
+- MCP server searches SQLite memory
+- Returns relevant rules to Claude
 
 Claude now knows:
 - your preferences

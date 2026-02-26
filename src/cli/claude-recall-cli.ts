@@ -600,7 +600,9 @@ async function main() {
     if (fs.existsSync(hooksDir)) {
       const oldHooks = [
         'memory_enforcer.py',  // Old v0.8.x hook
-        'search_enforcer.py',
+        // search_enforcer.py intentionally NOT listed — it's the current hook.
+        // copyFileSync overwrites it during install; deleting first risks leaving
+        // it missing if the copy source doesn't resolve (e.g. in the source project).
         'mcp_tool_tracker.py',
         'pubnub_pre_tool_hook.py',
         'pubnub_prompt_hook.py',

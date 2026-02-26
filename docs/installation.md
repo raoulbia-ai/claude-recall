@@ -1,7 +1,7 @@
 # Installation
 
 Claude Recall supports macOS, Linux, Windows, and WSL.
-Memory remains fully local (SQLite), while PubNub is used for lightweight realtime event metadata.
+Memory remains fully local (SQLite).
 
 ---
 
@@ -11,7 +11,6 @@ Memory remains fully local (SQLite), while PubNub is used for lightweight realti
 |----------|---------|-------|
 | Node.js | **20+** | Required (`better-sqlite3`) |
 | Python | **3.x** | Required for Claude Code hook scripts |
-| PubNub | Included via npm | Used only for metadata events |
 | Claude Code | Latest | Required for MCP integration |
 | OS | macOS / Linux / Windows | WSL supported |
 
@@ -100,8 +99,6 @@ If using Ubuntu under WSL2:
    npm install claude-recall
    ```
 3. Ensure VSCode's terminal is *also* WSL.
-
-PubNub works normally under WSL since it uses outbound-only secure connections.
 
 ---
 
