@@ -127,6 +127,12 @@ function scanForCitations(transcriptPath: string): void {
     const loadedRules = memoryService.getAllLoadedRules();
     hookLog('memory-stop', `Matching citations against ${loadedRules.length} loaded rules`);
 
+    // Log first 3 rules for diagnostics
+    for (let di = 0; di < Math.min(loadedRules.length, 3); di++) {
+      const r = loadedRules[di];
+      hookLog('memory-stop', `Rule[${di}] key=${r.key} type=${r.type} valType=${typeof r.value} val="${String(r.value).substring(0, 100)}"`);
+    }
+
     for (const cite of citations) {
       hookLog('memory-stop', `Citation text: "${cite.substring(0, 80)}"`);
 
@@ -136,23 +142,13 @@ function scanForCitations(transcriptPath: string): void {
 
       for (const rule of loadedRules) {
         // Extract clean text content — value may be JSON string with content/value fields
-        let ruleContent: string;
-        if (typeof rule.value === 'string') {
-          try {
-            const parsed = JSON.parse(rule.value);
-            ruleContent = parsed?.content ?? parsed?.value ?? rule.value;
-          } catch {
-            ruleContent = rule.value;
-          }
-        } else {
-          ruleContent = String(rule.value);
-        }
+        const ruleContent = extractRuleContent(rule.value);
 
         const score = jaccardSimilarity(cite, ruleContent);
         if (score > bestScore) {
           bestScore = score;
           bestKey = rule.key;
-          bestContent = String(ruleContent).substring(0, 60);
+          bestContent = ruleContent.substring(0, 60);
         }
       }
 
@@ -168,4 +164,29 @@ function scanForCitations(transcriptPath: string): void {
   } catch (error) {
     hookLog('memory-stop', `Citation scan error: ${error}`);
   }
+}
+
+/**
+ * Extract plain text content from a rule value (may be JSON string, object, or plain string).
+ */
+function extractRuleContent(value: any): string {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed === 'string') return parsed;
+      if (typeof parsed?.content === 'string') return parsed.content;
+      if (typeof parsed?.value === 'string') return parsed.value;
+      // content might be an object — stringify it
+      if (parsed?.content) return JSON.stringify(parsed.content);
+      return value;
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (typeof value.content === 'string') return value.content;
+    if (typeof value.value === 'string') return value.value;
+    return JSON.stringify(value);
+  }
+  return String(value ?? '');
 }
