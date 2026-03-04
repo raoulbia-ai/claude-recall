@@ -123,9 +123,8 @@ function scanForCitations(transcriptPath: string): void {
 
     const memoryService = MemoryService.getInstance();
 
-    // Get all loaded rules directly — avoids keyword search returning wrong candidates
-    const report = memoryService.getComplianceReport();
-    const loadedRules = report.rules;
+    // Get all loaded rules across all projects — citations may reference rules from any project
+    const loadedRules = memoryService.getAllLoadedRules();
     hookLog('memory-stop', `Matching citations against ${loadedRules.length} loaded rules`);
 
     for (const cite of citations) {

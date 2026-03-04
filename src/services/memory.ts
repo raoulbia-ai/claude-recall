@@ -499,6 +499,14 @@ export class MemoryService {
   }
 
   /**
+   * Get all loaded rules across all projects (no project filter).
+   * Used by citation scanner which needs to match against any rule Claude may have cited.
+   */
+  getAllLoadedRules(): Array<{key: string; type: string; value: string; load_count: number; cite_count: number}> {
+    return this.storage.getRulesWithCompliance();
+  }
+
+  /**
    * Get compliance report showing load vs cite rates for rules.
    */
   getComplianceReport(projectId?: string): ComplianceReport {
