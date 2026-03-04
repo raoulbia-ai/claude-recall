@@ -15,7 +15,6 @@ import {
   readTranscriptTail,
   extractTextFromEntry,
   isUserEntry,
-  jaccardSimilarity,
 } from './shared';
 import { MemoryService } from '../services/memory';
 
@@ -138,7 +137,7 @@ function scanForCitations(transcriptPath: string): void {
         // Extract clean text content — value may be JSON string with content/value fields
         const ruleContent = extractRuleContent(rule.value);
 
-        const score = jaccardSimilarity(cite, ruleContent);
+        const score = citationContainment(cite, ruleContent);
         if (score > bestScore) {
           bestScore = score;
           bestKey = rule.key;
@@ -146,11 +145,11 @@ function scanForCitations(transcriptPath: string): void {
         }
       }
 
-      hookLog('memory-stop', `Best match: "${bestContent}" jaccard=${bestScore.toFixed(3)} key=${bestKey}`);
+      hookLog('memory-stop', `Best match: "${bestContent}" containment=${bestScore.toFixed(3)} key=${bestKey}`);
 
-      if (bestScore >= 0.3) {
+      if (bestScore >= 0.5) {
         memoryService.incrementCiteCount(bestKey);
-        hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (jaccard=${bestScore.toFixed(3)})`);
+        hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (containment=${bestScore.toFixed(3)})`);
       } else {
         hookLog('memory-stop', `No match found for citation (best=${bestScore.toFixed(3)})`);
       }
@@ -158,6 +157,23 @@ function scanForCitations(transcriptPath: string): void {
   } catch (error) {
     hookLog('memory-stop', `Citation scan error: ${error}`);
   }
+}
+
+/**
+ * What fraction of the citation's tokens appear in the rule text?
+ * Better than Jaccard for short citations matching long rules.
+ */
+function citationContainment(citation: string, ruleText: string): number {
+  const tokenize = (s: string) =>
+    new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean));
+  const citeTokens = tokenize(citation);
+  const ruleTokens = tokenize(ruleText);
+  if (citeTokens.size === 0) return 0;
+  let found = 0;
+  for (const w of citeTokens) {
+    if (ruleTokens.has(w)) found++;
+  }
+  return found / citeTokens.size;
 }
 
 /**
