@@ -17,6 +17,8 @@ import {
   isUserEntry,
 } from './shared';
 import { MemoryService } from '../services/memory';
+import { ConfigService } from '../services/config';
+import { detectTranscriptFailures } from './failure-detectors';
 
 const MAX_STORE = 3;
 
@@ -81,6 +83,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
   // Scan for citations in assistant messages to track compliance
   scanForCitations(transcriptPath);
+
+  // Scan transcript for failure signals (non-zero exits, test cycles, backtracking, etc.)
+  detectAndStoreFailures(transcriptPath);
 }
 
 /**
@@ -199,4 +204,63 @@ function extractRuleContent(value: any): string {
     return JSON.stringify(value);
   }
   return String(value ?? '');
+}
+
+/**
+ * Scan the last 200 transcript entries for failure signals and store up to 3.
+ */
+function detectAndStoreFailures(transcriptPath: string): void {
+  try {
+    const entries = readTranscriptTail(transcriptPath, 200);
+    if (entries.length === 0) {
+      hookLog('memory-stop', '[FailureDetector] No entries to scan');
+      return;
+    }
+
+    const failures = detectTranscriptFailures(entries);
+    if (failures.length === 0) {
+      hookLog('memory-stop', '[FailureDetector] No failure signals detected');
+      return;
+    }
+
+    hookLog('memory-stop', `[FailureDetector] Detected ${failures.length} failure signal(s)`);
+
+    const projectId = ConfigService.getInstance().getProjectId();
+    let stored = 0;
+
+    for (const failure of failures) {
+      // Dedup against existing failure memories
+      const searchQuery = failure.content.what_failed.substring(0, 100);
+      const existing = searchExisting(searchQuery);
+      if (isDuplicate(failure.content.what_failed, existing, 0.6)) {
+        hookLog('memory-stop', `[FailureDetector] Skipped duplicate: ${failure.signal}`);
+        continue;
+      }
+
+      const key = `hook_failure_${failure.signal}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const memoryService = MemoryService.getInstance();
+
+      memoryService.store({
+        key,
+        value: {
+          title: `Avoid: ${failure.content.what_failed.substring(0, 50)}`,
+          description: failure.content.why_failed.substring(0, 100),
+          content: failure.content,
+        },
+        type: 'failure',
+        context: {
+          projectId: projectId,
+          timestamp: Date.now(),
+        },
+        relevanceScore: failure.confidence,
+      });
+
+      stored++;
+      hookLog('memory-stop', `[FailureDetector] Stored ${failure.signal}: ${failure.content.what_failed.substring(0, 80)}`);
+    }
+
+    hookLog('memory-stop', `[FailureDetector] Stored ${stored} failure(s) from ${failures.length} detected`);
+  } catch (error) {
+    hookLog('memory-stop', `[FailureDetector] Error: ${error}`);
+  }
 }

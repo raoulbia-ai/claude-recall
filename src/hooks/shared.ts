@@ -225,6 +225,115 @@ export function isUserEntry(entry: any): boolean {
  * Extract readable text from a transcript JSONL entry.
  * Handles various shapes: assistant messages, user messages, tool results, etc.
  */
+// --- Transcript tool interaction types and helpers ---
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: any;
+  entryIndex: number;
+}
+
+export interface ToolResult {
+  toolUseId: string;
+  content: string;
+  isError: boolean;
+  entryIndex: number;
+}
+
+export interface ToolInteraction {
+  call: ToolCall;
+  result: ToolResult | null;
+}
+
+/**
+ * Extract tool_use blocks from an assistant entry.
+ */
+export function extractToolCalls(entry: any, entryIndex: number): ToolCall[] {
+  const content = entry?.message?.content ?? entry?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block: any) => block.type === 'tool_use')
+    .map((block: any) => ({
+      id: block.id,
+      name: block.name,
+      input: block.input,
+      entryIndex,
+    }));
+}
+
+/**
+ * Extract tool_result blocks from a user entry.
+ */
+export function extractToolResults(entry: any, entryIndex: number): ToolResult[] {
+  const content = entry?.message?.content ?? entry?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((block: any) => block.type === 'tool_result')
+    .map((block: any) => {
+      let text = '';
+      if (typeof block.content === 'string') {
+        text = block.content;
+      } else if (Array.isArray(block.content)) {
+        text = block.content
+          .filter((c: any) => c.type === 'text' && typeof c.text === 'string')
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+      return {
+        toolUseId: block.tool_use_id,
+        content: text,
+        isError: block.is_error === true,
+        entryIndex,
+      };
+    });
+}
+
+/**
+ * Pair tool calls with their results by tool_use_id.
+ */
+export function extractToolInteractions(entries: object[]): ToolInteraction[] {
+  const calls: ToolCall[] = [];
+  const results = new Map<string, ToolResult>();
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i] as any;
+    const role = entry?.message?.role ?? entry?.role;
+    if (role === 'assistant') {
+      calls.push(...extractToolCalls(entry, i));
+    } else if (role === 'user') {
+      for (const r of extractToolResults(entry, i)) {
+        results.set(r.toolUseId, r);
+      }
+    }
+  }
+
+  return calls.map((call) => ({
+    call,
+    result: results.get(call.id) ?? null,
+  }));
+}
+
+/**
+ * Extract text blocks from assistant entries.
+ */
+export function extractAssistantTexts(entries: object[]): { text: string; entryIndex: number }[] {
+  const texts: { text: string; entryIndex: number }[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i] as any;
+    const role = entry?.message?.role ?? entry?.role;
+    if (role !== 'assistant') continue;
+    const content = entry?.message?.content ?? entry?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+        texts.push({ text: block.text, entryIndex: i });
+      }
+    }
+  }
+  return texts;
+}
+
 export function extractTextFromEntry(entry: any): string {
   if (!entry) return '';
 
