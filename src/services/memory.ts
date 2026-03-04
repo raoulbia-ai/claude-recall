@@ -500,10 +500,17 @@ export class MemoryService {
 
   /**
    * Get all loaded rules across all projects (no project filter).
-   * Used by citation scanner which needs to match against any rule Claude may have cited.
    */
   getAllLoadedRules(): Array<{key: string; type: string; value: string; load_count: number; cite_count: number}> {
     return this.storage.getRulesWithCompliance();
+  }
+
+  /**
+   * Get all rule-type memories for citation matching (no load_count filter).
+   * Citations may reference rules that weren't loaded via load_rules (e.g. from CLAUDE.md/Skills).
+   */
+  getAllRulesForCitationMatching(): Array<{key: string; type: string; value: string; load_count: number; cite_count: number}> {
+    return this.storage.getAllRulesForCitationMatching();
   }
 
   /**

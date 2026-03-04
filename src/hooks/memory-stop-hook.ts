@@ -123,15 +123,9 @@ function scanForCitations(transcriptPath: string): void {
 
     const memoryService = MemoryService.getInstance();
 
-    // Get all loaded rules across all projects — citations may reference rules from any project
-    const loadedRules = memoryService.getAllLoadedRules();
-    hookLog('memory-stop', `Matching citations against ${loadedRules.length} loaded rules`);
-
-    // Log first 3 rules for diagnostics
-    for (let di = 0; di < Math.min(loadedRules.length, 3); di++) {
-      const r = loadedRules[di];
-      hookLog('memory-stop', `Rule[${di}] key=${r.key} type=${r.type} valType=${typeof r.value} val="${String(r.value).substring(0, 100)}"`);
-    }
+    // Get ALL rule-type memories — citations may reference rules not loaded via load_rules
+    const allRules = memoryService.getAllRulesForCitationMatching();
+    hookLog('memory-stop', `Matching citations against ${allRules.length} rules`);
 
     for (const cite of citations) {
       hookLog('memory-stop', `Citation text: "${cite.substring(0, 80)}"`);
@@ -140,7 +134,7 @@ function scanForCitations(transcriptPath: string): void {
       let bestKey = '';
       let bestContent = '';
 
-      for (const rule of loadedRules) {
+      for (const rule of allRules) {
         // Extract clean text content — value may be JSON string with content/value fields
         const ruleContent = extractRuleContent(rule.value);
 

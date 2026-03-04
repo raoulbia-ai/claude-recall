@@ -518,6 +518,26 @@ export class MemoryStorage {
     }));
   }
 
+  /**
+   * Get all rule-type memories for citation matching (no load_count filter).
+   * Used when matching citations against any stored memory, not just loaded ones.
+   */
+  getAllRulesForCitationMatching(): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number}> {
+    const rows = this.db.prepare(
+      `SELECT id, key, type, value, load_count, cite_count FROM memories
+       WHERE type IN ('preference', 'correction', 'devops', 'project-knowledge')
+       ORDER BY load_count DESC`
+    ).all() as any[];
+    return rows.map(row => ({
+      id: row.id,
+      key: row.key,
+      type: row.type,
+      value: row.value,
+      load_count: row.load_count ?? 0,
+      cite_count: row.cite_count ?? 0
+    }));
+  }
+
   getDatabase(): Database.Database {
     return this.db;
   }
