@@ -89,22 +89,31 @@ export async function handleMemoryStop(input: any): Promise<void> {
 function scanForCitations(transcriptPath: string): void {
   try {
     const entries = readTranscriptTail(transcriptPath, 50);
-    if (entries.length === 0) return;
+    if (entries.length === 0) {
+      hookLog('memory-stop', 'Citation scan: no entries in transcript tail');
+      return;
+    }
 
     const citationRegex = /\(applied from memory:\s*(.+?)\)/g;
     const citations: string[] = [];
+    let assistantEntries = 0;
+    let textsExtracted = 0;
 
     for (const entry of entries) {
       // Only scan assistant entries (opposite of isUserEntry)
       if (isUserEntry(entry)) continue;
+      assistantEntries++;
       const text = extractTextFromEntry(entry);
       if (!text) continue;
+      textsExtracted++;
 
       let match;
       while ((match = citationRegex.exec(text)) !== null) {
         citations.push(match[1].trim());
       }
     }
+
+    hookLog('memory-stop', `Citation scan: ${entries.length} entries, ${assistantEntries} assistant, ${textsExtracted} with text, ${citations.length} citations`);
 
     if (citations.length === 0) return;
 
