@@ -651,7 +651,12 @@ async function main() {
       }
     }
 
-    settings.hooksVersion = '5.0.0';  // v5 = match all tools so enforcer gates first tool call of any type
+    // Resolve the CLI script path so hooks use the local install instead of npx.
+    // This avoids registry lookups on every hook invocation.
+    const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
+    const hookCmd = `node ${cliScript} hook run`;
+
+    settings.hooksVersion = '6.0.0';  // v6 = local node path instead of npx for hooks
     settings.hooks = {
       PreToolUse: [
         {
@@ -669,7 +674,7 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: "npx claude-recall@latest hook run correction-detector"
+              command: `${hookCmd} correction-detector`
             }
           ]
         }
@@ -679,7 +684,7 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: "npx claude-recall@latest hook run memory-stop",
+              command: `${hookCmd} memory-stop`,
               timeout: 30
             }
           ]
@@ -690,7 +695,7 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: "npx claude-recall@latest hook run precompact-preserve",
+              command: `${hookCmd} precompact-preserve`,
               timeout: 60
             }
           ]
