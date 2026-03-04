@@ -123,41 +123,47 @@ function scanForCitations(transcriptPath: string): void {
 
     const memoryService = MemoryService.getInstance();
 
+    // Get all loaded rules directly — avoids keyword search returning wrong candidates
+    const report = memoryService.getComplianceReport();
+    const loadedRules = report.rules;
+    hookLog('memory-stop', `Matching citations against ${loadedRules.length} loaded rules`);
+
     for (const cite of citations) {
       hookLog('memory-stop', `Citation text: "${cite.substring(0, 80)}"`);
 
-      // Search for rules that match this citation text
-      const existing = searchExisting(cite.substring(0, 100));
-      hookLog('memory-stop', `Search returned ${existing.length} candidates`);
-      if (existing.length === 0) continue;
+      let bestScore = 0;
+      let bestKey = '';
+      let bestContent = '';
 
-      // Fuzzy-match: citations are often paraphrased, so use a looser threshold
-      let matched = false;
-      for (let mi = 0; mi < Math.min(existing.length, 3); mi++) {
-        const mem = existing[mi];
-        // Extract clean text content — value may be object with content/value fields
-        let memContent: string;
-        if (typeof mem.value === 'string') {
-          memContent = mem.value;
-        } else if (mem.value?.content && typeof mem.value.content === 'string') {
-          memContent = mem.value.content;
-        } else if (mem.value?.value && typeof mem.value.value === 'string') {
-          memContent = mem.value.value;
+      for (const rule of loadedRules) {
+        // Extract clean text content — value may be JSON string with content/value fields
+        let ruleContent: string;
+        if (typeof rule.value === 'string') {
+          try {
+            const parsed = JSON.parse(rule.value);
+            ruleContent = parsed?.content ?? parsed?.value ?? rule.value;
+          } catch {
+            ruleContent = rule.value;
+          }
         } else {
-          memContent = JSON.stringify(mem.value);
+          ruleContent = String(rule.value);
         }
-        const score = jaccardSimilarity(cite, memContent);
-        // Always log first 3 candidates for diagnostics
-        hookLog('memory-stop', `Candidate #${mi}: "${String(memContent).substring(0, 60)}" jaccard=${score.toFixed(3)}`);
-        if (score >= 0.4) {
-          memoryService.incrementCiteCount(mem.key);
-          hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${mem.key} (jaccard=${score.toFixed(3)})`);
-          matched = true;
-          break; // One match per citation
+
+        const score = jaccardSimilarity(cite, ruleContent);
+        if (score > bestScore) {
+          bestScore = score;
+          bestKey = rule.key;
+          bestContent = String(ruleContent).substring(0, 60);
         }
       }
-      if (!matched) {
-        hookLog('memory-stop', `No match found for citation (best candidates logged above)`);
+
+      hookLog('memory-stop', `Best match: "${bestContent}" jaccard=${bestScore.toFixed(3)} key=${bestKey}`);
+
+      if (bestScore >= 0.3) {
+        memoryService.incrementCiteCount(bestKey);
+        hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (jaccard=${bestScore.toFixed(3)})`);
+      } else {
+        hookLog('memory-stop', `No match found for citation (best=${bestScore.toFixed(3)})`);
       }
     }
   } catch (error) {
