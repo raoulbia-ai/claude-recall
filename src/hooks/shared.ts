@@ -97,8 +97,11 @@ export async function classifyBatch(texts: string[]): Promise<(ClassifyResult | 
  * Word-level Jaccard similarity coefficient.
  */
 export function jaccardSimilarity(a: string, b: string): number {
-  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean));
-  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
+  // Tokenize: lowercase, replace non-alphanumeric with spaces, split on whitespace
+  const tokenize = (s: string) =>
+    new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean));
+  const wordsA = tokenize(a);
+  const wordsB = tokenize(b);
   if (wordsA.size === 0 && wordsB.size === 0) return 1;
   if (wordsA.size === 0 || wordsB.size === 0) return 0;
 
