@@ -124,20 +124,32 @@ function scanForCitations(transcriptPath: string): void {
     const memoryService = MemoryService.getInstance();
 
     for (const cite of citations) {
+      hookLog('memory-stop', `Citation text: "${cite.substring(0, 80)}"`);
+
       // Search for rules that match this citation text
       const existing = searchExisting(cite.substring(0, 100));
+      hookLog('memory-stop', `Search returned ${existing.length} candidates`);
       if (existing.length === 0) continue;
 
       // Fuzzy-match: citations are often paraphrased, so use a looser threshold
+      let matched = false;
       for (const mem of existing) {
         const memContent = typeof mem.value === 'string'
           ? mem.value
           : (mem.value?.content || JSON.stringify(mem.value));
-        if (jaccardSimilarity(cite, memContent) >= 0.5) {
+        const score = jaccardSimilarity(cite, memContent);
+        if (score >= 0.3) {
+          hookLog('memory-stop', `Candidate "${String(memContent).substring(0, 50)}" jaccard=${score.toFixed(3)}`);
+        }
+        if (score >= 0.5) {
           memoryService.incrementCiteCount(mem.key);
-          hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${mem.key}`);
+          hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${mem.key} (jaccard=${score.toFixed(3)})`);
+          matched = true;
           break; // One match per citation
         }
+      }
+      if (!matched) {
+        hookLog('memory-stop', `No match found for citation (best candidates logged above)`);
       }
     }
   } catch (error) {
