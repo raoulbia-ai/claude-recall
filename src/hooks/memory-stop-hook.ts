@@ -133,15 +133,23 @@ function scanForCitations(transcriptPath: string): void {
 
       // Fuzzy-match: citations are often paraphrased, so use a looser threshold
       let matched = false;
-      for (const mem of existing) {
-        const memContent = typeof mem.value === 'string'
-          ? mem.value
-          : (mem.value?.content || JSON.stringify(mem.value));
-        const score = jaccardSimilarity(cite, memContent);
-        if (score >= 0.3) {
-          hookLog('memory-stop', `Candidate "${String(memContent).substring(0, 50)}" jaccard=${score.toFixed(3)}`);
+      for (let mi = 0; mi < Math.min(existing.length, 3); mi++) {
+        const mem = existing[mi];
+        // Extract clean text content — value may be object with content/value fields
+        let memContent: string;
+        if (typeof mem.value === 'string') {
+          memContent = mem.value;
+        } else if (mem.value?.content && typeof mem.value.content === 'string') {
+          memContent = mem.value.content;
+        } else if (mem.value?.value && typeof mem.value.value === 'string') {
+          memContent = mem.value.value;
+        } else {
+          memContent = JSON.stringify(mem.value);
         }
-        if (score >= 0.5) {
+        const score = jaccardSimilarity(cite, memContent);
+        // Always log first 3 candidates for diagnostics
+        hookLog('memory-stop', `Candidate #${mi}: "${String(memContent).substring(0, 60)}" jaccard=${score.toFixed(3)}`);
+        if (score >= 0.4) {
           memoryService.incrementCiteCount(mem.key);
           hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${mem.key} (jaccard=${score.toFixed(3)})`);
           matched = true;
