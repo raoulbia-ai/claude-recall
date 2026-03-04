@@ -47,6 +47,8 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
   if (textsWithIndex.length === 0) {
     hookLog('memory-stop', 'No classifiable text in transcript entries');
+    // Still scan for citations — assistant messages may contain them
+    scanForCitations(transcriptPath);
     return;
   }
 
