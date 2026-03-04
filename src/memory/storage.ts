@@ -497,7 +497,7 @@ export class MemoryStorage {
    * Returns rules that have been loaded at least once.
    */
   getRulesWithCompliance(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number}> {
-    let query = 'SELECT id, key, type, value, load_count, cite_count FROM memories WHERE load_count > 0';
+    let query = 'SELECT id, key, type, value, load_count, cite_count FROM memories WHERE (load_count > 0 OR cite_count > 0)';
     const params: any[] = [];
 
     if (projectId) {
