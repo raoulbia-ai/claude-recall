@@ -8,10 +8,16 @@ describe('Claude Code MCP Integration', () => {
   let mcpProcess: any;
   let client: MCPTestClient;
   const activeProcesses: any[] = [];
+  let testDbDir: string;
 
   beforeAll(async () => {
-    // Start MCP server
-    mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start']);
+    // Use a temporary directory so test data never pollutes the production DB
+    testDbDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-recall-test-'));
+
+    // Start MCP server pointed at the temp DB
+    mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start'], {
+      env: { ...process.env, CLAUDE_RECALL_DB_PATH: testDbDir },
+    });
     client = new MCPTestClient();
     await client.connect();
   });
@@ -44,6 +50,11 @@ describe('Claude Code MCP Integration', () => {
       } catch (e) {
         // Already dead
       }
+    }
+
+    // Clean up temp DB directory
+    if (testDbDir) {
+      await fs.rm(testDbDir, { recursive: true, force: true }).catch(() => {});
     }
   });
 
@@ -167,10 +178,12 @@ describe('Claude Code MCP Integration', () => {
         }
       });
 
-      // Restart server
+      // Restart server (same temp DB)
       mcpProcess.kill('SIGTERM');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start']);
+      mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start'], {
+        env: { ...process.env, CLAUDE_RECALL_DB_PATH: testDbDir },
+      });
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait for startup
       await client.reconnect();
 

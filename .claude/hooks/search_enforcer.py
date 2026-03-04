@@ -112,17 +112,25 @@ def main():
         save_state(session_id, state)
         sys.exit(0)
 
-    # Only enforce on specific tools
-    if tool_name not in ENFORCE_TOOLS:
-        sys.exit(0)
-
-    # Skip read-only bash
-    if tool_name == 'Bash' and is_read_only_bash(tool_input.get('command', '')):
-        sys.exit(0)
-
-    # Check if search was recent
+    # Check state to see if rules have ever been loaded this session
     state = load_state(session_id)
     last_search = state.get('lastSearchAt')
+
+    # FIRST TOOL CALL GATE: If rules have never been loaded this session,
+    # block on ANY tool call (not just mutations). This ensures Claude loads
+    # rules before forming opinions from Read/Glob/Grep exploration.
+    if not last_search:
+        # Allow search tools themselves (already handled above), and
+        # skip non-enforced tools only AFTER first load
+        pass  # Fall through to blocking logic below
+    else:
+        # Rules loaded at least once — only enforce on mutation tools
+        if tool_name not in ENFORCE_TOOLS:
+            sys.exit(0)
+
+        # Skip read-only bash
+        if tool_name == 'Bash' and is_read_only_bash(tool_input.get('command', '')):
+            sys.exit(0)
 
     if last_search:
         now = int(datetime.now().timestamp() * 1000)

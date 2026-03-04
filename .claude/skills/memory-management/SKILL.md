@@ -18,7 +18,13 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 ## When to Use
 
-- **Starting any task** - Call `load_rules` before Write, Edit, or significant Bash operations
+### Loading (Recall)
+- **First action of every session** — Call `load_rules` before ANY tool call, including Read/Glob/Grep. Rules must inform exploration, not just editing.
+- **After context compression** — If context was compressed or conversation is long, call `load_rules` again. Earlier rules may have been lost.
+- **Switching task areas** — When moving from one domain to another (e.g., tests → database → CI), call `search_memory` with the new area as query.
+- **Before modifying a file** — Call `search_memory` with the file path or module name to check for file-specific conventions.
+
+### Storing (Capture)
 - **When user corrects your work** - Call `store_memory` with `metadata.type: "correction"`
 - **When user mentions preferences** - Call `store_memory` with `metadata.type: "preference"`
 - **After overcoming a challenge** - Call `store_memory` with `metadata.type: "failure"`
@@ -26,7 +32,7 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 ## Key Directives
 
-1. **ALWAYS load rules before acting** — Call `load_rules` before Write, Edit, or significant Bash operations
+1. **ALWAYS load rules before acting** — Call `load_rules` as your very first action in a session, before even reading files. Rules inform how you explore, not just how you edit.
 2. **ACT on loaded rules** — After loading, state which rules apply to your current task before proceeding. If a rule conflicts with your plan, follow the rule. If none apply, say so. Loading without applying is the same as not loading.
 3. **Cite applied rules inline** — When a rule influences your work: (applied from memory: <rule>)
 4. **Ask before storing** — Before calling `store_memory`, tell the user what you plan to store and ask for confirmation
