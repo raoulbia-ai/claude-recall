@@ -170,7 +170,7 @@ try {
       settings.hooks = {
         PreToolUse: [
           {
-            matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
+            matcher: ".*",
             hooks: [
               {
                 type: "command",

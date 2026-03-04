@@ -651,11 +651,11 @@ async function main() {
       }
     }
 
-    settings.hooksVersion = '4.0.0';  // v4 = hybrid (skill + enforcement hook + auto-capture hooks)
+    settings.hooksVersion = '5.0.0';  // v5 = match all tools so enforcer gates first tool call of any type
     settings.hooks = {
       PreToolUse: [
         {
-          matcher: "mcp__claude-recall__.*|Write|Edit|Bash|Task",
+          matcher: ".*",
           hooks: [
             {
               type: "command",
