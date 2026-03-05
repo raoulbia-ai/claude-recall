@@ -165,9 +165,15 @@ Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `
 ## Security & Privacy
 
 - SQLite memory never leaves your machine
-- No prompts, code, or memory content is transmitted
+- **Prompt classification**: When `ANTHROPIC_API_KEY` is available, user prompts
+  are sent to Claude Haiku (Anthropic's API) for memory classification. This uses
+  the same API key Claude Code already uses — no additional data sharing beyond
+  your existing Claude Code session. Disable by unsetting `ANTHROPIC_API_KEY` in
+  hooks; regex fallback activates automatically.
+- Stored memories (SQLite) are never transmitted
 - Full transparency via CLI (`stats`, `search`, `export`)
-- Never stores secrets (API keys, passwords, tokens)
+- Never intentionally stores secrets (API keys, passwords, tokens) — but consider
+  avoiding sensitive content in prompts when classification is active
 
 Details in [docs/security.md](docs/security.md).
 

@@ -170,7 +170,7 @@ export class ConfigService {
     
     // Ensure database directory exists
     if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+      fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
     }
     
     return dbPath;

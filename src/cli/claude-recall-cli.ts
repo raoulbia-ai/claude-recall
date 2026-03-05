@@ -380,13 +380,35 @@ class ClaudeRecallCLI {
         process.exit(1);
       }
       
+      const VALID_IMPORT_TYPES = [
+        'preference', 'correction', 'devops', 'failure',
+        'project-knowledge', 'tool-use', 'correction-pattern', 'imported'
+      ];
+      const MAX_VALUE_SIZE = 10_000; // 10KB per memory
+
       let imported = 0;
       for (const memory of data.memories) {
+        // Type 白名單驗證
+        const memType = memory.type || 'imported';
+        if (!VALID_IMPORT_TYPES.includes(memType)) {
+          console.warn(`⚠️  Skipped memory with unknown type: ${memType}`);
+          continue;
+        }
+
+        // Value 大小限制
+        const valueStr = typeof memory.value === 'string'
+          ? memory.value
+          : JSON.stringify(memory.value ?? '');
+        if (valueStr.length > MAX_VALUE_SIZE) {
+          console.warn(`⚠️  Skipped oversized memory (${valueStr.length} chars)`);
+          continue;
+        }
+
         try {
           this.memoryService.store({
             key: memory.key || `imported_${Date.now()}_${Math.random()}`,
             value: memory.value,
-            type: memory.type || 'imported',
+            type: memType,
             context: memory.context || {}
           });
           imported++;

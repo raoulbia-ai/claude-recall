@@ -49,7 +49,7 @@ try {
   const dbDir = path.join(os.homedir(), '.claude-recall');
 
   if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+    fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
     console.log(`📁 Created database directory: ${dbDir}`);
   }
 
