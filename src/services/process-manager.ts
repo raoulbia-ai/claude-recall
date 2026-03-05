@@ -29,7 +29,7 @@ export class ProcessManager {
 
     // Ensure PID directory exists
     if (!fs.existsSync(this.pidDir)) {
-      fs.mkdirSync(this.pidDir, { recursive: true });
+      fs.mkdirSync(this.pidDir, { recursive: true, mode: 0o700 });
     }
   }
 

@@ -88,7 +88,6 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
-    "claude-recall": "^0.15.29",
     "commander": "^12.1.0"
   }
 }
