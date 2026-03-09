@@ -29,6 +29,8 @@ export interface Memory {
   sophistication_level?: number;  // 1-4: Procedural → Compositional
   scope?: 'universal' | 'project' | null;  // v0.8.0: Memory scope
   content_hash?: string;
+  load_count?: number;
+  cite_count?: number;
 }
 
 export class MemoryStorage {
@@ -258,7 +260,9 @@ export class MemoryStorage {
       confidence_score: row.confidence_score,
       sophistication_level: row.sophistication_level || 1,
       scope: row.scope || null,
-      content_hash: row.content_hash || null
+      content_hash: row.content_hash || null,
+      load_count: row.load_count || 0,
+      cite_count: row.cite_count || 0,
     };
   }
   

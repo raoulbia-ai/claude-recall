@@ -163,22 +163,73 @@ export class MemoryRetrieval {
       score *= 2.0;
     }
     
-    // Boost for frequently accessed memories
-    if (memory.access_count && memory.access_count > 0) {
-      score *= 1 + Math.log10(memory.access_count) * 0.1;
-    }
-    
-    // Boost for recent access
-    if (memory.last_accessed) {
-      const hoursSinceAccess = (Date.now() - memory.last_accessed) / (1000 * 60 * 60);
-      if (hoursSinceAccess < 24) {
-        score *= 1.2;
-      }
-    }
+    // Strength-based boost (replaces ad-hoc access_count and last_accessed boosts)
+    const strength = MemoryRetrieval.computeStrength(memory);
+    score *= 1 + strength * 2.0;  // Up to 3x boost for max-strength memories
     
     return score;
   }
   
+  /**
+   * Compute memory strength (0.0-1.0) from usage signals and time decay.
+   * Higher strength = more valuable, should survive compaction.
+   */
+  /**
+   * Classify memory into cognitive category.
+   * - procedural: how-to knowledge (workflows, deploy steps, tool patterns)
+   * - factual: declarative facts (preferences, project config, corrections)
+   * - episodic: specific events (failures, successes, conversations)
+   */
+  static classifyMemory(type: string): 'procedural' | 'factual' | 'episodic' {
+    switch (type) {
+      case 'devops':
+      case 'tool-use':
+        return 'procedural';
+      case 'preference':
+      case 'project-knowledge':
+      case 'correction':
+        return 'factual';
+      case 'failure':
+      case 'success':
+      case 'restart_event':
+      case 'conversation':
+      default:
+        return 'episodic';
+    }
+  }
+
+  static computeStrength(memory: Memory): number {
+    const accessCount = memory.access_count || 0;
+    const citeCount = memory.cite_count || 0;
+    const loadCount = memory.load_count || 0;
+
+    // Cognitive class determines initial strength and decay rate.
+    // Procedural (how-to) = hardest to relearn, highest base + slowest decay
+    // Factual (what-is) = important but replaceable, moderate base + decay
+    // Episodic (what-happened) = context-specific, lowest base + fastest decay
+    const memClass = MemoryRetrieval.classifyMemory(memory.type);
+    const classConfig = {
+      procedural:  { baseStrength: 0.20, halfLife: 90 },
+      factual:     { baseStrength: 0.15, halfLife: 60 },
+      episodic:    { baseStrength: 0.10, halfLife: 30 },
+    }[memClass];
+
+    // Signal score: weighted sum of usage signals, capped at 1.0
+    const raw =
+      classConfig.baseStrength +
+      (Math.min(accessCount, 50) / 50) * 0.3 +
+      (Math.min(citeCount, 20) / 20) * 0.4 +
+      (Math.min(loadCount, 30) / 30) * 0.2;
+    const signalScore = Math.min(raw, 1.0);
+
+    // Time decay based on last touch (access or creation)
+    const lastTouch = Math.max(memory.last_accessed || 0, memory.timestamp || 0);
+    const daysSinceTouch = (Date.now() - lastTouch) / (1000 * 60 * 60 * 24);
+    const timeDecay = Math.pow(0.5, daysSinceTouch / classConfig.halfLife);
+
+    return Math.min(signalScore * timeDecay, 1.0);
+  }
+
   searchByKeyword(keyword: string): ScoredMemory[] {
     const results = this.storage.search(keyword);
     const context: Context = { timestamp: Date.now() };

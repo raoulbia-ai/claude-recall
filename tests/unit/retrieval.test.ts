@@ -134,10 +134,10 @@ describe('MemoryRetrieval', () => {
         relevance_score: 0.5
       });
       
-      // Manually update last_accessed since it's set by retrieval
+      // Manually update last_accessed and access_count to simulate usage
       const db = (storage as any).db;
-      db.prepare('UPDATE memories SET last_accessed = ? WHERE key = ?').run(recentAccess, 'recent_access');
-      db.prepare('UPDATE memories SET last_accessed = ? WHERE key = ?').run(oldAccess, 'old_access');
+      db.prepare('UPDATE memories SET last_accessed = ?, access_count = 10 WHERE key = ?').run(recentAccess, 'recent_access');
+      db.prepare('UPDATE memories SET last_accessed = ?, access_count = 1 WHERE key = ?').run(oldAccess, 'old_access');
       
       const results = retrieval.findRelevant({});
       
@@ -165,6 +165,113 @@ describe('MemoryRetrieval', () => {
     });
   });
   
+  describe('classifyMemory', () => {
+    it('classifies devops and tool-use as procedural', () => {
+      expect(MemoryRetrieval.classifyMemory('devops')).toBe('procedural');
+      expect(MemoryRetrieval.classifyMemory('tool-use')).toBe('procedural');
+    });
+
+    it('classifies preference, project-knowledge, correction as factual', () => {
+      expect(MemoryRetrieval.classifyMemory('preference')).toBe('factual');
+      expect(MemoryRetrieval.classifyMemory('project-knowledge')).toBe('factual');
+      expect(MemoryRetrieval.classifyMemory('correction')).toBe('factual');
+    });
+
+    it('classifies failure, conversation, unknown as episodic', () => {
+      expect(MemoryRetrieval.classifyMemory('failure')).toBe('episodic');
+      expect(MemoryRetrieval.classifyMemory('conversation')).toBe('episodic');
+      expect(MemoryRetrieval.classifyMemory('something-unknown')).toBe('episodic');
+    });
+  });
+
+  describe('computeStrength', () => {
+    it('returns low strength for brand-new episodic memory', () => {
+      const strength = MemoryRetrieval.computeStrength({
+        key: 'new',
+        value: 'test',
+        type: 'failure',
+        timestamp: Date.now(),
+        access_count: 0,
+        cite_count: 0,
+        load_count: 0,
+      });
+      // Episodic base 0.10
+      expect(strength).toBeGreaterThan(0.05);
+      expect(strength).toBeLessThan(0.15);
+    });
+
+    it('procedural memories start stronger than episodic', () => {
+      const base = { key: 'x', value: 'test', timestamp: Date.now(), access_count: 0, cite_count: 0, load_count: 0 };
+      const procedural = MemoryRetrieval.computeStrength({ ...base, type: 'devops' });
+      const factual = MemoryRetrieval.computeStrength({ ...base, type: 'preference' });
+      const episodic = MemoryRetrieval.computeStrength({ ...base, type: 'failure' });
+
+      expect(procedural).toBeGreaterThan(factual);
+      expect(factual).toBeGreaterThan(episodic);
+    });
+
+    it('returns high strength for heavily used memory', () => {
+      const strength = MemoryRetrieval.computeStrength({
+        key: 'strong',
+        value: 'test',
+        type: 'preference',
+        timestamp: Date.now(),
+        last_accessed: Date.now(),
+        access_count: 50,
+        cite_count: 20,
+        load_count: 30,
+      });
+      expect(strength).toBeGreaterThanOrEqual(0.9);
+    });
+
+    it('decays over time when not accessed', () => {
+      const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
+      const strength = MemoryRetrieval.computeStrength({
+        key: 'old',
+        value: 'test',
+        type: 'preference',
+        timestamp: sixtyDaysAgo,
+        access_count: 5,
+        cite_count: 2,
+        load_count: 3,
+      });
+      const freshStrength = MemoryRetrieval.computeStrength({
+        key: 'fresh',
+        value: 'test',
+        type: 'preference',
+        timestamp: Date.now(),
+        access_count: 5,
+        cite_count: 2,
+        load_count: 3,
+      });
+      // 60 days = 1 half-life for factual (preference), so ~50% decay
+      expect(strength).toBeLessThan(freshStrength * 0.6);
+    });
+
+    it('caps at 1.0 even with extreme counts', () => {
+      const strength = MemoryRetrieval.computeStrength({
+        key: 'extreme',
+        value: 'test',
+        type: 'preference',
+        timestamp: Date.now(),
+        last_accessed: Date.now(),
+        access_count: 1000,
+        cite_count: 1000,
+        load_count: 1000,
+      });
+      expect(strength).toBeLessThanOrEqual(1.0);
+    });
+
+    it('procedural memories decay slower than episodic', () => {
+      const sixtyDaysAgo = Date.now() - 60 * 24 * 60 * 60 * 1000;
+      const base = { key: 'x', value: 'test', timestamp: sixtyDaysAgo, access_count: 10, cite_count: 5, load_count: 10 };
+      const procedural = MemoryRetrieval.computeStrength({ ...base, type: 'devops' });
+      const episodic = MemoryRetrieval.computeStrength({ ...base, type: 'failure' });
+      // Procedural: 90-day half-life vs episodic: 30-day half-life
+      expect(procedural).toBeGreaterThan(episodic * 1.5);
+    });
+  });
+
   describe('searchByKeyword', () => {
     it('should search memories by keyword and apply relevance scoring', () => {
       storage.save({

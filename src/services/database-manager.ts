@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
+import { MemoryRetrieval } from '../core/retrieval';
+import { Memory } from '../memory/storage';
 
 export interface CompactionConfig {
   autoCompact: boolean;
@@ -285,27 +287,34 @@ export class DatabaseManager {
    */
   private pruneOldToolUse(db: Database.Database, keepCount: number, dryRun: boolean): number {
     if (keepCount < 0) return 0; // Keep all
-    
+
     try {
-      // Find tool-use memories to remove
-      const toRemove = db.prepare(`
-        SELECT id FROM memories
-        WHERE type = 'tool-use'
-        ORDER BY timestamp DESC
-        LIMIT -1 OFFSET ?
-      `).all(keepCount) as any[];
-      
+      // Fetch all tool-use memories, compute strength, keep the strongest
+      const rows = db.prepare(`
+        SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
+        FROM memories WHERE type = 'tool-use'
+      `).all() as any[];
+
+      if (rows.length <= keepCount) return 0;
+
+      const scored = rows.map(r => ({
+        id: r.id,
+        strength: MemoryRetrieval.computeStrength(r as Memory),
+      })).sort((a, b) => b.strength - a.strength);
+
+      const toRemove = scored.slice(keepCount);
+
       if (!dryRun && toRemove.length > 0) {
         const ids = toRemove.map(r => r.id).join(',');
         db.exec(`DELETE FROM memories WHERE id IN (${ids})`);
       }
-      
-      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories`);
+
+      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories (kept ${keepCount} strongest)`);
       if (toRemove.length > 0 && !dryRun) {
-        console.log(`🔄 Pruned ${toRemove.length} old tool-use memories`);
+        console.log(`🔄 Pruned ${toRemove.length} weak tool-use memories`);
       }
       return toRemove.length;
-      
+
     } catch (error) {
       this.logger.error('DatabaseManager', 'Error pruning tool-use memories', error);
       return 0;
@@ -317,42 +326,48 @@ export class DatabaseManager {
    */
   private pruneOldCorrections(db: Database.Database, keepPerPattern: number, dryRun: boolean): number {
     if (keepPerPattern < 0) return 0; // Keep all
-    
+
     try {
-      // Get all correction patterns
       const patterns = db.prepare(`
         SELECT DISTINCT preference_key
         FROM memories
         WHERE type = 'correction-pattern'
         AND preference_key IS NOT NULL
       `).all() as any[];
-      
+
       let totalRemoved = 0;
-      
+
       for (const pattern of patterns) {
-        // Find corrections to remove for this pattern
-        const toRemove = db.prepare(`
-          SELECT id FROM memories
+        const rows = db.prepare(`
+          SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
+          FROM memories
           WHERE type = 'correction-pattern'
           AND preference_key = ?
-          ORDER BY timestamp DESC
-          LIMIT -1 OFFSET ?
-        `).all(pattern.preference_key, keepPerPattern) as any[];
-        
+        `).all(pattern.preference_key) as any[];
+
+        if (rows.length <= keepPerPattern) continue;
+
+        const scored = rows.map(r => ({
+          id: r.id,
+          strength: MemoryRetrieval.computeStrength(r as Memory),
+        })).sort((a, b) => b.strength - a.strength);
+
+        const toRemove = scored.slice(keepPerPattern);
+
         if (!dryRun && toRemove.length > 0) {
           const ids = toRemove.map(r => r.id).join(',');
           db.exec(`DELETE FROM memories WHERE id IN (${ids})`);
         }
-        
+
         totalRemoved += toRemove.length;
       }
-      
-      this.logger.info('DatabaseManager', `Pruned ${totalRemoved} old corrections`);
+
+      this.logger.info('DatabaseManager', `Pruned ${totalRemoved} weak corrections`);
       if (totalRemoved > 0 && !dryRun) {
-        console.log(`🔄 Pruned ${totalRemoved} old correction memories`);
+        console.log(`🔄 Pruned ${totalRemoved} weak correction memories`);
       }
       return totalRemoved;
-      
+
     } catch (error) {
       this.logger.error('DatabaseManager', 'Error pruning corrections', error);
       return 0;
