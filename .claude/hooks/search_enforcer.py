@@ -24,8 +24,16 @@ SEARCH_TOOLS = [
     'mcp__claude-recall__search_memory',
 ]
 
-# Tools that require search first
+# Tools that require search first (mutation tools)
 ENFORCE_TOOLS = ['Write', 'Edit', 'Bash', 'Task']
+
+# Tools that should NEVER be blocked — infrastructure/bootstrap tools
+# that Claude needs to function (including calling load_rules itself)
+PASSTHROUGH_TOOLS = [
+    'Agent', 'Skill', 'ToolSearch',          # Claude internal tools
+    'TodoRead', 'TodoWrite',                  # Task management
+    'AskUserQuestion',                        # User interaction
+]
 
 # Read-only bash commands that don't need memory search
 READ_ONLY_BASH = [
@@ -112,16 +120,18 @@ def main():
         save_state(session_id, state)
         sys.exit(0)
 
+    # Always allow passthrough tools (infrastructure/bootstrap) and MCP tools
+    if tool_name in PASSTHROUGH_TOOLS or tool_name.startswith('mcp__'):
+        sys.exit(0)
+
     # Check state to see if rules have ever been loaded this session
     state = load_state(session_id)
     last_search = state.get('lastSearchAt')
 
     # FIRST TOOL CALL GATE: If rules have never been loaded this session,
-    # block on ANY tool call (not just mutations). This ensures Claude loads
-    # rules before forming opinions from Read/Glob/Grep exploration.
+    # block on codebase-interacting tools (Read/Glob/Grep/Write/Edit/Bash/Task).
+    # This ensures Claude loads rules before forming opinions from exploration.
     if not last_search:
-        # Allow search tools themselves (already handled above), and
-        # skip non-enforced tools only AFTER first load
         pass  # Fall through to blocking logic below
     else:
         # Rules loaded at least once — only enforce on mutation tools
