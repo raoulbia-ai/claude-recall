@@ -6,6 +6,9 @@
  * dedup-checks, and stores up to 5 memories with [PreCompact] prefix.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import {
   classifyBatch,
   isDuplicate,
@@ -72,4 +75,32 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
   }
 
   hookLog('precompact', `PreCompact sweep: stored ${stored} memories from ${entries.length} entries`);
+
+  // Reset search enforcer hook-state so Claude is forced to re-load rules
+  // after context compression. Without this, the enforcer thinks rules are
+  // still loaded even though they may have been lost during compaction.
+  resetEnforcerState(input?.session_id);
+}
+
+/**
+ * Delete the search enforcer's hook-state file for this session,
+ * forcing a fresh load_rules gate on the next tool call.
+ */
+function resetEnforcerState(sessionId?: string): void {
+  if (!sessionId) {
+    hookLog('precompact', 'No session_id — cannot reset enforcer state');
+    return;
+  }
+
+  const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
+  const stateFile = path.join(os.homedir(), '.claude-recall', 'hook-state', `${safeId}.json`);
+
+  try {
+    if (fs.existsSync(stateFile)) {
+      fs.unlinkSync(stateFile);
+      hookLog('precompact', `Reset enforcer state for session ${safeId} — rules will re-gate`);
+    }
+  } catch (err: any) {
+    hookLog('precompact', `Failed to reset enforcer state: ${err.message}`);
+  }
 }
