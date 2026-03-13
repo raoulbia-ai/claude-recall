@@ -31,11 +31,10 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 ### Install & Activate
 
 ```bash
-cd your-project
-npm cache clean --force && npm install claude-recall@latest
-claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -- npx -y claude-recall@latest mcp start
-npx claude-recall setup --install
-npx claude-recall --version
+npm install -g claude-recall
+claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -s user -- claude-recall mcp start
+cd your-project && claude-recall setup --install
+claude-recall --version
 ```
 
 Then restart your terminal or Claude Code session.
@@ -64,8 +63,8 @@ All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude C
 ```bash
 # Verify it's working
 cat ~/.claude-recall/hook-logs/correction-detector.log
-npx claude-recall stats
-npx claude-recall search "preference"
+claude-recall stats
+claude-recall search "preference"
 ```
 
 ---
@@ -88,12 +87,12 @@ Claude Recall runs as an MCP server exposing four tools, backed by a local SQLit
 ### Common Commands
 
 ```bash
-npx claude-recall stats                  # Memory statistics
-npx claude-recall search "query"         # Search memories
-npx claude-recall failures               # View failure memories
-npx claude-recall export backup.json     # Export memories to JSON
-npx claude-recall import backup.json     # Import memories from JSON
-npx claude-recall --version              # Check version
+claude-recall stats                  # Memory statistics
+claude-recall search "query"         # Search memories
+claude-recall failures               # View failure memories
+claude-recall export backup.json     # Export memories to JSON
+claude-recall import backup.json     # Import memories from JSON
+claude-recall --version              # Check version
 ```
 
 <details>
@@ -101,53 +100,53 @@ npx claude-recall --version              # Check version
 
 ```bash
 # ── Upgrade ──────────────────────────────────────────────────────────
-npm cache clean --force && npm install claude-recall@latest
-npx claude-recall setup --install        # Re-register hooks + skills
-npx claude-recall --version              # Verify
+npm install -g claude-recall@latest
+claude-recall setup --install            # Re-register hooks + skills
+claude-recall --version                  # Verify
 
 # ── Setup & Diagnostics ─────────────────────────────────────────────
-npx claude-recall setup                  # Show activation instructions
-npx claude-recall setup --install        # Install skills + hooks
-npx claude-recall status                 # Installation and system status
-npx claude-recall repair                 # Clean up old hooks, install skills
+claude-recall setup                      # Show activation instructions
+claude-recall setup --install            # Install skills + hooks
+claude-recall status                     # Installation and system status
+claude-recall repair                     # Clean up old hooks, install skills
 
 # ── Memory ───────────────────────────────────────────────────────────
-npx claude-recall stats                  # Memory statistics
-npx claude-recall search "query"         # Search memories
-npx claude-recall store "content"        # Store memory directly
-npx claude-recall export backup.json     # Export memories to JSON
-npx claude-recall import backup.json     # Import memories from JSON
-npx claude-recall clear --force          # Clear all memories
-npx claude-recall failures               # View failure memories
-npx claude-recall failures --limit 20    # Limit results
-npx claude-recall monitor                # Memory search monitoring stats
+claude-recall stats                      # Memory statistics
+claude-recall search "query"             # Search memories
+claude-recall store "content"            # Store memory directly
+claude-recall export backup.json         # Export memories to JSON
+claude-recall import backup.json         # Import memories from JSON
+claude-recall clear --force              # Clear all memories
+claude-recall failures                   # View failure memories
+claude-recall failures --limit 20        # Limit results
+claude-recall monitor                    # Memory search monitoring stats
 
 # ── Skills ───────────────────────────────────────────────────────────
-npx claude-recall skills generate        # Generate skills from memories
-npx claude-recall skills generate --dry-run  # Preview without writing
-npx claude-recall skills generate --force    # Regenerate even if unchanged
-npx claude-recall skills list            # List generated skills
-npx claude-recall skills clean --force   # Remove all auto-generated skills
+claude-recall skills generate            # Generate skills from memories
+claude-recall skills generate --dry-run  # Preview without writing
+claude-recall skills generate --force    # Regenerate even if unchanged
+claude-recall skills list                # List generated skills
+claude-recall skills clean --force       # Remove all auto-generated skills
 
 # ── MCP Server ───────────────────────────────────────────────────────
-npx claude-recall mcp status             # Current project's server status
-npx claude-recall mcp ps                 # List all running servers
-npx claude-recall mcp stop               # Stop server
-npx claude-recall mcp stop --force       # Force stop
-npx claude-recall mcp restart            # Restart server
-npx claude-recall mcp cleanup            # Remove stale PID files
-npx claude-recall mcp cleanup --all      # Stop all servers
+claude-recall mcp status                 # Current project's server status
+claude-recall mcp ps                     # List all running servers
+claude-recall mcp stop                   # Stop server
+claude-recall mcp stop --force           # Force stop
+claude-recall mcp restart                # Restart server
+claude-recall mcp cleanup                # Remove stale PID files
+claude-recall mcp cleanup --all          # Stop all servers
 
 # ── Project ──────────────────────────────────────────────────────────
-npx claude-recall project show           # Current project info
-npx claude-recall project list           # All registered projects
-npx claude-recall project register       # Register current project
-npx claude-recall project clean          # Remove stale registry entries
+claude-recall project show               # Current project info
+claude-recall project list               # All registered projects
+claude-recall project register           # Register current project
+claude-recall project clean              # Remove stale registry entries
 
 # ── Auto-Capture Hooks (run automatically, registered via setup --install) ──
-npx claude-recall hook run correction-detector   # UserPromptSubmit hook
-npx claude-recall hook run memory-stop           # Stop hook
-npx claude-recall hook run precompact-preserve   # PreCompact hook
+claude-recall hook run correction-detector   # UserPromptSubmit hook
+claude-recall hook run memory-stop           # Stop hook
+claude-recall hook run precompact-preserve   # PreCompact hook
 ```
 
 </details>
@@ -176,23 +175,11 @@ Details in [docs/security.md](docs/security.md).
 <details>
 <summary>WSL Users</summary>
 
-If you hit "invalid ELF header" errors from mixed Windows/WSL `node_modules`, use a global install:
+If you hit "invalid ELF header" errors from mixed Windows/WSL `node_modules`, ensure you're using the global install (now the default). Verify the binary resolves to a Linux path:
 
 ```bash
-npm install -g claude-recall
-```
-
-Update `~/.claude.json` to use the global binary:
-
-```json
-{
-  "claude-recall": {
-    "type": "stdio",
-    "command": "claude-recall",
-    "args": ["mcp", "start"],
-    "env": {}
-  }
-}
+which claude-recall
+# Should show: /home/<user>/.nvm/.../bin/claude-recall (NOT a Windows path)
 ```
 
 Global installation does **not** affect project scoping — project ID is still detected from Claude Code's working directory.
