@@ -17,6 +17,7 @@ from datetime import datetime
 STATE_DIR = Path.home() / '.claude-recall' / 'hook-state'
 SEARCH_TTL_MS = int(os.environ.get('CLAUDE_RECALL_SEARCH_TTL', 60 * 1000))  # 1 min default (once per task)
 ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')  # block, warn, off
+MAX_BLOCKS = int(os.environ.get('CLAUDE_RECALL_MAX_BLOCKS', 3))  # degrade to warn after N blocks
 
 # Tools that count as "search performed"
 SEARCH_TOOLS = [
@@ -112,11 +113,12 @@ def main():
     tool_input = data.get('tool_input', {})
     session_id = data.get('session_id', '') or 'default'
 
-    # Track search calls
+    # Track search calls — also reset block counter on success
     if is_search_tool(tool_name):
         state = load_state(session_id)
         state['lastSearchAt'] = int(datetime.now().timestamp() * 1000)
         state['searchQuery'] = tool_input.get('query', '')
+        state['blockCount'] = 0
         save_state(session_id, state)
         sys.exit(0)
 
@@ -161,10 +163,30 @@ Run: mcp__claude-recall__load_rules({{}})
         print(msg.strip(), file=sys.stderr)
         sys.exit(0)  # Warn only — allow the action
 
-    # Never loaded in this session — block
+    # Never loaded in this session — block (with circuit breaker)
+    block_count = state.get('blockCount', 0) + 1
+    state['blockCount'] = block_count
+    save_state(session_id, state)
+
+    if block_count > MAX_BLOCKS:
+        # Circuit breaker: MCP server is likely down — degrade to warn
+        msg = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLAUDE RECALL UNAVAILABLE — proceeding without rules
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Blocked {block_count}x but load_rules never succeeded.
+The MCP server may be down. Allowing {tool_name} to proceed.
+
+To reconnect: check 'claude mcp list' or restart Claude Code.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        print(msg.strip(), file=sys.stderr)
+        sys.exit(0)  # Allow — server is down, don't deadlock
+
     msg = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LOAD RULES REQUIRED before {tool_name}
+LOAD RULES REQUIRED before {tool_name} (attempt {block_count}/{MAX_BLOCKS})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Run: mcp__claude-recall__load_rules({{}})
