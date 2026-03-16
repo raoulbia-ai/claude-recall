@@ -656,7 +656,7 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '6.0.0';  // v6 = local node path instead of npx for hooks
+    settings.hooksVersion = '7.0.0';  // v7 = add memory-sync hook for auto-memory export
     settings.hooks = {
       PreToolUse: [
         {
@@ -686,6 +686,11 @@ async function main() {
               type: "command",
               command: `${hookCmd} memory-stop`,
               timeout: 30
+            },
+            {
+              type: "command",
+              command: `${hookCmd} memory-sync`,
+              timeout: 10
             }
           ]
         }
@@ -697,6 +702,11 @@ async function main() {
               type: "command",
               command: `${hookCmd} precompact-preserve`,
               timeout: 60
+            },
+            {
+              type: "command",
+              command: `${hookCmd} memory-sync`,
+              timeout: 10
             }
           ]
         }

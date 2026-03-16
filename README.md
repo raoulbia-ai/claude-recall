@@ -55,6 +55,7 @@ Once installed, Claude Recall works automatically in the background:
 2. **As you work** — the `correction-detector` hook classifies every prompt you type. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored automatically
 3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns
 4. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
+5. **Rules sync to auto-memory** — the `memory-sync` hook exports active rules to `~/.claude/projects/{project}/memory/recall-rules.md` so they're available even when the MCP server is down
 
 All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude Code session) with silent regex fallback. No configuration needed.
 
@@ -147,6 +148,7 @@ claude-recall project clean              # Remove stale registry entries
 claude-recall hook run correction-detector   # UserPromptSubmit hook
 claude-recall hook run memory-stop           # Stop hook
 claude-recall hook run precompact-preserve   # PreCompact hook
+claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rules to auto-memory)
 ```
 
 </details>

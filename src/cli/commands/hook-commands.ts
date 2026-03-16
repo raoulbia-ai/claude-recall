@@ -38,9 +38,14 @@ export class HookCommands {
               await handlePrecompactPreserve(input);
               break;
             }
+            case 'memory-sync': {
+              const { handleMemorySync } = await import('../../hooks/memory-sync-hook');
+              await handleMemorySync(input);
+              break;
+            }
             default:
               console.error(`Unknown hook: ${name}`);
-              console.error('Available: correction-detector, memory-stop, precompact-preserve');
+              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync');
           }
         } catch {
           // Hooks must never block Claude — always exit 0
