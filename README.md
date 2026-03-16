@@ -28,22 +28,41 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 | Node.js   | **20+**                 | required for better-sqlite3 |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
-### Install & Activate
+### One-Time Setup
+
+Run these once per machine:
 
 ```bash
 npm install -g claude-recall
 claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -s user -- claude-recall mcp start
-cd your-project && claude-recall setup --install
-claude-recall --version
 ```
 
-Then restart your terminal or Claude Code session.
+This installs the global binary and registers the MCP server at user scope — shared across all your projects.
+
+### Per-Project Setup
+
+Run this in each project directory:
+
+```bash
+cd your-project && claude-recall setup --install
+```
+
+This installs hooks and skills into `your-project/.claude/`. Repeat for each project you want Claude Recall active in. Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
+
+Then restart your Claude Code session.
 
 ### Verify
 
 In Claude Code, ask: *"Load my rules"*
 
 Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
+
+### Upgrading
+
+```bash
+npm install -g claude-recall@latest
+cd your-project && claude-recall setup --install   # Re-register hooks in each project
+```
 
 ---
 
@@ -100,10 +119,10 @@ claude-recall --version              # Check version
 <summary>All commands</summary>
 
 ```bash
-# ── Upgrade ──────────────────────────────────────────────────────────
+# ── Upgrade (global binary, then per-project hooks) ─────────────────
 npm install -g claude-recall@latest
-claude-recall setup --install            # Re-register hooks + skills
-claude-recall --version                  # Verify
+cd your-project && claude-recall setup --install   # Repeat per project
+claude-recall --version                            # Verify
 
 # ── Setup & Diagnostics ─────────────────────────────────────────────
 claude-recall setup                      # Show activation instructions
