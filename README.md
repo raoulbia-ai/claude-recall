@@ -28,28 +28,33 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 | Node.js   | **20+**                 | required for better-sqlite3 |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
-### One-Time Setup
+### Install / Reinstall
 
-Run these once per machine:
+Run these from your project directory:
 
 ```bash
+# 1. Remove MCP server registration (if exists)
+claude mcp remove claude-recall
+
+# 2. Clear npm cache
+npm cache clean --force
+
+# 3. Uninstall global claude-recall
+npm uninstall -g claude-recall
+
+# 4. Install global claude-recall
 npm install -g claude-recall
-claude mcp remove claude-recall 2>/dev/null; claude mcp add claude-recall -s user -- claude-recall mcp start
+
+# 5. Install in local project folder
+claude-recall setup --install
+
+# 6. Re-register MCP server
+claude mcp add claude-recall -- claude-recall mcp start
 ```
-
-This installs the global binary and registers the MCP server at user scope — shared across all your projects.
-
-### Per-Project Setup
-
-Run this in each project directory:
-
-```bash
-cd your-project && claude-recall setup --install
-```
-
-This installs hooks and skills into `your-project/.claude/`. Repeat for each project you want Claude Recall active in. Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
 
 Then restart your Claude Code session.
+
+Repeat step 5 (`claude-recall setup --install`) in each project you want Claude Recall active in. Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
 
 ### Verify
 
@@ -59,10 +64,7 @@ Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
 
 ### Upgrading
 
-```bash
-npm install -g claude-recall@latest
-cd your-project && claude-recall setup --install   # Re-register hooks in each project
-```
+Follow the same install steps above — they handle both fresh installs and upgrades.
 
 ---
 
@@ -119,11 +121,6 @@ claude-recall --version              # Check version
 <summary>All commands</summary>
 
 ```bash
-# ── Upgrade (global binary, then per-project hooks) ─────────────────
-npm install -g claude-recall@latest
-cd your-project && claude-recall setup --install   # Repeat per project
-claude-recall --version                            # Verify
-
 # ── Setup & Diagnostics ─────────────────────────────────────────────
 claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks
