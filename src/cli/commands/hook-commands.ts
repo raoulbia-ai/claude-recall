@@ -43,9 +43,14 @@ export class HookCommands {
               await handleMemorySync(input);
               break;
             }
+            case 'bash-failure-watcher': {
+              const { handleBashFailureWatcher } = await import('../../hooks/bash-failure-watcher');
+              await handleBashFailureWatcher(input);
+              break;
+            }
             default:
               console.error(`Unknown hook: ${name}`);
-              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync');
+              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, bash-failure-watcher');
           }
         } catch {
           // Hooks must never block Claude — always exit 0

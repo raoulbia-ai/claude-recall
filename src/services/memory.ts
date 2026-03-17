@@ -615,6 +615,13 @@ export class MemoryService {
   }
 
   /**
+   * Update a memory record by key (used for fix pairing in hooks)
+   */
+  update(key: string, updates: Partial<Memory>): void {
+    this.storage.update(key, updates);
+  }
+
+  /**
    * Close database connection
    */
   close(): void {
