@@ -16,6 +16,7 @@ import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
+import { OutcomeStorage } from '../services/outcome-storage';
 
 const program = new Command();
 
@@ -265,6 +266,115 @@ class ClaudeRecallCLI {
     });
 
     this.logger.info('CLI', 'Failures displayed', { count: displayFailures.length });
+  }
+
+  /**
+   * Show outcome-aware learning status: episodes, outcome events, candidate lessons, memory stats
+   */
+  showOutcomes(options: { limit?: number; section?: string }): void {
+    const limit = options.limit || 10;
+    const section = options.section;
+    const db = this.memoryService.getDatabase();
+
+    // Check if outcome tables exist
+    const tables = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','candidate_lessons','memory_stats')"
+    ).all() as Array<{ name: string }>;
+    const tableNames = new Set(tables.map((t: any) => t.name));
+
+    if (tableNames.size < 4) {
+      console.log('\n⚠️  Outcome tables not found. Upgrade to v0.18.0+ and restart the MCP server.\n');
+      return;
+    }
+
+    console.log('\n📊 Outcome-Aware Learning Status\n');
+
+    // Summary counts
+    const episodeCount = (db.prepare('SELECT COUNT(*) as c FROM episodes').get() as any).c;
+    const eventCount = (db.prepare('SELECT COUNT(*) as c FROM outcome_events').get() as any).c;
+    const candidateCount = (db.prepare('SELECT COUNT(*) as c FROM candidate_lessons').get() as any).c;
+    const promotedCount = (db.prepare("SELECT COUNT(*) as c FROM candidate_lessons WHERE status = 'promoted'").get() as any).c;
+    const statsCount = (db.prepare('SELECT COUNT(*) as c FROM memory_stats').get() as any).c;
+
+    console.log(`  Episodes:          ${episodeCount}`);
+    console.log(`  Outcome events:    ${eventCount}`);
+    console.log(`  Candidate lessons: ${candidateCount} (${promotedCount} promoted)`);
+    console.log(`  Tracked memories:  ${statsCount}`);
+    console.log('');
+
+    // Episodes
+    if (!section || section === 'episodes') {
+      const episodes = db.prepare(
+        'SELECT id, outcome_type, severity, outcome_summary, source, created_at FROM episodes ORDER BY created_at DESC LIMIT ?'
+      ).all(limit) as any[];
+
+      if (episodes.length > 0) {
+        console.log(`── Recent Episodes (${episodes.length}) ──\n`);
+        for (const ep of episodes) {
+          const icon = ep.outcome_type === 'failure' ? '❌' : ep.outcome_type === 'success' ? '✅' : '⚪';
+          const time = new Date(ep.created_at).toLocaleString();
+          console.log(`  ${icon} [${ep.outcome_type || 'unclear'}] ${ep.outcome_summary || 'No summary'}`);
+          console.log(`     severity: ${ep.severity || '-'}  source: ${ep.source || '-'}  ${time}`);
+        }
+        console.log('');
+      }
+    }
+
+    // Outcome events
+    if (!section || section === 'events') {
+      const events = db.prepare(
+        'SELECT event_type, actor, exit_code, substr(next_state_summary, 1, 100) as summary, created_at FROM outcome_events ORDER BY created_at DESC LIMIT ?'
+      ).all(limit) as any[];
+
+      if (events.length > 0) {
+        console.log(`── Recent Outcome Events (${events.length}) ──\n`);
+        for (const ev of events) {
+          const exitStr = ev.exit_code !== null ? ` (exit ${ev.exit_code})` : '';
+          const time = new Date(ev.created_at).toLocaleString();
+          console.log(`  [${ev.event_type}] ${ev.actor}${exitStr}: ${ev.summary}`);
+          console.log(`     ${time}`);
+        }
+        console.log('');
+      }
+    }
+
+    // Candidate lessons
+    if (!section || section === 'lessons') {
+      const lessons = db.prepare(
+        'SELECT status, evidence_count, confidence, lesson_kind, substr(lesson_text, 1, 100) as text, created_at FROM candidate_lessons ORDER BY created_at DESC LIMIT ?'
+      ).all(limit) as any[];
+
+      if (lessons.length > 0) {
+        console.log(`── Candidate Lessons (${lessons.length}) ──\n`);
+        for (const l of lessons) {
+          const icon = l.status === 'promoted' ? '⬆️' : l.status === 'rejected' ? '⬇️' : '⏳';
+          console.log(`  ${icon} [${l.status}] (${l.evidence_count}x, ${(l.confidence * 100).toFixed(0)}%) ${l.text}`);
+          console.log(`     kind: ${l.lesson_kind}  ${new Date(l.created_at).toLocaleString()}`);
+        }
+        console.log('');
+      }
+    }
+
+    // Memory stats (top helpful)
+    if (!section || section === 'stats') {
+      const memStats = db.prepare(
+        'SELECT memory_key, times_retrieved, times_helpful, times_unhelpful, last_confirmed_at FROM memory_stats WHERE times_retrieved > 0 ORDER BY times_helpful DESC, times_retrieved DESC LIMIT ?'
+      ).all(limit) as any[];
+
+      if (memStats.length > 0) {
+        console.log(`── Memory Stats — Top Retrieved (${memStats.length}) ──\n`);
+        for (const s of memStats) {
+          const ratio = s.times_retrieved > 0 ? ((s.times_helpful / s.times_retrieved) * 100).toFixed(0) : '0';
+          console.log(`  ${s.memory_key}`);
+          console.log(`     retrieved: ${s.times_retrieved}  helpful: ${s.times_helpful}  unhelpful: ${s.times_unhelpful}  (${ratio}% helpful)`);
+        }
+        console.log('');
+      }
+    }
+
+    if (episodeCount === 0 && eventCount === 0) {
+      console.log('No outcome data yet. Use Claude Code normally — outcomes are captured automatically.\n');
+    }
   }
 
   /**
@@ -1266,6 +1376,21 @@ async function main() {
       cli.showFailures({
         limit: parseInt(options.limit),
         project: options.project
+      });
+      process.exit(0);
+    });
+
+  // Outcomes command (v0.18.0)
+  program
+    .command('outcomes')
+    .description('Show outcome-aware learning status: episodes, events, lessons, stats')
+    .option('--limit <number>', 'Maximum items per section', '10')
+    .option('--section <name>', 'Show only one section: episodes, events, lessons, stats')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showOutcomes({
+        limit: parseInt(options.limit),
+        section: options.section
       });
       process.exit(0);
     });

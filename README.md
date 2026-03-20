@@ -129,6 +129,8 @@ action → outcome event → episode → candidate lesson → promotion → acti
 claude-recall stats                  # Memory statistics
 claude-recall search "query"         # Search memories
 claude-recall failures               # View failure memories
+claude-recall outcomes               # Outcome-aware learning status
+claude-recall outcomes --section lessons  # Just candidate lessons
 claude-recall export backup.json     # Export memories to JSON
 claude-recall import backup.json     # Import memories from JSON
 claude-recall --version              # Check version
@@ -153,6 +155,9 @@ claude-recall import backup.json         # Import memories from JSON
 claude-recall clear --force              # Clear all memories
 claude-recall failures                   # View failure memories
 claude-recall failures --limit 20        # Limit results
+claude-recall outcomes                   # Outcome-aware learning status
+claude-recall outcomes --section lessons # Just candidate lessons
+claude-recall outcomes --limit 20        # More items per section
 claude-recall monitor                    # Memory search monitoring stats
 
 # ── Skills ───────────────────────────────────────────────────────────
