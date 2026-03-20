@@ -14,6 +14,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 - **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with silent regex fallback
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches context automatically
 - **Failure Learning** — captures what failed, why, and what to do instead — so Claude doesn't repeat mistakes
+- **Outcome-Aware Learning** — tracks action outcomes (bash results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
 - **Skill Crystallization** — when enough memories accumulate, auto-generates `.claude/skills/auto-*/` files that load natively without tool calls
 - **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
 
@@ -74,9 +75,11 @@ Once installed, Claude Recall works automatically in the background:
 
 1. **First prompt** — the `search_enforcer` hook ensures Claude loads your stored rules before taking any action
 2. **As you work** — the `correction-detector` hook classifies every prompt you type. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored automatically
-3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns
-4. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
-5. **Rules sync to auto-memory** — the `memory-sync` hook exports active rules to `~/.claude/projects/{project}/memory/recall-rules.md` so they're available even when the MCP server is down
+3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns. It also creates **episodes** summarizing the session outcome, generates **candidate lessons** from detected failures, and runs a **promotion cycle** to graduate validated patterns into active rules
+4. **Bash failures** — the `bash-failure-watcher` hook captures command failures in real-time, pairs successful fixes, and writes **outcome events** for the learning pipeline
+5. **Reask detection** — the `correction-detector` hook detects user frustration signals ("still broken", "that didn't work") and records them as outcome events
+6. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
+7. **Rules sync to auto-memory** — the `memory-sync` hook exports active rules to `~/.claude/projects/{project}/memory/recall-rules.md` so they're available even when the MCP server is down
 
 All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude Code session) with silent regex fallback. No configuration needed.
 
@@ -101,6 +104,20 @@ Claude Recall runs as an MCP server exposing four tools, backed by a local SQLit
 | `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
 | `search_memory` | Search memories by keyword, ranked by relevance |
 | `delete_memory` | Delete a specific memory by ID |
+
+### Outcome-Aware Learning (v0.18.0)
+
+Claude Recall tracks what happens *after* Claude acts — not just what was said. The outcome processing pipeline:
+
+```
+action → outcome event → episode → candidate lesson → promotion → active rule
+```
+
+- **Outcome events** capture bash results, test outcomes, user corrections, and reask signals
+- **Episodes** summarize entire sessions with outcome type, severity, and confidence
+- **Candidate lessons** are extracted from failure patterns — deduplicated by Jaccard similarity
+- **Promotion engine** graduates lessons into active rules after 2+ observations (or immediately for high-severity failures), and demotes never-helpful memories
+- **Outcome-aware retrieval** boosts memories with evidence, penalizes stale/unhelpful ones
 
 ---
 
