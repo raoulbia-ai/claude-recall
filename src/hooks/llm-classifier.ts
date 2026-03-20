@@ -128,6 +128,37 @@ export async function classifyWithLLM(text: string): Promise<ClassifyResult | nu
  * Returns an array of results (null for unclassifiable items).
  * Falls back to null array on total failure (caller should use regex).
  */
+export async function extractHindsightHint(
+  failureDescription: string,
+  context: string
+): Promise<{ hint_text: string; hint_kind: string; applies_when: string[] } | null> {
+  const client = getClient();
+  if (!client) return null;
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 300,
+      system: 'You extract actionable hindsight lessons from failures. Given a failure description and context, produce a JSON object with: hint_text (imperative rule to prevent recurrence), hint_kind (one of: rule, preference, anti_pattern, workflow, debug_fix, failure_preventer), applies_when (array of 1-3 situation tags). Respond with ONLY valid JSON.',
+      messages: [{ role: 'user', content: `Failure: ${failureDescription}\nContext: ${context}` }],
+    });
+
+    const content = response.content?.[0];
+    if (content?.type !== 'text') return null;
+
+    const result = parseJSON(content.text);
+    if (!result.hint_text || !result.hint_kind) return null;
+
+    return {
+      hint_text: result.hint_text,
+      hint_kind: result.hint_kind,
+      applies_when: Array.isArray(result.applies_when) ? result.applies_when : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function classifyBatchWithLLM(
   texts: string[]
 ): Promise<(ClassifyResult | null)[] | null> {

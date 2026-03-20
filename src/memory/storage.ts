@@ -80,6 +80,9 @@ export class MemoryStorage {
         throw new Error(`Failed to initialize database: ${error}`);
       }
     }
+
+    // Run migrations for new tables (v0.18.0+) on fresh databases too
+    this.migrateSchema();
   }
 
   /**
@@ -144,6 +147,80 @@ export class MemoryStorage {
           console.log('✅ Added content_hash column');
         }
       }
+      // v0.18.0: Outcome-aware learning tables
+      const outcomeTables = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','candidate_lessons','memory_stats')"
+      ).all() as Array<{name: string}>;
+      const existingOutcomeTables = new Set(outcomeTables.map(t => t.name));
+
+      if (!existingOutcomeTables.has('episodes')) {
+        this.db.exec(`CREATE TABLE episodes (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          session_id TEXT,
+          started_at TEXT NOT NULL,
+          ended_at TEXT,
+          task_summary TEXT,
+          action_summary TEXT,
+          outcome_summary TEXT,
+          outcome_type TEXT,
+          severity TEXT,
+          confidence REAL,
+          source TEXT,
+          created_at TEXT NOT NULL
+        )`);
+      }
+
+      if (!existingOutcomeTables.has('outcome_events')) {
+        this.db.exec(`CREATE TABLE outcome_events (
+          id TEXT PRIMARY KEY,
+          episode_id TEXT,
+          event_type TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          action_summary TEXT,
+          next_state_summary TEXT NOT NULL,
+          exit_code INTEGER,
+          tags_json TEXT,
+          created_at TEXT NOT NULL
+        )`);
+        this.db.exec('CREATE INDEX idx_outcome_events_episode ON outcome_events(episode_id)');
+        this.db.exec('CREATE INDEX idx_outcome_events_type ON outcome_events(event_type)');
+      }
+
+      if (!existingOutcomeTables.has('candidate_lessons')) {
+        this.db.exec(`CREATE TABLE candidate_lessons (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          episode_id TEXT,
+          lesson_text TEXT NOT NULL,
+          lesson_kind TEXT NOT NULL,
+          applies_when_json TEXT,
+          outcome_type TEXT NOT NULL,
+          reward_band INTEGER,
+          confidence REAL NOT NULL,
+          durability TEXT NOT NULL,
+          evidence_count INTEGER DEFAULT 1,
+          status TEXT NOT NULL DEFAULT 'candidate',
+          promoted_memory_key TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`);
+        this.db.exec('CREATE INDEX idx_candidate_lessons_status ON candidate_lessons(status)');
+        this.db.exec('CREATE INDEX idx_candidate_lessons_project ON candidate_lessons(project_id)');
+      }
+
+      if (!existingOutcomeTables.has('memory_stats')) {
+        this.db.exec(`CREATE TABLE memory_stats (
+          memory_key TEXT PRIMARY KEY,
+          times_observed INTEGER DEFAULT 1,
+          times_retrieved INTEGER DEFAULT 0,
+          times_helpful INTEGER DEFAULT 0,
+          times_unhelpful INTEGER DEFAULT 0,
+          last_confirmed_at TEXT,
+          last_retrieved_at TEXT
+        )`);
+      }
+
     } catch (error) {
       console.error('⚠️  Schema migration error:', error);
       // Don't throw - let the database continue with existing schema

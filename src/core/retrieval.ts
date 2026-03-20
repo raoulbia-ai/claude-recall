@@ -166,7 +166,28 @@ export class MemoryRetrieval {
     // Strength-based boost (replaces ad-hoc access_count and last_accessed boosts)
     const strength = MemoryRetrieval.computeStrength(memory);
     score *= 1 + strength * 2.0;  // Up to 3x boost for max-strength memories
-    
+
+    // Evidence boost: promoted lessons seen multiple times
+    const evidenceCount = this.getEvidenceCount(memory);
+    if (evidenceCount > 1) {
+      score *= 1 + Math.min(evidenceCount, 5) * 0.15;  // up to 1.75x
+    }
+
+    // Helpfulness prior: retrieved + confirmed helpful
+    const stats = this.getMemoryStats(memory.key);
+    if (stats && stats.times_retrieved > 0) {
+      const helpRatio = stats.times_helpful / stats.times_retrieved;
+      score *= 0.8 + helpRatio * 0.4;  // 0.8x to 1.2x
+    }
+
+    // Staleness penalty: old with no recent confirmation
+    if (stats?.last_confirmed_at) {
+      const daysSinceConfirmed = (Date.now() - new Date(stats.last_confirmed_at).getTime()) / 86400000;
+      if (daysSinceConfirmed > 30) {
+        score *= Math.max(0.5, 1 - (daysSinceConfirmed - 30) / 180);
+      }
+    }
+
     return score;
   }
   
@@ -228,6 +249,28 @@ export class MemoryRetrieval {
     const timeDecay = Math.pow(0.5, daysSinceTouch / classConfig.halfLife);
 
     return Math.min(signalScore * timeDecay, 1.0);
+  }
+
+  private getMemoryStats(key: string): { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null } | null {
+    try {
+      const row = this.storage.getDatabase().prepare(
+        'SELECT times_retrieved, times_helpful, last_confirmed_at FROM memory_stats WHERE memory_key = ?'
+      ).get(key) as any;
+      return row || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private getEvidenceCount(memory: Memory): number {
+    try {
+      const row = this.storage.getDatabase().prepare(
+        "SELECT evidence_count FROM candidate_lessons WHERE promoted_memory_key = ? AND status = 'promoted' LIMIT 1"
+      ).get(memory.key) as any;
+      return row?.evidence_count || 0;
+    } catch {
+      return 0;
+    }
   }
 
   searchByKeyword(keyword: string): ScoredMemory[] {

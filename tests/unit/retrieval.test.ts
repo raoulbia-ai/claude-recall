@@ -272,6 +272,113 @@ describe('MemoryRetrieval', () => {
     });
   });
 
+  describe('outcome-aware scoring', () => {
+    it('should boost score for memories with evidence count > 1', () => {
+      storage.save({
+        key: 'promoted_mem',
+        value: { data: 'promoted lesson' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      storage.save({
+        key: 'normal_mem',
+        value: { data: 'normal lesson' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      // Create outcome tables and a promoted candidate lesson linked to promoted_mem
+      const db = storage.getDatabase();
+      db.exec(`
+        INSERT OR IGNORE INTO candidate_lessons (id, project_id, lesson_text, lesson_kind,
+          outcome_type, reward_band, confidence, durability, evidence_count, status,
+          promoted_memory_key, created_at, updated_at)
+        VALUES ('cl1', 'test', 'test', 'rule', 'negative', -1, 0.8, 'project', 3, 'promoted',
+          'promoted_mem', datetime('now'), datetime('now'))
+      `);
+
+      const results = retrieval.findRelevant({});
+      const promoted = results.find(m => m.key === 'promoted_mem');
+      const normal = results.find(m => m.key === 'normal_mem');
+
+      expect(promoted).toBeDefined();
+      expect(normal).toBeDefined();
+      expect(promoted!.score).toBeGreaterThan(normal!.score);
+    });
+
+    it('should apply helpfulness prior from memory_stats', () => {
+      storage.save({
+        key: 'helpful_mem',
+        value: { data: 'helpful' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      storage.save({
+        key: 'unhelpful_mem',
+        value: { data: 'unhelpful' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      const db = storage.getDatabase();
+      db.exec(`
+        INSERT INTO memory_stats (memory_key, times_retrieved, times_helpful)
+        VALUES ('helpful_mem', 10, 8)
+      `);
+      db.exec(`
+        INSERT INTO memory_stats (memory_key, times_retrieved, times_helpful)
+        VALUES ('unhelpful_mem', 10, 0)
+      `);
+
+      const results = retrieval.findRelevant({});
+      const helpful = results.find(m => m.key === 'helpful_mem');
+      const unhelpful = results.find(m => m.key === 'unhelpful_mem');
+
+      expect(helpful).toBeDefined();
+      expect(unhelpful).toBeDefined();
+      expect(helpful!.score).toBeGreaterThan(unhelpful!.score);
+    });
+
+    it('should apply staleness penalty for old unconfirmed memories', () => {
+      storage.save({
+        key: 'fresh_confirmed',
+        value: { data: 'fresh' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      storage.save({
+        key: 'stale_confirmed',
+        value: { data: 'stale' },
+        type: 'preference',
+        relevance_score: 1.0,
+      });
+
+      const db = storage.getDatabase();
+      const recentDate = new Date().toISOString();
+      const oldDate = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+
+      db.exec(`
+        INSERT INTO memory_stats (memory_key, times_retrieved, times_helpful, last_confirmed_at)
+        VALUES ('fresh_confirmed', 5, 3, '${recentDate}')
+      `);
+      db.exec(`
+        INSERT INTO memory_stats (memory_key, times_retrieved, times_helpful, last_confirmed_at)
+        VALUES ('stale_confirmed', 5, 3, '${oldDate}')
+      `);
+
+      const results = retrieval.findRelevant({});
+      const fresh = results.find(m => m.key === 'fresh_confirmed');
+      const stale = results.find(m => m.key === 'stale_confirmed');
+
+      expect(fresh).toBeDefined();
+      expect(stale).toBeDefined();
+      expect(fresh!.score).toBeGreaterThan(stale!.score);
+    });
+  });
+
   describe('searchByKeyword', () => {
     it('should search memories by keyword and apply relevance scoring', () => {
       storage.save({

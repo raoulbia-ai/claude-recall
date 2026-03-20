@@ -25,6 +25,7 @@ import {
   jaccardSimilarity,
 } from './shared';
 import { MemoryService } from '../services/memory';
+import { OutcomeStorage } from '../services/outcome-storage';
 
 const HOOK_NAME = 'bash-failure-watcher';
 const EXIT_CODE_REGEX = /Exit code (\d+)/;
@@ -144,6 +145,21 @@ async function handleFailure(
     relevanceScore: 0.85,
   });
 
+  // Write outcome event for outcome-aware learning
+  try {
+    const outcomeStorage = OutcomeStorage.getInstance();
+    outcomeStorage.createOutcomeEvent({
+      event_type: 'bash_result',
+      actor: 'tool',
+      action_summary: `Bash: ${truncate(command, 100)}`,
+      next_state_summary: `Exit code ${exitCode}: ${truncate(firstLine(output), 150)}`,
+      exit_code: parseInt(exitCode),
+      tags: extractCommandTags(command),
+    });
+  } catch (err) {
+    hookLog(HOOK_NAME, `Outcome event error: ${err}`);
+  }
+
   hookLog(HOOK_NAME, `Stored failure: ${truncate(command, 60)} (exit ${exitCode})`);
 
   // Track pending failure for fix pairing
@@ -183,6 +199,20 @@ async function handleSuccess(command: string, sessionId: string): Promise<void> 
             what_should_do: `Fix: ${truncate(command, 200)}`,
           },
         });
+        // Write positive outcome event for the fix
+        try {
+          const outcomeStorage = OutcomeStorage.getInstance();
+          outcomeStorage.createOutcomeEvent({
+            event_type: 'bash_result',
+            actor: 'tool',
+            action_summary: `Fix: ${truncate(command, 100)}`,
+            next_state_summary: `Success after previous failure: ${truncate(pf.command, 100)}`,
+            exit_code: 0,
+            tags: extractCommandTags(command),
+          });
+        } catch (err) {
+          hookLog(HOOK_NAME, `Positive outcome event error: ${err}`);
+        }
         hookLog(HOOK_NAME, `Paired fix: "${truncate(command, 60)}" → ${pf.memoryKey}`);
         matched = true;
         // Don't add to remaining — consumed
@@ -196,4 +226,21 @@ async function handleSuccess(command: string, sessionId: string): Promise<void> 
   }
 
   writePendingFailures(sessionId, remaining);
+}
+
+/**
+ * Extract command tags from a bash command for outcome tagging.
+ * e.g., "npm test -- --coverage" → ["npm", "test"]
+ */
+function extractCommandTags(command: string): string[] {
+  const parts = command.trim().split(/\s+/).filter(Boolean);
+  // Take first 2 meaningful tokens (skip flags starting with -)
+  const tags: string[] = [];
+  for (const part of parts) {
+    if (part.startsWith('-')) continue;
+    if (part.includes('/') && part.length > 20) continue; // Skip long paths
+    tags.push(part.toLowerCase());
+    if (tags.length >= 2) break;
+  }
+  return tags;
 }

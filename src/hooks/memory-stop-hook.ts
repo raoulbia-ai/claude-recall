@@ -19,6 +19,8 @@ import {
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
+import { DetectedFailure } from './failure-detectors';
+import { OutcomeStorage } from '../services/outcome-storage';
 
 const MAX_STORE = 3;
 
@@ -35,6 +37,15 @@ export async function handleMemoryStop(input: any): Promise<void> {
     hookLog('memory-stop', 'No transcript entries found');
     return;
   }
+
+  // Create an episode for this session
+  const outcomeStorage = OutcomeStorage.getInstance();
+  const projectId = ConfigService.getInstance().getProjectId();
+  const episodeId = outcomeStorage.createEpisode({
+    project_id: projectId,
+    session_id: input?.session_id,
+    source: 'memory-stop',
+  });
 
   // Extract user-only texts, filter, then batch-classify in one API call
   const textsWithIndex: { text: string; idx: number }[] = [];
@@ -85,7 +96,26 @@ export async function handleMemoryStop(input: any): Promise<void> {
   scanForCitations(transcriptPath);
 
   // Scan transcript for failure signals (non-zero exits, test cycles, backtracking, etc.)
-  detectAndStoreFailures(transcriptPath);
+  const failures = detectAndStoreFailures(transcriptPath, episodeId);
+  outcomeStorage.updateEpisode(episodeId, {
+    outcome_type: failures.length > 0 ? 'failure' : 'success',
+    severity: failures.length > 0 ? 'medium' : 'low',
+    outcome_summary: `${stored} memories, ${failures.length} failures`,
+  });
+
+  // Generate candidate lessons from high-confidence failures
+  generateCandidateLessons(failures, episodeId, projectId);
+
+  // Run promotion cycle
+  try {
+    const { PromotionEngine } = await import('../services/promotion-engine');
+    const result = PromotionEngine.getInstance().runCycle(projectId);
+    if (result.promoted > 0 || result.archived > 0) {
+      hookLog('memory-stop', `Promotion: ${result.promoted} promoted, ${result.archived} archived`);
+    }
+  } catch (err) {
+    hookLog('memory-stop', `Promotion error: ${err}`);
+  }
 }
 
 /**
@@ -154,6 +184,9 @@ function scanForCitations(transcriptPath: string): void {
 
       if (bestScore >= 0.5) {
         memoryService.incrementCiteCount(bestKey);
+        try {
+          OutcomeStorage.getInstance().recordHelpful(bestKey);
+        } catch {}
         hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (containment=${bestScore.toFixed(3)})`);
       } else {
         hookLog('memory-stop', `No match found for citation (best=${bestScore.toFixed(3)})`);
@@ -209,18 +242,18 @@ function extractRuleContent(value: any): string {
 /**
  * Scan the last 200 transcript entries for failure signals and store up to 3.
  */
-function detectAndStoreFailures(transcriptPath: string): void {
+function detectAndStoreFailures(transcriptPath: string, episodeId?: string): DetectedFailure[] {
   try {
     const entries = readTranscriptTail(transcriptPath, 200);
     if (entries.length === 0) {
       hookLog('memory-stop', '[FailureDetector] No entries to scan');
-      return;
+      return [];
     }
 
     const failures = detectTranscriptFailures(entries);
     if (failures.length === 0) {
       hookLog('memory-stop', '[FailureDetector] No failure signals detected');
-      return;
+      return [];
     }
 
     hookLog('memory-stop', `[FailureDetector] Detected ${failures.length} failure signal(s)`);
@@ -260,7 +293,57 @@ function detectAndStoreFailures(transcriptPath: string): void {
     }
 
     hookLog('memory-stop', `[FailureDetector] Stored ${stored} failure(s) from ${failures.length} detected`);
+    return failures;
   } catch (error) {
     hookLog('memory-stop', `[FailureDetector] Error: ${error}`);
+    return [];
   }
+}
+
+/**
+ * Generate candidate lessons from high-confidence failures.
+ * Deduplicates against existing lessons and increments evidence count for similar ones.
+ */
+function generateCandidateLessons(
+  failures: DetectedFailure[],
+  episodeId: string,
+  projectId: string,
+): void {
+  try {
+    const outcomeStorage = OutcomeStorage.getInstance();
+    for (const f of failures) {
+      if (f.confidence < 0.7) continue;
+      const similar = outcomeStorage.findSimilarLessons(f.content.what_should_do, projectId);
+      if (similar.length > 0) {
+        outcomeStorage.incrementEvidenceCount(similar[0].id);
+      } else {
+        outcomeStorage.createCandidateLesson({
+          project_id: projectId,
+          episode_id: episodeId,
+          lesson_text: f.content.what_should_do,
+          lesson_kind: 'failure_preventer',
+          applies_when: extractTagsFromContext(f.content.context),
+          outcome_type: 'negative',
+          reward_band: -1,
+          confidence: f.confidence,
+          durability: 'project',
+        });
+      }
+    }
+  } catch (err) {
+    hookLog('memory-stop', `Candidate lesson generation error: ${err}`);
+  }
+}
+
+function extractTagsFromContext(context: string): string[] {
+  const tags: string[] = [];
+  const words = context.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+  // Take up to 5 significant words as tags
+  for (const w of words) {
+    if (tags.length >= 5) break;
+    if (!['that', 'this', 'with', 'from', 'were', 'been'].includes(w)) {
+      tags.push(w);
+    }
+  }
+  return tags;
 }

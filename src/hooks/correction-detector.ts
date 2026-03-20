@@ -13,6 +13,16 @@ import {
   searchExisting,
   hookLog,
 } from './shared';
+import { OutcomeStorage } from '../services/outcome-storage';
+
+const REASK_PATTERNS = [
+  /still broken/i,
+  /that'?s not what I (?:meant|asked|wanted)/i,
+  /wrong file/i,
+  /try again/i,
+  /that didn'?t (?:work|fix|help)/i,
+  /you (?:missed|forgot|ignored)/i,
+];
 
 export async function handleCorrectionDetector(input: any): Promise<void> {
   const prompt: string = input?.prompt ?? '';
@@ -20,6 +30,23 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   // Skip trivial / non-text input
   if (prompt.length < 20 || prompt.length > 2000) return;
   if (prompt.startsWith('```') || prompt.startsWith('{')) return;
+
+  // Detect reask signals before classification
+  try {
+    for (const pattern of REASK_PATTERNS) {
+      if (pattern.test(prompt)) {
+        OutcomeStorage.getInstance().createOutcomeEvent({
+          event_type: 'reask_signal',
+          actor: 'user',
+          next_state_summary: `User reask detected: ${prompt.substring(0, 100)}`,
+          tags: ['reask'],
+        });
+        break;
+      }
+    }
+  } catch (err) {
+    hookLog('correction-detector', `Reask signal detection error: ${err}`);
+  }
 
   const result = await classifyContent(prompt);
   if (!result) return;

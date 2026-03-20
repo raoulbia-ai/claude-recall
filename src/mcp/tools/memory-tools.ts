@@ -3,6 +3,7 @@ import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
 import { SearchMonitor } from '../../services/search-monitor';
 import { SkillGenerator, GenerationResult } from '../../services/skill-generator';
+import { OutcomeStorage } from '../../services/outcome-storage';
 import { MCPTool, MCPContext } from '../server';
 
 export class MemoryTools {
@@ -340,6 +341,17 @@ export class MemoryTools {
         { tool: 'load_rules', tokenMetrics: { resultTokens, tokensSaved: totalRules > 0 ? totalRules * 200 : 0 } }
       );
 
+      // Track retrievals for outcome-aware scoring
+      try {
+        const outcomeStorage = OutcomeStorage.getInstance();
+        const allMemories = [...rules.preferences, ...rules.corrections, ...rules.failures, ...rules.devops];
+        for (const m of allMemories) {
+          outcomeStorage.recordRetrieval(m.key);
+        }
+      } catch {
+        // Non-critical
+      }
+
       let rulesText: string;
       if (sections.length > 0) {
         const body = sections.join('\n\n');
@@ -391,6 +403,16 @@ export class MemoryTools {
 
       const results = this.memoryService.findRelevant(searchContext);
       const topResults = results.slice(0, limit);
+
+      // Track retrievals in memory_stats
+      try {
+        const outcomeStorage = OutcomeStorage.getInstance();
+        for (const r of topResults) {
+          outcomeStorage.recordRetrieval(r.key);
+        }
+      } catch {
+        // Non-critical — don't fail the search
+      }
 
       // Record to SearchMonitor
       this.searchMonitor.recordSearch(
