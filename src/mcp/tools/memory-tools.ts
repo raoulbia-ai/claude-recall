@@ -295,15 +295,31 @@ export class MemoryTools {
       if (rules.corrections.length > 0) {
         sections.push('## Corrections\n' + rules.corrections.map(m => {
           const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
-          return `- ${val}`;
+          const isPromoted = m.key.startsWith('promoted_') || m.value?.source === 'promotion-engine';
+          const evidence = isPromoted && m.value?.evidence_count ? ` (learned from ${m.value.evidence_count} observations)` : '';
+          return isPromoted ? `- [promoted lesson] ${val}${evidence}` : `- ${val}`;
         }).join('\n'));
       }
 
       if (rules.failures.length > 0) {
-        sections.push('## Failures\n' + rules.failures.map(m => {
-          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
-          return `- ${val}`;
-        }).join('\n'));
+        // Separate promoted lessons from regular failures
+        const promotedLessons = rules.failures.filter(m => m.key.startsWith('promoted_') || m.value?.source === 'promotion-engine');
+        const regularFailures = rules.failures.filter(m => !m.key.startsWith('promoted_') && m.value?.source !== 'promotion-engine');
+
+        if (promotedLessons.length > 0) {
+          sections.push('## Promoted Lessons (learned from repeated outcomes)\n' + promotedLessons.map(m => {
+            const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+            const evidence = m.value?.evidence_count ? ` (seen ${m.value.evidence_count}x)` : '';
+            return `- ${val}${evidence}`;
+          }).join('\n'));
+        }
+
+        if (regularFailures.length > 0) {
+          sections.push('## Failures\n' + regularFailures.map(m => {
+            const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+            return `- ${val}`;
+          }).join('\n'));
+        }
       }
 
       if (rules.devops.length > 0) {
