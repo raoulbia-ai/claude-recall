@@ -55,7 +55,16 @@ claude mcp add claude-recall -- claude-recall mcp start
 
 Then restart your Claude Code session.
 
-Repeat step 5 (`claude-recall setup --install`) in each project you want Claude Recall active in. Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
+### Adding to another project
+
+From the new project directory, only steps 5-6 are needed:
+
+```bash
+claude-recall setup --install
+claude mcp add claude-recall -- claude-recall mcp start
+```
+
+Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
 
 ### Verify
 
@@ -65,7 +74,15 @@ Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
 
 ### Upgrading
 
-Follow the same install steps above — they handle both fresh installs and upgrades.
+When a new version is published, update the global binary — no per-project reinstall needed:
+
+```bash
+npm cache clean --force
+npm uninstall -g claude-recall
+npm install -g claude-recall
+```
+
+Then restart Claude Code sessions in each project to pick up the new version.
 
 ---
 
