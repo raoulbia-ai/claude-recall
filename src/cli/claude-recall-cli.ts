@@ -364,7 +364,8 @@ class ClaudeRecallCLI {
       if (memStats.length > 0) {
         console.log(`── Memory Stats — Top Retrieved (${memStats.length}) ──\n`);
         for (const s of memStats) {
-          const ratio = s.times_retrieved > 0 ? ((s.times_helpful / s.times_retrieved) * 100).toFixed(0) : '0';
+          const total = Math.max(s.times_retrieved, s.times_helpful + s.times_unhelpful);
+          const ratio = total > 0 ? Math.min((s.times_helpful / total) * 100, 100).toFixed(0) : '0';
           console.log(`  ${s.memory_key}`);
           console.log(`     retrieved: ${s.times_retrieved}  helpful: ${s.times_helpful}  unhelpful: ${s.times_unhelpful}  (${ratio}% helpful)`);
         }
