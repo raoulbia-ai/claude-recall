@@ -258,6 +258,12 @@ npm run mcp:dev        # Start MCP server in dev mode
 
 ---
 
+## Acknowledgments
+
+The outcome-aware learning pipeline (v0.18.0) was inspired by [OpenClaw-RL](https://github.com/Gen-Verse/OpenClaw-RL) from Gen-Verse. Their core ideas — treating the next state as a first-class learning signal, separating evaluative and directive feedback, and promoting only durable lessons — shaped Claude Recall's episode tracking, candidate lesson extraction, and promotion engine. Claude Recall adapts these concepts for a closed-model runtime using memory promotion rather than gradient updates.
+
+---
+
 ## License
 
 MIT.
