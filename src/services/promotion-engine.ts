@@ -39,12 +39,16 @@ export class PromotionEngine {
     let archived = 0;
 
     for (const candidate of candidates) {
-      if (this.shouldPromote(candidate)) {
-        this.promote(candidate.id);
-        promoted++;
-      } else if (this.shouldReject(candidate)) {
-        outcomeStorage.updateLessonStatus(candidate.id, 'rejected');
-        archived++;
+      try {
+        if (this.shouldPromote(candidate)) {
+          this.promote(candidate.id);
+          promoted++;
+        } else if (this.shouldReject(candidate)) {
+          outcomeStorage.updateLessonStatus(candidate.id, 'rejected');
+          archived++;
+        }
+      } catch (err) {
+        console.error(`PromotionEngine: failed to process candidate ${candidate.id}: ${(err as Error).message}`);
       }
     }
 
@@ -122,7 +126,8 @@ export class PromotionEngine {
     // Not retrieved in 90 days with low strength
     if (stats.last_retrieved_at) {
       const daysSinceRetrieved = (Date.now() - new Date(stats.last_retrieved_at).getTime()) / (1000 * 60 * 60 * 24);
-      const strength = MemoryRetrieval.computeStrength(memory);
+      let strength = 0;
+      try { strength = MemoryRetrieval.computeStrength(memory); } catch { strength = 0; }
       if (daysSinceRetrieved > 90 && strength < 0.2) {
         return true;
       }
@@ -177,8 +182,8 @@ export class PromotionEngine {
           archived++;
         }
       }
-    } catch {
-      // Non-critical
+    } catch (err) {
+      console.error(`PromotionEngine: demotion sweep failed: ${(err as Error).message}`);
     }
     return archived;
   }
