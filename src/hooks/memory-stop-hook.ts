@@ -12,6 +12,7 @@ import {
   storeMemory,
   searchExisting,
   hookLog,
+  safeErrorMessage,
   readTranscriptTail,
   extractTextFromEntry,
   isUserEntry,
@@ -114,7 +115,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
       hookLog('memory-stop', `Promotion: ${result.promoted} promoted, ${result.archived} archived`);
     }
   } catch (err) {
-    hookLog('memory-stop', `Promotion error: ${err}`);
+    hookLog('memory-stop', `Promotion error: ${safeErrorMessage(err)}`);
   }
 
   // Prune old outcome data to prevent unbounded table growth
@@ -125,7 +126,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
       hookLog('memory-stop', `Pruned: ${pruned.episodes} episodes, ${pruned.events} events, ${pruned.lessons} lessons, ${pruned.stats} orphaned stats`);
     }
   } catch (err) {
-    hookLog('memory-stop', `Prune error: ${err}`);
+    hookLog('memory-stop', `Prune error: ${safeErrorMessage(err)}`);
   }
 }
 
@@ -342,7 +343,7 @@ function generateCandidateLessons(
       }
     }
   } catch (err) {
-    hookLog('memory-stop', `Candidate lesson generation error: ${err}`);
+    hookLog('memory-stop', `Candidate lesson generation error: ${safeErrorMessage(err)}`);
   }
 }
 

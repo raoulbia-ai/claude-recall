@@ -48,7 +48,7 @@ export class PromotionEngine {
           archived++;
         }
       } catch (err) {
-        console.error(`PromotionEngine: failed to process candidate ${candidate.id}: ${(err as Error).message}`);
+        console.error(`PromotionEngine: failed to process candidate ${candidate.id}`);
       }
     }
 
@@ -183,7 +183,7 @@ export class PromotionEngine {
         }
       }
     } catch (err) {
-      console.error(`PromotionEngine: demotion sweep failed: ${(err as Error).message}`);
+      console.error('PromotionEngine: demotion sweep failed');
     }
     return archived;
   }

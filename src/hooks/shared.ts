@@ -170,6 +170,15 @@ export function searchExisting(query: string): ScoredMemory[] {
 }
 
 /**
+ * Extract a safe error message without exposing stack traces or internal paths.
+ */
+export function safeErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return 'unknown error';
+}
+
+/**
  * Append a log line to ~/.claude-recall/hook-logs/{hookName}.log
  */
 export function hookLog(hookName: string, message: string): void {
