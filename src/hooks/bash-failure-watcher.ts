@@ -19,6 +19,7 @@ import * as os from 'os';
 import { FailureMemoryContent } from '../services/failure-extractor';
 import {
   hookLog,
+  safeErrorMessage,
   storeMemory,
   searchExisting,
   isDuplicate,
@@ -105,7 +106,7 @@ export async function handleBashFailureWatcher(input: any): Promise<void> {
       await handleSuccess(command, sessionId);
     }
   } catch (err) {
-    hookLog(HOOK_NAME, `Error: ${err}`);
+    hookLog(HOOK_NAME, `Error: ${safeErrorMessage(err)}`);
     // Never throw — hooks must not block Claude
   }
 }
@@ -157,7 +158,7 @@ async function handleFailure(
       tags: extractCommandTags(command),
     });
   } catch (err) {
-    hookLog(HOOK_NAME, `Outcome event error: ${err}`);
+    hookLog(HOOK_NAME, `Outcome event error: ${safeErrorMessage(err)}`);
   }
 
   hookLog(HOOK_NAME, `Stored failure: ${truncate(command, 60)} (exit ${exitCode})`);
@@ -211,13 +212,13 @@ async function handleSuccess(command: string, sessionId: string): Promise<void> 
             tags: extractCommandTags(command),
           });
         } catch (err) {
-          hookLog(HOOK_NAME, `Positive outcome event error: ${err}`);
+          hookLog(HOOK_NAME, `Positive outcome event error: ${safeErrorMessage(err)}`);
         }
         hookLog(HOOK_NAME, `Paired fix: "${truncate(command, 60)}" → ${pf.memoryKey}`);
         matched = true;
         // Don't add to remaining — consumed
       } catch (err) {
-        hookLog(HOOK_NAME, `Fix pairing error: ${err}`);
+        hookLog(HOOK_NAME, `Fix pairing error: ${safeErrorMessage(err)}`);
         remaining.push(pf);
       }
     } else {

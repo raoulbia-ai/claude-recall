@@ -335,8 +335,20 @@ export class MemoryTools {
       if (lowCompliance.length > 0) {
         sections.push('## Rule Health\nThese rules are loaded frequently but never cited — consider rewording or removing:\n' +
           lowCompliance.map(r => {
-            const val = typeof r.value === 'string' ? (JSON.parse(r.value)?.content || r.value) : r.value;
-            return `- "${String(val).substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
+            let val: string;
+            if (typeof r.value === 'string') {
+              try {
+                const parsed = JSON.parse(r.value);
+                val = typeof parsed === 'string' ? parsed : (parsed?.content || parsed?.value || r.value);
+              } catch {
+                val = r.value;
+              }
+            } else if (typeof r.value === 'object' && r.value !== null) {
+              val = (r.value as any).content || (r.value as any).value || JSON.stringify(r.value);
+            } else {
+              val = String(r.value ?? '');
+            }
+            return `- "${val.substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
           }).join('\n'));
       }
 

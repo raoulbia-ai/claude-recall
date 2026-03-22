@@ -254,6 +254,35 @@ export class OutcomeStorage {
         times_unhelpful = times_unhelpful + 1
     `).run(key);
   }
+  /**
+   * Prune old data from outcome tables to prevent unbounded growth.
+   * - Episodes older than 90 days
+   * - Outcome events older than 90 days
+   * - Rejected/archived candidate lessons older than 14 days
+   * - Orphaned memory_stats entries (key no longer in memories table)
+   */
+  pruneOldData(): { episodes: number; events: number; lessons: number; stats: number } {
+    const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const episodes = this.db.prepare(
+      'DELETE FROM episodes WHERE created_at < ?'
+    ).run(cutoff90).changes;
+
+    const events = this.db.prepare(
+      'DELETE FROM outcome_events WHERE created_at < ?'
+    ).run(cutoff90).changes;
+
+    const lessons = this.db.prepare(
+      "DELETE FROM candidate_lessons WHERE status IN ('rejected', 'archived') AND updated_at < ?"
+    ).run(cutoff14).changes;
+
+    const stats = this.db.prepare(
+      'DELETE FROM memory_stats WHERE memory_key NOT IN (SELECT key FROM memories)'
+    ).run().changes;
+
+    return { episodes, events, lessons, stats };
+  }
 }
 
 // --- Helpers ---

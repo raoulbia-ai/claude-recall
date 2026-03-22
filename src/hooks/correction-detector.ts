@@ -12,6 +12,7 @@ import {
   storeMemory,
   searchExisting,
   hookLog,
+  safeErrorMessage,
 } from './shared';
 import { OutcomeStorage } from '../services/outcome-storage';
 
@@ -45,7 +46,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
       }
     }
   } catch (err) {
-    hookLog('correction-detector', `Reask signal detection error: ${err}`);
+    hookLog('correction-detector', `Reask signal detection error: ${safeErrorMessage(err)}`);
   }
 
   const result = await classifyContent(prompt);
