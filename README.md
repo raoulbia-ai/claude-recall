@@ -1,6 +1,6 @@
 # Claude Recall
 
-### Persistent, local memory for Claude Code — powered by native Claude Skills.
+### Persistent, local memory for Claude Code — learn from every session.
 
 Claude Recall is a **local memory engine + MCP server** that gives Claude Code something it's missing by default:
 **the ability to learn from you over time.**
@@ -15,7 +15,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches context automatically
 - **Failure Learning** — captures what failed, why, and what to do instead — so Claude doesn't repeat mistakes
 - **Outcome-Aware Learning** — tracks action outcomes (bash results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
-- **Skill Crystallization** — when enough memories accumulate, auto-generates `.claude/skills/auto-*/` files that load natively without tool calls
+- **Skill Crystallization** — auto-generates `.claude/skills/auto-*/` files from accumulated memories, using Anthropic's [Agent Skills](https://agentskills.io/) open standard
 - **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
 
 ---
@@ -113,7 +113,11 @@ claude-recall search "preference"
 
 ## How It Works
 
-Claude Recall runs as an MCP server exposing four tools, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. A native Claude Skill (`.claude/skills/memory-management/SKILL.md`) teaches Claude when to load, store, and search memories.
+Claude Recall runs as an MCP server exposing four tools, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction.
+
+### Built on Agent Skills
+
+Claude Recall uses Anthropic's [Agent Skills](https://agentskills.io/) open standard to teach Claude when and how to use its memory tools. A core skill (`.claude/skills/memory-management/SKILL.md`) guides Claude's memory behavior using progressive disclosure — metadata loads at startup, full instructions load only when needed. When enough memories accumulate around a topic, Claude Recall auto-generates additional skills (`.claude/skills/auto-*/`) that load natively without MCP tool calls. See Anthropic's [blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for more on the Agent Skills architecture.
 
 | Tool | Purpose |
 | ---- | ------- |
