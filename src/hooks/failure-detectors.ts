@@ -26,7 +26,8 @@ export interface DetectedFailure {
     | 'silent-test-failure'
     | 'edit-test-cycle'
     | 'backtracking'
-    | 'retry-loop';
+    | 'retry-loop'
+    | 'tool_failure';
   content: FailureMemoryContent;
   confidence: number;
 }

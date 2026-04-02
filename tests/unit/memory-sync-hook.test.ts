@@ -16,17 +16,29 @@ jest.mock('../../src/services/memory');
 jest.mock('../../src/services/config');
 
 import { handleMemorySync, deriveAutoMemoryPath } from '../../src/hooks/memory-sync-hook';
-import { MemoryService } from '../../src/services/memory';
+import { MemoryService, SyncRule } from '../../src/services/memory';
 import { ConfigService } from '../../src/services/config';
+
+function makeSyncRule(overrides: Partial<SyncRule> & { key: string; value: any }): SyncRule {
+  return {
+    crType: 'preference',
+    ccType: 'feedback',
+    score: 1,
+    cite_count: 0,
+    load_count: 1,
+    timestamp: Date.now(),
+    ...overrides,
+  };
+}
 
 describe('memory-sync-hook', () => {
   let tmpDir: string;
   let memoryDir: string;
+  let mockGetTopRulesForSync: jest.Mock;
   let mockLoadActiveRules: jest.Mock;
   const testCwd = '/home/user/project';
 
   beforeEach(() => {
-    // Create a unique tmp directory for each test
     tmpDir = fs.mkdtempSync('/tmp/memory-sync-test-');
     mockHomeDir = tmpDir;
 
@@ -37,14 +49,12 @@ describe('memory-sync-hook', () => {
       getProjectId: jest.fn().mockReturnValue('test-project'),
     });
 
+    mockGetTopRulesForSync = jest.fn().mockReturnValue([]);
     mockLoadActiveRules = jest.fn().mockReturnValue({
-      preferences: [],
-      corrections: [],
-      failures: [],
-      devops: [],
-      summary: 'No active rules found',
+      preferences: [], corrections: [], failures: [], devops: [], summary: '',
     });
     (MemoryService.getInstance as jest.Mock).mockReturnValue({
+      getTopRulesForSync: mockGetTopRulesForSync,
       loadActiveRules: mockLoadActiveRules,
     });
   });
@@ -72,170 +82,320 @@ describe('memory-sync-hook', () => {
   });
 
   describe('handleMemorySync', () => {
-    it('should export rules to recall-rules.md with correct sections', async () => {
-      mockLoadActiveRules.mockReturnValue({
-        preferences: [
-          { key: 'pref_1', value: { content: 'Use TypeScript' } },
-          { key: 'coding-style', value: { content: 'Prefer functional style' } },
-        ],
-        corrections: [
-          { key: 'corr_1', value: { content: 'Do not use var' } },
-        ],
-        failures: [
-          { key: 'fail_1', value: { content: 'REST failed, use GraphQL' } },
-        ],
-        devops: [
-          { key: 'devops_1', value: { content: 'Always run tests before commit' } },
-        ],
-        summary: 'Loaded rules',
-      });
+    // --- Individual file generation ---
+
+    it('writes individual .md files with YAML frontmatter', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'pref_1', value: 'Use TypeScript strict mode', crType: 'preference', ccType: 'feedback' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
 
-      const rulesPath = path.join(memoryDir, 'recall-rules.md');
-      expect(fs.existsSync(rulesPath)).toBe(true);
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
 
-      const content = fs.readFileSync(rulesPath, 'utf-8');
-      expect(content).toContain('# Claude Recall Rules');
-      expect(content).toContain('## Preferences');
-      expect(content).toContain('- Use TypeScript');
-      expect(content).toContain('- coding-style: Prefer functional style');
-      expect(content).toContain('## Corrections');
-      expect(content).toContain('- Do not use var');
-      expect(content).toContain('## Failures');
-      expect(content).toContain('- REST failed, use GraphQL');
-      expect(content).toContain('## DevOps Rules');
-      expect(content).toContain('- Always run tests before commit');
-      expect(content).toContain('*Last synced:');
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('---');
+      expect(content).toContain('name:');
+      expect(content).toContain('description:');
+      expect(content).toContain('type: feedback');
+      expect(content).toContain('Use TypeScript strict mode');
     });
 
-    it('should filter out test data keys', async () => {
-      mockLoadActiveRules.mockReturnValue({
-        preferences: [
-          { key: 'Test preference', value: { content: 'test value' } },
-          { key: 'real_pref', value: { content: 'Keep this' } },
-          { key: 'Session test 123', value: { content: 'session test' } },
-          { key: 'test_key', value: { content: 'another test' } },
-        ],
-        corrections: [],
-        failures: [],
-        devops: [],
-        summary: '',
-      });
+    it('maps correction type to feedback', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'corr_1', value: 'Do not use var', crType: 'correction', ccType: 'feedback' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
 
-      const content = fs.readFileSync(path.join(memoryDir, 'recall-rules.md'), 'utf-8');
-      expect(content).toContain('Keep this');
-      expect(content).not.toContain('test value');
-      expect(content).not.toContain('session test');
-      expect(content).not.toContain('another test');
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('type: feedback');
+      expect(content).toContain('Correction:');
     });
 
-    it('should filter out values containing secrets', async () => {
-      mockLoadActiveRules.mockReturnValue({
-        preferences: [
-          { key: 'safe', value: { content: 'Use prettier' } },
-          { key: 'unsafe_1', value: { content: 'api_key=abc123' } },
-          { key: 'unsafe_2', value: { content: 'Set password to admin' } },
-          { key: 'unsafe_3', value: { content: 'Use token xyz for auth' } },
-        ],
-        corrections: [],
-        failures: [],
-        devops: [],
-        summary: '',
-      });
+    it('maps devops type to project', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'devops_1', value: 'Always run tests before commit', crType: 'devops', ccType: 'project' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
 
-      const content = fs.readFileSync(path.join(memoryDir, 'recall-rules.md'), 'utf-8');
-      expect(content).toContain('Use prettier');
-      expect(content).not.toContain('api_key=abc123');
-      expect(content).not.toContain('password');
-      expect(content).not.toContain('token xyz');
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('type: project');
     });
 
-    it('should add MEMORY.md pointer when missing', async () => {
+    it('maps project-knowledge type to project', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'pk_1', value: 'API uses REST not GraphQL', crType: 'project-knowledge', ccType: 'project' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('type: project');
+    });
+
+    it('maps failure type to feedback', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'fail_1', value: 'npm test fails without NODE_ENV', crType: 'failure', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('type: feedback');
+      expect(content).toContain('Failure lesson:');
+    });
+
+    // --- Multiple rules ---
+
+    it('writes multiple files for multiple rules', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use tabs', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'p2', value: 'Prefer functional style', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'd1', value: 'Run lint before push', crType: 'devops', ccType: 'project' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(3);
+    });
+
+    // --- MEMORY.md index ---
+
+    it('updates MEMORY.md with per-file pointers', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use TypeScript', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
       await handleMemorySync({ cwd: testCwd });
 
       const memoryMd = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
-      expect(memoryMd).toContain('recall-rules.md');
       expect(memoryMd).toContain('## Claude Recall');
+      expect(memoryMd).toMatch(/\[.*\]\(recall_.*\.md\)/); // markdown link to recall file
     });
 
-    it('should not duplicate MEMORY.md pointer on re-run', async () => {
-      await handleMemorySync({ cwd: testCwd });
-      await handleMemorySync({ cwd: testCwd });
-
-      const memoryMd = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
-      // The pointer line contains recall-rules.md twice: [recall-rules.md](recall-rules.md)
-      // So 2 matches means the pointer was appended exactly once
-      const matches = memoryMd.match(/recall-rules\.md/g);
-      expect(matches).toHaveLength(2);
-    });
-
-    it('should preserve existing MEMORY.md content', async () => {
+    it('preserves existing MEMORY.md content', async () => {
       fs.mkdirSync(memoryDir, { recursive: true });
       fs.writeFileSync(path.join(memoryDir, 'MEMORY.md'), '# My Notes\n\n- Important thing\n');
+
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use TS', crType: 'preference', ccType: 'feedback' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
 
       const memoryMd = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
       expect(memoryMd).toContain('# My Notes');
       expect(memoryMd).toContain('- Important thing');
-      expect(memoryMd).toContain('recall-rules.md');
+      expect(memoryMd).toContain('## Claude Recall');
     });
 
-    it('should handle missing cwd gracefully', async () => {
+    it('replaces Claude Recall section on re-run (no duplication)', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Old rule', crType: 'preference', ccType: 'feedback' }),
+      ]);
+      await handleMemorySync({ cwd: testCwd });
+
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p2', value: 'New rule', crType: 'preference', ccType: 'feedback' }),
+      ]);
+      await handleMemorySync({ cwd: testCwd });
+
+      const memoryMd = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
+      const sections = memoryMd.match(/## Claude Recall/g);
+      expect(sections).toHaveLength(1);
+    });
+
+    // --- Cleanup ---
+
+    it('removes old recall-rules.md on first sync', async () => {
+      fs.mkdirSync(memoryDir, { recursive: true });
+      fs.writeFileSync(path.join(memoryDir, 'recall-rules.md'), '# Old flat file\n');
+
+      await handleMemorySync({ cwd: testCwd });
+
+      expect(fs.existsSync(path.join(memoryDir, 'recall-rules.md'))).toBe(false);
+    });
+
+    it('cleans up stale recall_* files from previous syncs', async () => {
+      fs.mkdirSync(memoryDir, { recursive: true });
+      fs.writeFileSync(path.join(memoryDir, 'recall_feedback_old-rule.md'), 'stale');
+
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'New rule only', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      // Old file should be gone
+      expect(fs.existsSync(path.join(memoryDir, 'recall_feedback_old-rule.md'))).toBe(false);
+      // New file should exist
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
+    });
+
+    it('does not remove non-recall files', async () => {
+      fs.mkdirSync(memoryDir, { recursive: true });
+      fs.writeFileSync(path.join(memoryDir, 'user_role.md'), 'CC own memory');
+
+      await handleMemorySync({ cwd: testCwd });
+
+      expect(fs.existsSync(path.join(memoryDir, 'user_role.md'))).toBe(true);
+    });
+
+    // --- Filtering ---
+
+    it('filters out test data keys', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'Test preference', value: 'test value', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'real_pref', value: 'Keep this', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'test_key', value: 'another test', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
+
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('Keep this');
+    });
+
+    it('filters out values containing secrets', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'safe', value: 'Use prettier', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'unsafe_1', value: 'api_key=abc123', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'unsafe_2', value: 'Set password to admin', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
+
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('Use prettier');
+    });
+
+    // --- Cap ---
+
+    it('respects getTopRulesForSync limit (30 max)', async () => {
+      // getTopRulesForSync already caps at 30 — verify the hook writes exactly what it returns
+      const rules = Array.from({ length: 30 }, (_, i) =>
+        makeSyncRule({ key: `rule_${i}`, value: `Rule number ${i}`, crType: 'preference', ccType: 'feedback' })
+      );
+      mockGetTopRulesForSync.mockReturnValue(rules);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(30);
+    });
+
+    // --- Empty rules ---
+
+    it('writes no recall files for empty rules', async () => {
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(0);
+    });
+
+    it('writes MEMORY.md with empty section for no rules', async () => {
+      await handleMemorySync({ cwd: testCwd });
+
+      const memoryMd = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
+      expect(memoryMd).toContain('## Claude Recall');
+      expect(memoryMd).toContain('No recall rules synced');
+    });
+
+    // --- Idempotency ---
+
+    it('is idempotent — re-run produces same files', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use tabs', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+      const files1 = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content1 = fs.readFileSync(path.join(memoryDir, files1[0]), 'utf-8');
+
+      await handleMemorySync({ cwd: testCwd });
+      const files2 = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content2 = fs.readFileSync(path.join(memoryDir, files2[0]), 'utf-8');
+
+      expect(files1).toEqual(files2);
+      expect(content1).toEqual(content2);
+    });
+
+    // --- Edge cases ---
+
+    it('handles missing cwd gracefully', async () => {
       await expect(handleMemorySync({})).resolves.not.toThrow();
       await expect(handleMemorySync({ cwd: '' })).resolves.not.toThrow();
       await expect(handleMemorySync(null)).resolves.not.toThrow();
     });
 
-    it('should produce minimal file for empty rules', async () => {
-      await handleMemorySync({ cwd: testCwd });
-
-      const content = fs.readFileSync(path.join(memoryDir, 'recall-rules.md'), 'utf-8');
-      expect(content).toContain('# Claude Recall Rules');
-      expect(content).toContain('*Last synced:');
-      expect(content).not.toContain('## Preferences');
-      expect(content).not.toContain('## Corrections');
-    });
-
-    it('should create auto-memory directory if missing', async () => {
+    it('creates auto-memory directory if missing', async () => {
       expect(fs.existsSync(memoryDir)).toBe(false);
+
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use TS', crType: 'preference', ccType: 'feedback' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
 
       expect(fs.existsSync(memoryDir)).toBe(true);
-      expect(fs.existsSync(path.join(memoryDir, 'recall-rules.md'))).toBe(true);
     });
 
-    it('should be idempotent — re-run overwrites with latest rules', async () => {
-      mockLoadActiveRules.mockReturnValueOnce({
-        preferences: [{ key: 'p1', value: { content: 'Old rule' } }],
-        corrections: [],
-        failures: [],
-        devops: [],
-        summary: '',
-      });
+    it('handles object values correctly', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({
+          key: 'p1',
+          value: { content: 'Prefer functional style', confidence: 0.9 },
+          crType: 'preference',
+          ccType: 'feedback',
+        }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
-      let content = fs.readFileSync(path.join(memoryDir, 'recall-rules.md'), 'utf-8');
-      expect(content).toContain('Old rule');
 
-      mockLoadActiveRules.mockReturnValueOnce({
-        preferences: [{ key: 'p1', value: { content: 'New rule' } }],
-        corrections: [],
-        failures: [],
-        devops: [],
-        summary: '',
-      });
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('Prefer functional style');
+    });
+
+    it('handles human-readable keys as names', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'coding-style', value: 'Use functional patterns', crType: 'preference', ccType: 'feedback' }),
+      ]);
 
       await handleMemorySync({ cwd: testCwd });
-      content = fs.readFileSync(path.join(memoryDir, 'recall-rules.md'), 'utf-8');
-      expect(content).toContain('New rule');
-      expect(content).not.toContain('Old rule');
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('name: Coding Style');
+    });
+
+    it('deduplicates filenames for rules with same slug', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'hook_1', value: 'Use tabs', crType: 'preference', ccType: 'feedback' }),
+        makeSyncRule({ key: 'hook_2', value: 'Use tabs', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(2);
+      // Filenames should be different
+      expect(files[0]).not.toBe(files[1]);
     });
   });
 });

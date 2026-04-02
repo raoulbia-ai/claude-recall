@@ -767,15 +767,25 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '8.0.0';  // v8 = add bash-failure-watcher PostToolUse hook
+    settings.hooksVersion = '10.0.0';  // v10 = add PostToolUseFailure for explicit error capture
     settings.hooks = {
       PostToolUse: [
         {
-          matcher: "Bash",
           hooks: [
             {
               type: "command",
-              command: `${hookCmd} bash-failure-watcher`,
+              command: `${hookCmd} tool-outcome-watcher`,
+              timeout: 3
+            }
+          ]
+        }
+      ],
+      PostToolUseFailure: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} tool-failure`,
               timeout: 3
             }
           ]

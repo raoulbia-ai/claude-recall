@@ -25,6 +25,18 @@ export interface ActiveRules {
   summary: string;
 }
 
+/** A rule scored and typed for sync to Claude Code's auto-memory directory. */
+export interface SyncRule {
+  key: string;
+  crType: string;           // Claude Recall type (preference, correction, failure, devops, project-knowledge)
+  ccType: 'feedback' | 'project';  // Claude Code type
+  value: any;
+  score: number;            // Composite ranking score
+  cite_count: number;
+  load_count: number;
+  timestamp: number;
+}
+
 export interface ComplianceRule {
   key: string;
   type: string;
@@ -496,6 +508,57 @@ export class MemoryService {
     if (memory?.id) {
       this.storage.incrementCiteCount(memory.id);
     }
+  }
+
+  /**
+   * Get top N rules scored for sync to Claude Code's auto-memory directory.
+   * Scores by: (cite_count * 3) + (load_count * 0.5) + recency_bonus.
+   * Maps Claude Recall types to CC types (feedback | project).
+   */
+  getTopRulesForSync(projectId?: string, limit: number = 30): SyncRule[] {
+    const rules = this.loadActiveRules(projectId);
+    const allMemories = [
+      ...rules.preferences,
+      ...rules.corrections,
+      ...rules.failures,
+      ...rules.devops,
+    ];
+
+    const now = Date.now();
+    const DAY_MS = 86400000;
+
+    const scored: SyncRule[] = allMemories.map(m => {
+      const citeCount = m.cite_count ?? 0;
+      const loadCount = m.load_count ?? 0;
+      const ts = m.timestamp ?? 0;
+
+      // Recency bonus: 2.0 for <7 days, 1.0 for <30 days, 0 for older
+      const ageDays = (now - ts) / DAY_MS;
+      const recencyBonus = ageDays < 7 ? 2.0 : ageDays < 30 ? 1.0 : 0;
+
+      const score = (citeCount * 3) + (loadCount * 0.5) + recencyBonus;
+
+      // Map CR type -> CC type
+      const crType = m.type || 'preference';
+      const ccType: 'feedback' | 'project' =
+        (crType === 'project-knowledge' || crType === 'devops') ? 'project' : 'feedback';
+
+      return {
+        key: m.key,
+        crType,
+        ccType,
+        value: m.value,
+        score,
+        cite_count: citeCount,
+        load_count: loadCount,
+        timestamp: ts,
+      };
+    });
+
+    // Sort by score descending, then by recency
+    scored.sort((a, b) => b.score - a.score || b.timestamp - a.timestamp);
+
+    return scored.slice(0, limit);
   }
 
   /**

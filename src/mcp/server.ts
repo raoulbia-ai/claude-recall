@@ -137,7 +137,9 @@ export class MCPServer {
   }
 
   private registerTools(): void {
-    const memoryTools = new MemoryTools(this.memoryService, this.logger);
+    const memoryTools = new MemoryTools(this.memoryService, this.logger, () => {
+      this.sendPromptsChanged();
+    });
 
     // Register memory tools (always: load_rules + store_memory)
     for (const tool of memoryTools.getTools()) {
@@ -147,6 +149,20 @@ export class MCPServer {
     this.logger.info('MCPServer', `Registered ${this.tools.size} tools`, {
       tools: Array.from(this.tools.keys())
     });
+  }
+
+  /**
+   * Send prompts/list_changed notification to inform CC that prompts may have new data.
+   */
+  private sendPromptsChanged(): void {
+    try {
+      this.transport.sendNotification({
+        jsonrpc: '2.0',
+        method: 'notifications/prompts/list_changed',
+      });
+    } catch {
+      // Non-critical — CC will still work without it
+    }
   }
 
   private async handleInitialize(request: MCPRequest): Promise<MCPResponse> {

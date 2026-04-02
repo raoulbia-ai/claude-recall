@@ -1,56 +1,27 @@
-import { spawn } from 'child_process';
 import { MCPTestClient } from '../utils/mcp-test-client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
 describe('Claude Code MCP Integration', () => {
-  let mcpProcess: any;
   let client: MCPTestClient;
-  const activeProcesses: any[] = [];
   let testDbDir: string;
 
   beforeAll(async () => {
     // Use a temporary directory so test data never pollutes the production DB
     testDbDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-recall-test-'));
 
-    // Start MCP server pointed at the temp DB
-    mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start'], {
-      env: { ...process.env, CLAUDE_RECALL_DB_PATH: testDbDir },
-    });
-    client = new MCPTestClient();
+    // MCPTestClient spawns its own server process — pass DB path via env
+    client = new MCPTestClient(
+      'node',
+      ['dist/cli/claude-recall-cli.js', 'mcp', 'start'],
+      { CLAUDE_RECALL_DB_PATH: testDbDir },
+    );
     await client.connect();
   });
 
   afterAll(async () => {
     await client.disconnect();
-    
-    // Kill main process
-    if (mcpProcess) {
-      mcpProcess.kill('SIGTERM');
-      activeProcesses.push(mcpProcess);
-    }
-    
-    // Kill all tracked processes
-    for (const proc of activeProcesses) {
-      try {
-        proc.kill('SIGTERM');
-      } catch (e) {
-        // Already dead
-      }
-    }
-    
-    // Give them time to shut down
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Force kill any remaining
-    for (const proc of activeProcesses) {
-      try {
-        proc.kill('SIGKILL');
-      } catch (e) {
-        // Already dead
-      }
-    }
 
     // Clean up temp DB directory
     if (testDbDir) {
@@ -178,13 +149,7 @@ describe('Claude Code MCP Integration', () => {
         }
       });
 
-      // Restart server (same temp DB)
-      mcpProcess.kill('SIGTERM');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      mcpProcess = spawn('node', ['dist/cli/claude-recall-cli.js', 'mcp', 'start'], {
-        env: { ...process.env, CLAUDE_RECALL_DB_PATH: testDbDir },
-      });
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for startup
+      // Restart server (client reconnect kills and re-spawns with same env)
       await client.reconnect();
 
       // Verify session persisted via load_rules

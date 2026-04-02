@@ -43,14 +43,25 @@ export class HookCommands {
               await handleMemorySync(input);
               break;
             }
+            case 'tool-outcome-watcher': {
+              const { handleToolOutcomeWatcher } = await import('../../hooks/tool-outcome-watcher');
+              await handleToolOutcomeWatcher(input);
+              break;
+            }
+            case 'tool-failure': {
+              const { handleToolFailure } = await import('../../hooks/tool-outcome-watcher');
+              await handleToolFailure(input);
+              break;
+            }
             case 'bash-failure-watcher': {
-              const { handleBashFailureWatcher } = await import('../../hooks/bash-failure-watcher');
+              // Backward compat alias — routes to tool-outcome-watcher
+              const { handleBashFailureWatcher } = await import('../../hooks/tool-outcome-watcher');
               await handleBashFailureWatcher(input);
               break;
             }
             default:
               console.error(`Unknown hook: ${name}`);
-              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, bash-failure-watcher');
+              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, tool-outcome-watcher');
           }
         } catch {
           // Hooks must never block Claude — always exit 0

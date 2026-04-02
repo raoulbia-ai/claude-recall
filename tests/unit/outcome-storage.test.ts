@@ -323,4 +323,59 @@ describe('OutcomeStorage', () => {
       expect(stats).toBeNull();
     });
   });
+
+  describe('getEventsByType', () => {
+    it('should return events filtered by event_type', () => {
+      const outcomeStorage = OutcomeStorage.getInstance();
+
+      outcomeStorage.createOutcomeEvent({
+        event_type: 'tool_failure',
+        actor: 'tool',
+        action_summary: 'Edit failed on app.ts',
+        next_state_summary: 'Permission denied',
+      });
+      outcomeStorage.createOutcomeEvent({
+        event_type: 'tool_result',
+        actor: 'tool',
+        action_summary: 'Bash: npm test',
+        next_state_summary: 'All tests passed',
+      });
+      outcomeStorage.createOutcomeEvent({
+        event_type: 'tool_failure',
+        actor: 'tool',
+        action_summary: 'Write failed on config.ts',
+        next_state_summary: 'ENOENT',
+      });
+
+      const failures = outcomeStorage.getEventsByType('tool_failure');
+      expect(failures).toHaveLength(2);
+      expect(failures[0].event_type).toBe('tool_failure');
+      expect(failures[1].event_type).toBe('tool_failure');
+    });
+
+    it('should return empty array for no matching events', () => {
+      const outcomeStorage = OutcomeStorage.getInstance();
+      const results = outcomeStorage.getEventsByType('nonexistent_type');
+      expect(results).toEqual([]);
+    });
+
+    it('should respect hoursBack filter', () => {
+      const outcomeStorage = OutcomeStorage.getInstance();
+
+      outcomeStorage.createOutcomeEvent({
+        event_type: 'tool_failure',
+        actor: 'tool',
+        action_summary: 'Recent failure',
+        next_state_summary: 'Error',
+      });
+
+      // With a very small window, recent event should still show
+      const results = outcomeStorage.getEventsByType('tool_failure', 1);
+      expect(results).toHaveLength(1);
+
+      // With 0 hours back, nothing should match (created_at > now)
+      const empty = outcomeStorage.getEventsByType('tool_failure', 0);
+      expect(empty).toHaveLength(0);
+    });
+  });
 });

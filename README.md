@@ -14,7 +14,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 - **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with silent regex fallback
 - **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches context automatically
 - **Failure Learning** — captures what failed, why, and what to do instead — so Claude doesn't repeat mistakes
-- **Outcome-Aware Learning** — tracks action outcomes (bash results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
+- **Outcome-Aware Learning** — tracks action outcomes (all tool results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
 - **Skill Crystallization** — auto-generates `.claude/skills/auto-*/` files from accumulated memories, using Anthropic's [Agent Skills](https://agentskills.io/) open standard
 - **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
 
@@ -93,10 +93,10 @@ Once installed, Claude Recall works automatically in the background:
 1. **First prompt** — the `search_enforcer` hook ensures Claude loads your stored rules before taking any action
 2. **As you work** — the `correction-detector` hook classifies every prompt you type. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored automatically
 3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns. It also creates **episodes** summarizing the session outcome, generates **candidate lessons** from detected failures, and runs a **promotion cycle** to graduate validated patterns into active rules
-4. **Bash failures** — the `bash-failure-watcher` hook captures command failures in real-time, pairs successful fixes, and writes **outcome events** for the learning pipeline
+4. **Tool outcomes** — the `tool-outcome-watcher` hook captures outcomes from all tools (Bash, Edit, Write, MCP tools) in real-time. Bash failures are paired with successful fixes. A separate `PostToolUseFailure` hook captures structured error details for any tool failure
 5. **Reask detection** — the `correction-detector` hook detects user frustration signals ("still broken", "that didn't work") and records them as outcome events
 6. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
-7. **Rules sync to auto-memory** — the `memory-sync` hook exports active rules to `~/.claude/projects/{project}/memory/recall-rules.md` so they're available even when the MCP server is down
+7. **Rules sync to auto-memory** — the `memory-sync` hook exports the top 30 rules as individual typed `.md` files with YAML frontmatter to `~/.claude/projects/{project}/memory/`, matching Claude Code's native memory format. Rules are ranked by citation count, load frequency, and recency
 
 All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude Code session) with silent regex fallback. No configuration needed.
 
@@ -113,7 +113,7 @@ claude-recall search "preference"
 
 ## How It Works
 
-Claude Recall runs as an MCP server exposing four tools, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction.
+Claude Recall runs as an MCP server exposing four tools and seven prompts, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The MCP prompts (including `load-rules` and `session-review`) are discoverable by Claude Code's skill system.
 
 ### Built on Agent Skills
 
@@ -134,7 +134,7 @@ Claude Recall tracks what happens *after* Claude acts — not just what was said
 action → outcome event → episode → candidate lesson → promotion → active rule
 ```
 
-- **Outcome events** capture bash results, test outcomes, user corrections, and reask signals
+- **Outcome events** capture results from all tool types (Bash, Edit, Write, MCP), test outcomes, user corrections, and reask signals
 - **Episodes** summarize entire sessions with outcome type, severity, and confidence
 - **Candidate lessons** are extracted from failure patterns — deduplicated by Jaccard similarity
 - **Promotion engine** graduates lessons into active rules after 2+ observations (or immediately for high-severity failures), and demotes never-helpful memories

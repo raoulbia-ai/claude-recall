@@ -98,14 +98,19 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
   // Scan transcript for failure signals (non-zero exits, test cycles, backtracking, etc.)
   const failures = detectAndStoreFailures(transcriptPath, episodeId);
+
+  // Incorporate structured tool_failure events captured by PostToolUseFailure hook
+  const toolFailures = getToolFailureEvents(outcomeStorage);
+  const allFailures = [...failures, ...toolFailures];
+
   outcomeStorage.updateEpisode(episodeId, {
-    outcome_type: failures.length > 0 ? 'failure' : 'success',
-    severity: failures.length > 0 ? 'medium' : 'low',
-    outcome_summary: `${stored} memories, ${failures.length} failures`,
+    outcome_type: allFailures.length > 0 ? 'failure' : 'success',
+    severity: allFailures.length > 0 ? 'medium' : 'low',
+    outcome_summary: `${stored} memories, ${allFailures.length} failures (${toolFailures.length} from tool events)`,
   });
 
   // Generate candidate lessons from high-confidence failures
-  generateCandidateLessons(failures, episodeId, projectId);
+  generateCandidateLessons(allFailures, episodeId, projectId);
 
   // Run promotion cycle
   try {
@@ -308,6 +313,30 @@ function detectAndStoreFailures(transcriptPath: string, episodeId?: string): Det
     return failures;
   } catch (error) {
     hookLog('memory-stop', `[FailureDetector] Error: ${error}`);
+    return [];
+  }
+}
+
+/**
+ * Convert structured tool_failure outcome events into DetectedFailure format
+ * so they feed into the candidate lessons pipeline.
+ */
+function getToolFailureEvents(outcomeStorage: OutcomeStorage): DetectedFailure[] {
+  try {
+    const events = outcomeStorage.getEventsByType('tool_failure', 1); // last 1 hour
+    return events.slice(0, 5).map(e => ({
+      signal: 'tool_failure' as const,
+      confidence: 0.8,
+      content: {
+        what_failed: e.action_summary || 'Tool failure',
+        why_failed: e.next_state_summary,
+        what_should_do: 'Check inputs and prerequisites before retrying',
+        context: `Captured by PostToolUseFailure hook`,
+        preventative_checks: ['Verify tool inputs are correct'],
+      },
+    }));
+  } catch (err) {
+    hookLog('memory-stop', `Tool failure events error: ${safeErrorMessage(err)}`);
     return [];
   }
 }

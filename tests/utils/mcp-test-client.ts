@@ -27,16 +27,22 @@ export class MCPTestClient extends EventEmitter {
     reject: (error: Error) => void;
   }> = new Map();
   private requestId: number = 1;
+  private env: Record<string, string | undefined>;
 
-  constructor(private command: string = 'node', private args: string[] = ['dist/cli/claude-recall-cli.js', 'mcp', 'start']) {
+  constructor(
+    private command: string = 'node',
+    private args: string[] = ['dist/cli/claude-recall-cli.js', 'mcp', 'start'],
+    env?: Record<string, string | undefined>,
+  ) {
     super();
+    this.env = { ...process.env, NODE_ENV: 'test', ...env };
   }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.process = spawn(this.command, this.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, NODE_ENV: 'test' }
+        env: this.env,
       });
 
       this.process.stdout?.on('data', (data) => {

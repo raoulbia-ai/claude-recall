@@ -218,6 +218,27 @@ export class OutcomeStorage {
     return (this.db.prepare('SELECT * FROM candidate_lessons WHERE id = ?').get(id) as CandidateLesson) || null;
   }
 
+  /**
+   * Get outcome events filtered by event_type, ordered by most recent.
+   * Optionally filter by time window (defaults to last 24 hours).
+   */
+  getEventsByType(eventType: string, hoursBack: number = 24): Array<{
+    id: string;
+    episode_id: string | null;
+    event_type: string;
+    actor: string;
+    action_summary: string | null;
+    next_state_summary: string;
+    exit_code: number | null;
+    tags_json: string | null;
+    created_at: string;
+  }> {
+    const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+    return this.db.prepare(
+      'SELECT * FROM outcome_events WHERE event_type = ? AND created_at > ? ORDER BY created_at DESC'
+    ).all(eventType, cutoff) as any[];
+  }
+
   // --- Memory Stats ---
 
   getMemoryStats(key: string): MemoryStats | null {

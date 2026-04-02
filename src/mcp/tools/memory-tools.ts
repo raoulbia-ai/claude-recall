@@ -17,12 +17,15 @@ export class MemoryTools {
 
   private tools: MCPTool[] = [];
   private searchMonitor: SearchMonitor;
+  private onMemoryChanged?: () => void;
 
   constructor(
     private memoryService: MemoryService,
-    private logger: LoggingService
+    private logger: LoggingService,
+    onMemoryChanged?: () => void,
   ) {
     this.searchMonitor = SearchMonitor.getInstance();
+    this.onMemoryChanged = onMemoryChanged;
     this.registerTools();
   }
 
@@ -252,6 +255,13 @@ export class MemoryTools {
         this.logger.debug('MemoryTools', 'Skill generation check failed', e);
       }
 
+      // Notify that memory changed (triggers prompts/list_changed for CC)
+      try {
+        this.onMemoryChanged?.();
+      } catch {
+        // Non-critical
+      }
+
       return {
         id: key,
         success: true,
@@ -339,16 +349,22 @@ export class MemoryTools {
             if (typeof r.value === 'string') {
               try {
                 const parsed = JSON.parse(r.value);
-                val = typeof parsed === 'string' ? parsed : (parsed?.content || parsed?.value || r.value);
+                val = typeof parsed === 'string' ? parsed
+                  : typeof parsed?.content === 'string' ? parsed.content
+                  : typeof parsed?.value === 'string' ? parsed.value
+                  : r.value;
               } catch {
                 val = r.value;
               }
             } else if (typeof r.value === 'object' && r.value !== null) {
-              val = (r.value as any).content || (r.value as any).value || JSON.stringify(r.value);
+              const v = r.value as any;
+              val = typeof v.content === 'string' ? v.content
+                : typeof v.value === 'string' ? v.value
+                : JSON.stringify(r.value);
             } else {
               val = String(r.value ?? '');
             }
-            return `- "${val.substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
+            return `- "${String(val).substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
           }).join('\n'));
       }
 
