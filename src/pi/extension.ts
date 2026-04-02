@@ -27,6 +27,24 @@ const LOAD_RULES_DIRECTIVE =
   'Place citations next to the action they influenced — not at the end of unrelated text.\n' +
   'If a rule conflicts with your plan, follow the rule — it reflects a user decision.';
 
+function truncateStr(s: string, max: number): string {
+  return s.length <= max ? s : s.substring(0, max - 3) + '...';
+}
+
+/** Check if tool output indicates a failure (mirrors event-processors logic). */
+function isFailureOutput(toolName: string, output: string): boolean {
+  if (toolName === 'bash' || toolName === 'Bash') {
+    return /Exit code (\d+)/.test(output) && !/Exit code 0/.test(output);
+  }
+  if (['edit', 'write', 'Edit', 'Write'].includes(toolName)) {
+    return /permission denied|EACCES|ENOENT|file not found|old_string.*not found|not unique in the file/i.test(output);
+  }
+  if (output.length < 500) {
+    return /error|failed|exception|timeout/i.test(output);
+  }
+  return false;
+}
+
 /** Format a memory value for display. */
 function extractVal(value: any): string {
   if (typeof value === 'string') return value;
@@ -103,12 +121,24 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
   // --- Event: capture tool outcomes ---
 
-  pi.on('tool_result', (event, _ctx) => {
+  pi.on('tool_result', (event, ctx) => {
     const output = event.content
       .filter((c): c is PiTypes.TextContent => c.type === 'text')
       .map(c => c.text)
       .join('\n');
+
+    // Notify user when a failure is captured
+    const wasFailing = event.isError || isFailureOutput(event.toolName, output);
     processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
+
+    if (wasFailing && ctx.hasUI) {
+      const label = event.input?.command
+        ? truncateStr(event.input.command as string, 40)
+        : event.toolName;
+      try {
+        ctx.ui.notify(`Recall: failure stored — ${label}`, 'info');
+      } catch { /* non-critical */ }
+    }
   });
 
   // --- Event: detect corrections from user input ---
