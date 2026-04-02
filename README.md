@@ -1,9 +1,11 @@
 # Claude Recall
 
-### Persistent, local memory for Claude Code — learn from every session.
+### Persistent, local memory for coding agents — learn from every session.
 
-Claude Recall is a **local memory engine + MCP server** that gives Claude Code something it's missing by default:
+Claude Recall is a **local memory engine** that gives coding agents something they're missing by default:
 **the ability to learn from you over time.**
+
+Works with **Claude Code** (via MCP server + hooks) and **[Pi](https://github.com/mariozechner/pi)** (via native extension). Both share the same local database — a preference learned in one agent is available in the other.
 
 Your preferences, project structure, workflows, corrections, and coding style are captured automatically and applied in future sessions — **securely stored on your machine**.
 
@@ -12,8 +14,8 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 ## Features
 
 - **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with silent regex fallback
-- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and Claude switches context automatically
-- **Failure Learning** — captures what failed, why, and what to do instead — so Claude doesn't repeat mistakes
+- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and the agent switches context automatically
+- **Failure Learning** — captures what failed, why, and what to do instead — so the agent doesn't repeat mistakes
 - **Outcome-Aware Learning** — tracks action outcomes (all tool results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
 - **Skill Crystallization** — auto-generates `.claude/skills/auto-*/` files from accumulated memories, using Anthropic's [Agent Skills](https://agentskills.io/) open standard
 - **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
@@ -29,60 +31,46 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 | Node.js   | **20+**                 | required for better-sqlite3 |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
-### Install / Reinstall
-
-Run these from your project directory:
+### Install for Claude Code
 
 ```bash
-# 1. Remove MCP server registration (if exists)
-claude mcp remove claude-recall
-
-# 2. Clear npm cache
-npm cache clean --force
-
-# 3. Uninstall global claude-recall
-npm uninstall -g claude-recall
-
-# 4. Install global claude-recall
+# Install globally
 npm install -g claude-recall
 
-# 5. Install in local project folder
+# Set up hooks and skills in your project
 claude-recall setup --install
 
-# 6. Re-register MCP server
+# Register MCP server
 claude mcp add claude-recall -- claude-recall mcp start
 ```
 
-Then restart your Claude Code session.
+Then restart your Claude Code session. For additional projects, only the last two commands are needed.
 
-### Adding to another project
+**Verify:** Ask *"Load my rules"* — Claude should call `mcp__claude-recall__load_rules`.
 
-From the new project directory, only steps 5-6 are needed:
+### Install for Pi
 
 ```bash
-claude-recall setup --install
-claude mcp add claude-recall -- claude-recall mcp start
+pi install npm:claude-recall
 ```
 
-Memories are automatically scoped per project in a shared database (`~/.claude-recall/claude-recall.db`).
+That's it. The extension registers tools and loads a skill automatically. No further configuration needed.
 
-### Verify
+**Verify:** Start Pi and ask *"Load my rules"* — Pi should call `recall_load_rules`.
 
-In Claude Code, ask: *"Load my rules"*
+### Shared Database
 
-Claude should call `mcp__claude-recall__load_rules`. If it works, you're ready.
+Both agents use the same database (`~/.claude-recall/claude-recall.db`). Memories are scoped per project by working directory. A correction learned in Claude Code is available in Pi and vice versa.
 
 ### Upgrading
 
-When a new version is published, update the global binary — no per-project reinstall needed:
-
 ```bash
-npm cache clean --force
-npm uninstall -g claude-recall
+# Claude Code
 npm install -g claude-recall
-```
 
-Then restart Claude Code sessions in each project to pick up the new version.
+# Pi
+pi update claude-recall
+```
 
 ---
 
@@ -90,21 +78,20 @@ Then restart Claude Code sessions in each project to pick up the new version.
 
 Once installed, Claude Recall works automatically in the background:
 
-1. **First prompt** — the `search_enforcer` hook ensures Claude loads your stored rules before taking any action
-2. **As you work** — the `correction-detector` hook classifies every prompt you type. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored automatically
-3. **End of turn** — the `memory-stop` hook scans recent transcript entries for corrections, preferences, failures, and devops patterns. It also creates **episodes** summarizing the session outcome, generates **candidate lessons** from detected failures, and runs a **promotion cycle** to graduate validated patterns into active rules
-4. **Tool outcomes** — the `tool-outcome-watcher` hook captures outcomes from all tools (Bash, Edit, Write, MCP tools) in real-time. Bash failures are paired with successful fixes. A separate `PostToolUseFailure` hook captures structured error details for any tool failure
-5. **Reask detection** — the `correction-detector` hook detects user frustration signals ("still broken", "that didn't work") and records them as outcome events
-6. **Before context compression** — the `precompact-preserve` hook sweeps up to 50 entries so nothing important is lost when the context window shrinks
-7. **Rules sync to auto-memory** — the `memory-sync` hook exports the top 30 rules as individual typed `.md` files with YAML frontmatter to `~/.claude/projects/{project}/memory/`, matching Claude Code's native memory format. Rules are ranked by citation count, load frequency, and recency
+1. **Session start** — active rules are loaded before the first action. In Claude Code, this happens via the `search_enforcer` hook; in Pi, rules are injected into the system prompt automatically
+2. **As you work** — every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored
+3. **Tool outcomes** — results from all tools (Bash, Edit, Write, and more) are captured. Failures are stored as memories; Bash failures are paired with successful fixes
+4. **End of session** — session episodes are created, candidate lessons extracted from failures, and a promotion cycle graduates validated patterns into active rules
+5. **Reask detection** — frustration signals ("still broken", "that didn't work") are recorded as outcome events
+6. **Before context compression** — aggressive memory sweep captures important context before the window shrinks
+7. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
 
-All classification uses Claude Haiku (via `ANTHROPIC_API_KEY` from your Claude Code session) with silent regex fallback. No configuration needed.
+Classification uses Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 
-**Next session:** `load_rules` returns everything captured previously — Claude applies your preferences without being told twice.
+**Next session:** `load_rules` returns everything captured previously — the agent applies your preferences without being told twice.
 
 ```bash
 # Verify it's working
-cat ~/.claude-recall/hook-logs/correction-detector.log
 claude-recall stats
 claude-recall search "preference"
 ```
@@ -113,22 +100,28 @@ claude-recall search "preference"
 
 ## How It Works
 
-Claude Recall runs as an MCP server exposing four tools and seven prompts, backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The MCP prompts (including `load-rules` and `session-review`) are discoverable by Claude Code's skill system.
+Claude Recall provides four memory tools backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The tools are exposed differently depending on the agent:
 
-### Built on Agent Skills
+- **Claude Code** — MCP server with four tools and seven prompts, plus file-system hooks for automatic capture
+- **Pi** — native extension with registered tools and event handlers, plus a skill file for behavioral guidance
 
-Claude Recall uses Anthropic's [Agent Skills](https://agentskills.io/) open standard to teach Claude when and how to use its memory tools. A core skill (`.claude/skills/memory-management/SKILL.md`) guides Claude's memory behavior using progressive disclosure — metadata loads at startup, full instructions load only when needed. When enough memories accumulate around a topic, Claude Recall auto-generates additional skills (`.claude/skills/auto-*/`) that load natively without MCP tool calls. See Anthropic's [blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for more on the Agent Skills architecture.
+| Tool | Claude Code | Pi |
+| ---- | ----------- | --- |
+| Load rules | `mcp__claude-recall__load_rules` | `recall_load_rules` |
+| Store memory | `mcp__claude-recall__store_memory` | `recall_store_memory` |
+| Search memory | `mcp__claude-recall__search_memory` | `recall_search_memory` |
+| Delete memory | `mcp__claude-recall__delete_memory` | `recall_delete_memory` |
 
-| Tool | Purpose |
-| ---- | ------- |
-| `load_rules` | Load all active rules (preferences, corrections, failures, devops) at the start of a task |
-| `store_memory` | Save new knowledge — preferences, corrections, devops rules, failures |
-| `search_memory` | Search memories by keyword, ranked by relevance |
-| `delete_memory` | Delete a specific memory by ID |
+### Skills
 
-### Outcome-Aware Learning (v0.18.0)
+Claude Recall uses skill files to teach agents when and how to use memory tools:
 
-Claude Recall tracks what happens *after* Claude acts — not just what was said. The outcome processing pipeline:
+- **Claude Code** — uses Anthropic's [Agent Skills](https://agentskills.io/) open standard. A core skill (`.claude/skills/memory-management/SKILL.md`) guides memory behavior with progressive disclosure. Auto-generated skills (`.claude/skills/auto-*/`) crystallize from accumulated memories. See Anthropic's [blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for more.
+- **Pi** — ships a `skills/memory-management.md` skill loaded via Pi's package manifest
+
+### Outcome-Aware Learning
+
+Claude Recall tracks what happens *after* the agent acts — not just what was said. The outcome processing pipeline:
 
 ```
 action → outcome event → episode → candidate lesson → promotion → active rule
@@ -216,7 +209,7 @@ claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rul
 
 ## Project Scoping
 
-Each project gets isolated memory based on its working directory. **Project ID** is derived from the `cwd` that Claude Code passes to the MCP server. Universal memories (no project scope) are available everywhere. Switching projects switches memory automatically.
+Each project gets isolated memory based on its working directory. **Project ID** is derived from the `cwd` passed by the agent. Universal memories (no project scope) are available everywhere. Switching projects switches memory automatically.
 
 Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `project_id` column).
 
