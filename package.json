@@ -1,7 +1,7 @@
 {
   "name": "claude-recall",
   "version": "0.19.0",
-  "description": "Persistent memory for Claude Code with native Skills integration, automatic capture, failure learning, and project scoping via MCP server",
+  "description": "Persistent memory for Claude Code and Pi with native Skills integration, automatic capture, failure learning, and project scoping",
   "main": "dist/index.js",
   "bin": {
     "claude-recall": "dist/cli/claude-recall-cli.js"
@@ -15,6 +15,9 @@
     "LICENSE",
     "docs/"
   ],
+  "pi": {
+    "extensions": ["./dist/pi/extension.js"]
+  },
   "directories": {
     "doc": "docs",
     "test": "tests"
