@@ -76,6 +76,9 @@ scripts/*
 !scripts/uninstall.js
 !scripts/publish.sh
 
+# Research / reference
+.research/
+
 # User-specific
 .claude-recall.json
 claude-recall.db*.tgz
