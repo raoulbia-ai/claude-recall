@@ -127,16 +127,18 @@ export default function(pi: PiTypes.ExtensionAPI) {
       .map(c => c.text)
       .join('\n');
 
-    // Notify user when a failure is captured
-    const wasFailing = event.isError || isFailureOutput(event.toolName, output);
-    processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
+    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
 
-    if (wasFailing && ctx.hasUI) {
+    if (ctx.hasUI) {
       const label = event.input?.command
         ? truncateStr(event.input.command as string, 40)
         : event.toolName;
       try {
-        ctx.ui.notify(`Recall: failure stored — ${label}`, 'info');
+        if (result.captured) {
+          ctx.ui.notify(`Recall: failure stored — ${label}`, 'info');
+        } else if (result.fixPaired) {
+          ctx.ui.notify(`Recall: fix paired — ${label} (learned from previous failure)`, 'info');
+        }
       } catch { /* non-critical */ }
     }
   });

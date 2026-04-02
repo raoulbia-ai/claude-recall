@@ -129,6 +129,11 @@ function firstLine(s: string): string {
   return idx === -1 ? s : s.substring(0, idx);
 }
 
+export interface ToolOutcomeResult {
+  captured: boolean;   // failure was stored
+  fixPaired: boolean;  // success was paired with a previous failure
+}
+
 /**
  * Process a tool outcome — capture failures as memories, record outcome events.
  * When a tool succeeds after a similar recent failure, pairs the fix.
@@ -140,19 +145,22 @@ export function processToolOutcome(
   toolOutput: string,
   isError: boolean,
   sessionId: string,
-): void {
+): ToolOutcomeResult {
+  const result: ToolOutcomeResult = { captured: false, fixPaired: false };
+
   try {
     // Skip own tools
     if (toolName.includes('claude-recall') || toolName.includes('claude_recall') ||
-        toolName.startsWith('recall_')) return;
+        toolName.startsWith('recall_')) return result;
 
     const isFail = isError || isToolFailureOutput(toolName, toolOutput);
 
     if (isFail) {
       storeToolFailure(toolName, toolInput, toolOutput, sessionId);
+      result.captured = true;
     } else {
       // Success — check if this fixes a recent failure
-      tryPairFix(toolName, toolInput, toolOutput);
+      result.fixPaired = tryPairFix(toolName, toolInput, toolOutput);
     }
 
     // Record outcome event for all tools
@@ -160,6 +168,8 @@ export function processToolOutcome(
   } catch (err) {
     logFn('event-processor', `processToolOutcome error: ${safeErrorMessage(err)}`);
   }
+
+  return result;
 }
 
 function isToolFailureOutput(toolName: string, output: string): boolean {
