@@ -9,6 +9,7 @@
   "files": [
     "dist/",
     ".claude/",
+    "skills/",
     "scripts/postinstall.js",
     "scripts/uninstall.js",
     "README.md",
@@ -16,7 +17,8 @@
     "docs/"
   ],
   "pi": {
-    "extensions": ["./dist/pi/extension.js"]
+    "extensions": ["./dist/pi/extension.js"],
+    "skills": ["./skills/*.md"]
   },
   "directories": {
     "doc": "docs",
