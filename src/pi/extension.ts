@@ -17,6 +17,7 @@ import {
   processSessionEnd,
   processPreCompact,
   setLogFunction,
+  resetPendingFailures,
 } from '../shared/event-processors';
 
 const LOAD_RULES_DIRECTIVE =
@@ -72,6 +73,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
     projectId = ctx.cwd.split('/').pop() || 'unknown';
     rulesLoaded = false;
     collectedUserTexts.length = 0;
+    resetPendingFailures();
     try {
       ConfigService.getInstance().updateConfig({
         project: { rootDir: ctx.cwd },

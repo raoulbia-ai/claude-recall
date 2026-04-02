@@ -3,6 +3,7 @@
  */
 
 const mockStore = jest.fn();
+const mockUpdate = jest.fn();
 const mockSearch = jest.fn().mockReturnValue([]);
 const mockFindRelevant = jest.fn().mockReturnValue([]);
 const mockLoadActiveRules = jest.fn().mockReturnValue({
@@ -13,6 +14,7 @@ jest.mock('../../src/services/memory', () => ({
   MemoryService: {
     getInstance: () => ({
       store: mockStore,
+      update: mockUpdate,
       search: mockSearch,
       findRelevant: mockFindRelevant,
       loadActiveRules: mockLoadActiveRules,
@@ -68,12 +70,14 @@ import {
   processSessionEnd,
   processPreCompact,
   setLogFunction,
+  resetPendingFailures,
 } from '../../src/shared/event-processors';
 
 describe('event-processors', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearch.mockReturnValue([]);
+    resetPendingFailures();
     setLogFunction(() => {}); // silent
   });
 
@@ -130,6 +134,42 @@ describe('event-processors', () => {
       processToolOutcome('Grep', {}, longOutput, false, 'sess1');
 
       expect(mockStore).not.toHaveBeenCalled();
+    });
+
+    it('pairs fix when success follows similar failure', () => {
+      // First: failure
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      expect(mockStore).toHaveBeenCalledTimes(1);
+
+      // Then: success with similar command
+      processToolOutcome('Bash', { command: 'npm test' }, 'All tests passed', false, 'sess1');
+
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+      expect(mockUpdate.mock.calls[0][1].value.what_should_do).toContain('Fix:');
+    });
+
+    it('does not pair fix for dissimilar commands', () => {
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      processToolOutcome('Bash', { command: 'git status' }, 'On branch main', false, 'sess1');
+
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('pairs fix for Edit tool on same file', () => {
+      processToolOutcome('Edit', { file_path: '/app.ts' }, 'old_string not found', false, 'sess1');
+      expect(mockStore).toHaveBeenCalledTimes(1);
+
+      processToolOutcome('Edit', { file_path: '/app.ts' }, 'File edited successfully', false, 'sess1');
+
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('resets pending failures', () => {
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      resetPendingFailures();
+      processToolOutcome('Bash', { command: 'npm test' }, 'All tests passed', false, 'sess1');
+
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
 

@@ -29,6 +29,74 @@ export function setLogFunction(fn: LogFn): void {
   logFn = fn;
 }
 
+// --- Fix Pairing (in-memory) ---
+
+interface PendingFailure {
+  toolName: string;
+  /** Command string (Bash) or file path (Edit/Write) — used for similarity matching */
+  identifier: string;
+  memoryKey: string;
+  timestamp: number;
+}
+
+const MAX_PENDING = 10;
+const FIX_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const FIX_SIMILARITY_THRESHOLD = 0.3;
+
+let pendingFailures: PendingFailure[] = [];
+
+/** Reset pending failures (e.g. on session start). */
+export function resetPendingFailures(): void {
+  pendingFailures = [];
+}
+
+/** Extract an identifier string from tool input for similarity comparison. */
+function getToolIdentifier(toolName: string, toolInput: any): string {
+  if ((toolName === 'Bash' || toolName === 'bash') && toolInput?.command) {
+    return toolInput.command;
+  }
+  if (toolInput?.file_path) {
+    return `${toolName}:${toolInput.file_path}`;
+  }
+  return toolName;
+}
+
+/**
+ * Check if a successful tool result matches a recent failure and pair the fix.
+ * Returns true if a fix was paired.
+ */
+function tryPairFix(toolName: string, toolInput: any, output: string): boolean {
+  if (pendingFailures.length === 0) return false;
+
+  const now = Date.now();
+  const identifier = getToolIdentifier(toolName, toolInput);
+  let matched = false;
+
+  const remaining: PendingFailure[] = [];
+  for (const pf of pendingFailures) {
+    if (now - pf.timestamp > FIX_WINDOW_MS) continue; // expired
+
+    if (!matched && pf.toolName === toolName &&
+        jaccardSimilarity(pf.identifier, identifier) >= FIX_SIMILARITY_THRESHOLD) {
+      try {
+        MemoryService.getInstance().update(pf.memoryKey, {
+          value: { what_should_do: `Fix: ${truncate(identifier, 200)}` },
+        });
+        logFn('event-processor', `Paired fix: "${truncate(identifier, 60)}" → ${pf.memoryKey}`);
+        matched = true;
+        // Don't add to remaining — consumed
+      } catch {
+        remaining.push(pf); // keep if update fails
+      }
+    } else {
+      remaining.push(pf);
+    }
+  }
+
+  pendingFailures = remaining;
+  return matched;
+}
+
 // --- Tool Outcome Processing ---
 
 /** Error patterns for Edit/Write tools */
@@ -63,6 +131,7 @@ function firstLine(s: string): string {
 
 /**
  * Process a tool outcome — capture failures as memories, record outcome events.
+ * When a tool succeeds after a similar recent failure, pairs the fix.
  * Works for any tool type (Bash, Edit, Write, MCP, generic).
  */
 export function processToolOutcome(
@@ -77,8 +146,13 @@ export function processToolOutcome(
     if (toolName.includes('claude-recall') || toolName.includes('claude_recall') ||
         toolName.startsWith('recall_')) return;
 
-    if (isError || isToolFailureOutput(toolName, toolOutput)) {
+    const isFail = isError || isToolFailureOutput(toolName, toolOutput);
+
+    if (isFail) {
       storeToolFailure(toolName, toolInput, toolOutput, sessionId);
+    } else {
+      // Success — check if this fixes a recent failure
+      tryPairFix(toolName, toolInput, toolOutput);
     }
 
     // Record outcome event for all tools
@@ -132,7 +206,20 @@ function storeToolFailure(
     preventative_checks: ['Verify inputs are correct', 'Check preconditions'],
   };
 
-  storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.75);
+  const key = `hook_failure_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  MemoryService.getInstance().store({
+    key,
+    value: failureContent,
+    type: 'failure',
+    context: { timestamp: Date.now() },
+    relevanceScore: 0.75,
+  });
+
+  // Track for fix pairing — when a similar tool succeeds, we update this memory
+  const identifier = getToolIdentifier(toolName, toolInput);
+  pendingFailures.push({ toolName, identifier, memoryKey: key, timestamp: Date.now() });
+  while (pendingFailures.length > MAX_PENDING) pendingFailures.shift();
+
   logFn('event-processor', `Stored failure: ${truncate(whatFailed, 60)}`);
 }
 
