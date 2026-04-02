@@ -148,7 +148,7 @@ describe('Pi Extension', () => {
 
       expect(result.content[0].text).toContain('Preferences');
       expect(result.content[0].text).toContain('Use TypeScript');
-      expect(result.content[0].text).toContain('INSTRUCTION');
+      expect(result.content[0].text).toContain('Before your FIRST action');
     });
 
     it('returns empty message when no rules', async () => {
