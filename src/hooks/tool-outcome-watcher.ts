@@ -276,6 +276,7 @@ async function handleBashSuccess(command: string, sessionId: string): Promise<vo
         });
         recordOutcomeEvent('Bash', { command }, `Success after previous failure: ${truncate(pf.command, 100)}`, 0);
         hookLog(HOOK_NAME, `Paired fix: "${truncate(command, 60)}" → ${pf.memoryKey}`);
+        console.log(`✅ Recall: fix paired — "${truncate(command, 40)}" (learned from previous failure)`);
         matched = true;
       } catch (err) {
         hookLog(HOOK_NAME, `Fix pairing error: ${safeErrorMessage(err)}`);
