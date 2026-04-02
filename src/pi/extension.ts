@@ -11,6 +11,13 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
+import {
+  processToolOutcome,
+  processUserInput,
+  processSessionEnd,
+  processPreCompact,
+  setLogFunction,
+} from '../shared/event-processors';
 
 const LOAD_RULES_DIRECTIVE =
   'INSTRUCTION: Before your FIRST edit or bash action, you MUST output an\n' +
@@ -51,11 +58,20 @@ function formatRules(rules: ActiveRules): string {
 export default function(pi: PiTypes.ExtensionAPI) {
   let projectId: string = '';
   let sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  let rulesLoaded = false;
+  const collectedUserTexts: string[] = [];
+
+  // Route logs through Pi's UI when available
+  setLogFunction((source, msg) => {
+    try { LoggingService.getInstance().info(source, msg); } catch { /* silent */ }
+  });
 
   // --- Session init: set project context from cwd ---
 
   pi.on('session_start', (_event, ctx) => {
     projectId = ctx.cwd.split('/').pop() || 'unknown';
+    rulesLoaded = false;
+    collectedUserTexts.length = 0;
     try {
       ConfigService.getInstance().updateConfig({
         project: { rootDir: ctx.cwd },
@@ -63,6 +79,66 @@ export default function(pi: PiTypes.ExtensionAPI) {
     } catch {
       // Non-critical
     }
+  });
+
+  // --- Event: inject rules before first agent turn ---
+
+  pi.on('before_agent_start', (_event, _ctx) => {
+    if (rulesLoaded) return;
+    rulesLoaded = true;
+
+    try {
+      const ms = MemoryService.getInstance();
+      const rules = ms.loadActiveRules(projectId || undefined);
+      const body = formatRules(rules);
+      if (body) {
+        return { systemPrompt: _event.systemPrompt + '\n\n' + LOAD_RULES_DIRECTIVE + '\n\n---\n\n' + body };
+      }
+    } catch {
+      // Non-critical — tools still available as fallback
+    }
+  });
+
+  // --- Event: capture tool outcomes ---
+
+  pi.on('tool_result', (event, _ctx) => {
+    const output = event.content
+      .filter((c): c is PiTypes.TextContent => c.type === 'text')
+      .map(c => c.text)
+      .join('\n');
+    processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
+  });
+
+  // --- Event: detect corrections from user input ---
+
+  pi.on('input', (event, _ctx) => {
+    collectedUserTexts.push(event.text);
+    processUserInput(event.text, sessionId).catch(() => {});
+    return { action: 'continue' as const };
+  });
+
+  // --- Event: session end — episode + promotion ---
+
+  pi.on('session_shutdown', (_event, _ctx) => {
+    processSessionEnd(collectedUserTexts, sessionId, projectId).catch(() => {});
+  });
+
+  // --- Event: pre-compaction — aggressive capture ---
+
+  pi.on('session_before_compact', (event, _ctx) => {
+    // Extract user texts from branch entries
+    const texts: string[] = [];
+    for (const entry of (event.branchEntries || [])) {
+      if (entry?.role === 'user' && typeof entry.content === 'string') {
+        texts.push(entry.content);
+      }
+    }
+    if (texts.length > 0) {
+      processPreCompact(texts, sessionId).catch(() => {});
+    }
+
+    // Re-inject rules after compaction
+    rulesLoaded = false;
   });
 
   // --- Tool: recall_load_rules ---
