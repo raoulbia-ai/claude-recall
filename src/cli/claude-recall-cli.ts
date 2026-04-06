@@ -767,8 +767,20 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '10.0.0';  // v10 = add PostToolUseFailure for explicit error capture
+    settings.hooksVersion = '11.0.0';  // v11 = add SessionStart(compact) for post-compaction rule reload
     settings.hooks = {
+      SessionStart: [
+        {
+          matcher: "compact",
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} post-compact-reload`,
+              timeout: 10
+            }
+          ]
+        }
+      ],
       PostToolUse: [
         {
           hooks: [

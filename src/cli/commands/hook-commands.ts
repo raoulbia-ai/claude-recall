@@ -53,6 +53,11 @@ export class HookCommands {
               await handleToolFailure(input);
               break;
             }
+            case 'post-compact-reload': {
+              const { handlePostCompactReload } = await import('../../hooks/post-compact-reload');
+              await handlePostCompactReload(input);
+              break;
+            }
             case 'bash-failure-watcher': {
               // Backward compat alias — routes to tool-outcome-watcher
               const { handleBashFailureWatcher } = await import('../../hooks/tool-outcome-watcher');

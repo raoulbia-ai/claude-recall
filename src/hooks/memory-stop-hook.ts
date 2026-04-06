@@ -101,6 +101,22 @@ export async function handleMemoryStop(input: any): Promise<void> {
     const sessionEntries = readTranscriptTail(transcriptPath, 50);
     if (sessionEntries.length >= 10) {
       const conversationEntries = buildConversationEntries(sessionEntries);
+
+      // Record failed subagent outcomes
+      for (const entry of conversationEntries) {
+        if (entry.toolName === 'Agent' && entry.isError) {
+          try {
+            outcomeStorage.createOutcomeEvent({
+              event_type: 'agent_failure',
+              actor: 'tool',
+              action_summary: entry.text,
+              next_state_summary: entry.text,
+              tags: ['agent', 'subagent'],
+            });
+          } catch { /* non-critical */ }
+        }
+      }
+
       const extracted = await extractSessionLearnings(conversationEntries, input?.session_id ?? '', projectId, 5);
       if (extracted > 0) {
         hookLog('memory-stop', `Session extraction: stored ${extracted} learnings`);
@@ -422,7 +438,20 @@ function buildConversationEntries(entries: object[]): ConversationEntry[] {
     } else {
       const text = extractTextFromEntry(entry);
       if (text && text.length > 5) {
-        result.push({ role: 'assistant', text: text.substring(0, 300) });
+        // Detect subagent task notifications
+        const notifMatch = text.match(/<task-notification>[\s\S]*?<\/task-notification>/);
+        if (notifMatch) {
+          const status = notifMatch[0].match(/<status>(.*?)<\/status>/)?.[1] ?? 'unknown';
+          const summary = notifMatch[0].match(/<summary>(.*?)<\/summary>/)?.[1] ?? '';
+          result.push({
+            role: 'tool_result',
+            text: `Agent ${status}: ${summary}`.substring(0, 300),
+            toolName: 'Agent',
+            isError: status === 'failed' || status === 'killed',
+          });
+        } else {
+          result.push({ role: 'assistant', text: text.substring(0, 300) });
+        }
       }
     }
   }
