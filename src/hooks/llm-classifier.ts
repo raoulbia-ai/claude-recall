@@ -159,6 +159,79 @@ export async function extractHindsightHint(
   }
 }
 
+// --- Session Extraction ---
+
+export interface SessionLearning {
+  type: 'project-knowledge' | 'preference' | 'devops' | 'failure';
+  content: string;
+  confidence: number;
+}
+
+const SESSION_EXTRACTION_PROMPT = `You are analyzing a coding session transcript to extract durable project knowledge.
+
+The transcript shows tool calls (Bash, Edit, Read, Grep, etc.) and their results, plus user and assistant messages.
+
+Extract ONLY facts useful in FUTURE sessions:
+- Project conventions discovered (file structure, naming patterns, build tools, test frameworks)
+- Workflow patterns that worked or failed (e.g. "tests must be run from project root")
+- Technical constraints or gotchas encountered (e.g. "this project uses ESM, not CJS")
+- Environment requirements discovered (e.g. "needs Node 20+", "uses pnpm not npm")
+
+Do NOT extract:
+- Task-specific details (what was built, which files changed this session)
+- Debugging steps unlikely to recur
+- Code patterns visible by reading the codebase
+- Anything in the EXISTING MEMORIES list below
+
+Respond with ONLY valid JSON (no markdown fences):
+[{"type":"project-knowledge|preference|devops|failure","content":"<imperative statement>","confidence":0.0-1.0}]
+
+Return [] if nothing durable was learned. Max 10 items. Each content should be a concise imperative statement (e.g. "Run tests with pnpm test, not npm test").`;
+
+/**
+ * Extract durable session learnings from a conversation summary using Haiku.
+ * Returns null if no API key or on any failure.
+ */
+export async function extractSessionLearningsWithLLM(
+  summary: string,
+  existingMemories: string[],
+): Promise<SessionLearning[] | null> {
+  const client = getClient();
+  if (!client) return null;
+
+  try {
+    const memList = existingMemories.length > 0
+      ? existingMemories.map(m => `- ${m}`).join('\n')
+      : '(none)';
+
+    const systemPrompt = SESSION_EXTRACTION_PROMPT + `\n\nEXISTING MEMORIES (do not duplicate):\n${memList}`;
+
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: summary }],
+    });
+
+    const content = response.content?.[0];
+    if (content?.type !== 'text') return null;
+
+    const results: any[] = parseJSON(content.text);
+    if (!Array.isArray(results)) return null;
+
+    const validTypes = ['project-knowledge', 'preference', 'devops', 'failure'];
+    return results
+      .filter((r: any) => r && validTypes.includes(r.type) && typeof r.content === 'string' && r.content.length > 5)
+      .map((r: any) => ({
+        type: r.type,
+        content: r.content,
+        confidence: typeof r.confidence === 'number' ? r.confidence : 0.7,
+      }));
+  } catch {
+    return null;
+  }
+}
+
 export async function classifyBatchWithLLM(
   texts: string[]
 ): Promise<(ClassifyResult | null)[] | null> {

@@ -16,12 +16,14 @@ import {
   readTranscriptTail,
   extractTextFromEntry,
   isUserEntry,
+  extractToolInteractions,
 } from './shared';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
 const MAX_STORE = 3;
 
@@ -92,6 +94,22 @@ export async function handleMemoryStop(input: any): Promise<void> {
   }
 
   hookLog('memory-stop', `Session end: stored ${stored} memories from ${entries.length} entries`);
+
+  // Session extraction: learn from long coding sessions (reads wider window)
+  try {
+    setLogFunction(hookLog);
+    const sessionEntries = readTranscriptTail(transcriptPath, 50);
+    if (sessionEntries.length >= 10) {
+      const conversationEntries = buildConversationEntries(sessionEntries);
+      const extracted = await extractSessionLearnings(conversationEntries, input?.session_id ?? '', projectId, 5);
+      if (extracted > 0) {
+        hookLog('memory-stop', `Session extraction: stored ${extracted} learnings`);
+        stored += extracted;
+      }
+    }
+  } catch (err) {
+    hookLog('memory-stop', `Session extraction error: ${safeErrorMessage(err)}`);
+  }
 
   // Scan for citations in assistant messages to track compliance
   scanForCitations(transcriptPath);
@@ -387,4 +405,51 @@ function extractTagsFromContext(context: string): string[] {
     }
   }
   return tags;
+}
+
+/**
+ * Convert raw JSONL transcript entries to ConversationEntry[] for session extraction.
+ */
+function buildConversationEntries(entries: object[]): ConversationEntry[] {
+  const result: ConversationEntry[] = [];
+
+  for (const entry of entries) {
+    if (isUserEntry(entry)) {
+      const text = extractTextFromEntry(entry);
+      if (text && text.length > 5) {
+        result.push({ role: 'user', text: text.substring(0, 300) });
+      }
+    } else {
+      const text = extractTextFromEntry(entry);
+      if (text && text.length > 5) {
+        result.push({ role: 'assistant', text: text.substring(0, 300) });
+      }
+    }
+  }
+
+  // Extract paired tool interactions across all entries
+  try {
+    const interactions = extractToolInteractions(entries);
+    for (const ti of interactions) {
+      if (ti.call) {
+        result.push({
+          role: 'assistant',
+          text: JSON.stringify(ti.call.input || {}).substring(0, 150),
+          toolName: ti.call.name,
+        });
+      }
+      if (ti.result) {
+        result.push({
+          role: 'tool_result',
+          text: ti.result.content.substring(0, 200),
+          toolName: ti.call.name,
+          isError: ti.result.isError,
+        });
+      }
+    }
+  } catch {
+    // Skip if parsing fails
+  }
+
+  return result;
 }

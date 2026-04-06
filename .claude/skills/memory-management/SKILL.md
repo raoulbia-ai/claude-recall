@@ -34,10 +34,11 @@ Persistent memory system that ensures Claude never repeats mistakes and always a
 
 1. **ALWAYS load rules before acting** — Call `load_rules` as your very first action in a session, before even reading files. Rules inform how you explore, not just how you edit.
 2. **ACT on loaded rules** — After loading, state which rules apply to your current task before proceeding. If a rule conflicts with your plan, follow the rule. If none apply, say so. Loading without applying is the same as not loading.
-3. **Cite applied rules inline** — When a rule influences your work: (applied from memory: <rule>)
-4. **Ask before storing** — Before calling `store_memory`, tell the user what you plan to store and ask for confirmation
-5. **Capture corrections immediately** — User fixes are highest priority (still ask first)
-6. **Never store secrets** — No API keys, passwords, tokens, or PII
+3. **Cite applied rules inline** — When a rule influences your work: (applied from memory: <rule>). Place the citation next to the action it influenced, not at the end of unrelated text.
+4. **User says "recall" / "remember" / "store this" → use Claude Recall** — When the user says any of these keywords, ALWAYS use `mcp__claude-recall__store_memory`. Do NOT write to the native memory directory (`~/.claude/projects/*/memory/`) for these requests. Claude Recall is the user's preferred memory system.
+5. **Ask before storing** — Before calling `store_memory`, tell the user what you plan to store and ask for confirmation
+6. **Capture corrections immediately** — User fixes are highest priority (still ask first)
+7. **Never store secrets** — No API keys, passwords, tokens, or PII
 
 ## Quick Reference
 

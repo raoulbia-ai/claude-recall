@@ -27,6 +27,10 @@ If the user states a preference ("I prefer tabs", "use functional style"), call 
 
 If a command fails or you need to backtrack, the failure is captured automatically. You don't need to store it manually.
 
+## When the user says "recall", "remember", or "store this"
+
+ALWAYS use `recall_store_memory`. These keywords mean the user wants Claude Recall specifically — not any other memory system.
+
 ## Before making decisions
 
 Call `recall_search_memory` with relevant keywords to check for existing project knowledge before choosing approaches, tools, or conventions.

@@ -15,6 +15,7 @@ import {
   jaccardSimilarity,
   safeErrorMessage,
 } from '../hooks/shared';
+import { extractSessionLearningsWithLLM, SessionLearning } from '../hooks/llm-classifier';
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { FailureMemoryContent } from '../services/failure-extractor';
@@ -434,4 +435,110 @@ export async function processPreCompact(
   }
 
   return stored;
+}
+
+// --- Session Extraction ---
+
+export interface ConversationEntry {
+  role: 'user' | 'assistant' | 'tool_result';
+  text: string;
+  toolName?: string;
+  isError?: boolean;
+}
+
+const SUMMARY_MAX_CHARS = 4000;
+
+/**
+ * Build a condensed conversation summary from entries for LLM extraction.
+ */
+export function buildSummary(entries: ConversationEntry[]): string {
+  const lines: string[] = [];
+  let totalChars = 0;
+
+  for (const entry of entries) {
+    let line: string;
+    if (entry.role === 'tool_result') {
+      const status = entry.isError ? ' [ERROR]' : '';
+      const tool = entry.toolName ? `${entry.toolName}` : 'tool';
+      line = `[${tool}${status}] ${truncate(entry.text, 200)}`;
+    } else if (entry.role === 'assistant' && entry.toolName) {
+      line = `[assistant → ${entry.toolName}] ${truncate(entry.text, 150)}`;
+    } else {
+      line = `[${entry.role}] ${truncate(entry.text, 200)}`;
+    }
+
+    if (totalChars + line.length > SUMMARY_MAX_CHARS) break;
+    lines.push(line);
+    totalChars += line.length + 1;
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Extract durable learnings from a coding session using LLM analysis.
+ *
+ * Sends a condensed session summary to Haiku and stores extracted
+ * project knowledge, preferences, and workflow patterns.
+ *
+ * Requires ANTHROPIC_API_KEY — logs a message if unavailable.
+ *
+ * @param entries Conversation entries (user + assistant + tool results)
+ * @param sessionId Current session ID
+ * @param projectId Current project ID
+ * @param maxStore Max learnings to store (default 5)
+ * @returns Number of learnings stored
+ */
+export async function extractSessionLearnings(
+  entries: ConversationEntry[],
+  sessionId: string,
+  projectId: string,
+  maxStore: number = 5,
+): Promise<number> {
+  if (entries.length < 10) return 0;
+
+  try {
+    const summary = buildSummary(entries);
+
+    // Fetch existing memories for dedup context
+    const existingMemories: string[] = [];
+    try {
+      const ms = MemoryService.getInstance();
+      const rules = ms.loadActiveRules(projectId);
+      const all = [...rules.preferences, ...rules.corrections, ...rules.failures, ...rules.devops];
+      for (const m of all.slice(0, 20)) {
+        const val = typeof m.value === 'object' ? (m.value?.content || JSON.stringify(m.value)) : String(m.value);
+        existingMemories.push(truncate(val, 80));
+      }
+    } catch {
+      // Non-critical — extraction can proceed without dedup context
+    }
+
+    const learnings = await extractSessionLearningsWithLLM(summary, existingMemories);
+
+    if (learnings === null) {
+      logFn('event-processor', 'Session extraction requires ANTHROPIC_API_KEY. Set it to enable learning from long sessions.');
+      return 0;
+    }
+
+    if (learnings.length === 0) return 0;
+
+    let stored = 0;
+    for (const learning of learnings) {
+      if (stored >= maxStore) break;
+
+      // Dedup against existing memories
+      const existing = searchExisting(learning.content.substring(0, 100));
+      if (isDuplicate(learning.content, existing)) continue;
+
+      storeMemory(learning.content, learning.type, projectId, learning.confidence);
+      stored++;
+      logFn('event-processor', `Session extraction: ${learning.type} — ${truncate(learning.content, 60)}`);
+    }
+
+    return stored;
+  } catch (err) {
+    logFn('event-processor', `extractSessionLearnings error: ${safeErrorMessage(err)}`);
+    return 0;
+  }
 }

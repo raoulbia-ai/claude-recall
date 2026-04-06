@@ -18,6 +18,8 @@ import {
   processPreCompact,
   setLogFunction,
   resetPendingFailures,
+  extractSessionLearnings,
+  ConversationEntry,
 } from '../shared/event-processors';
 
 const LOAD_RULES_DIRECTIVE =
@@ -77,6 +79,7 @@ function formatRules(rules: ActiveRules): string {
 export default function(pi: PiTypes.ExtensionAPI) {
   let projectId: string = '';
   let sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const collectedToolResults: ConversationEntry[] = [];
   let rulesLoaded = false;
   const collectedUserTexts: string[] = [];
 
@@ -91,6 +94,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
     projectId = ctx.cwd.split('/').pop() || 'unknown';
     rulesLoaded = false;
     collectedUserTexts.length = 0;
+    collectedToolResults.length = 0;
     resetPendingFailures();
     try {
       ConfigService.getInstance().updateConfig({
@@ -129,6 +133,14 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
     const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
 
+    // Collect for session extraction
+    collectedToolResults.push({
+      role: 'tool_result',
+      text: output.substring(0, 300),
+      toolName: event.toolName,
+      isError: event.isError,
+    });
+
     if (ctx.hasUI) {
       const label = event.input?.command
         ? truncateStr(event.input.command as string, 40)
@@ -151,10 +163,19 @@ export default function(pi: PiTypes.ExtensionAPI) {
     return { action: 'continue' as const };
   });
 
-  // --- Event: session end — episode + promotion ---
+  // --- Event: session end — episode + promotion + session extraction ---
 
   pi.on('session_shutdown', (_event, _ctx) => {
     processSessionEnd(collectedUserTexts, sessionId, projectId).catch(() => {});
+
+    // Session extraction: learn from long coding sessions
+    const allEntries: ConversationEntry[] = [
+      ...collectedUserTexts.map(t => ({ role: 'user' as const, text: t })),
+      ...collectedToolResults,
+    ];
+    if (allEntries.length >= 10) {
+      extractSessionLearnings(allEntries, sessionId, projectId, 5).catch(() => {});
+    }
   });
 
   // --- Event: pre-compaction — aggressive capture ---
