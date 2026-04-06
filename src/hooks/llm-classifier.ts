@@ -167,26 +167,36 @@ export interface SessionLearning {
   confidence: number;
 }
 
-const SESSION_EXTRACTION_PROMPT = `You are analyzing a coding session transcript to extract durable project knowledge.
+const SESSION_EXTRACTION_PROMPT = `You are analyzing a coding session transcript to extract durable lessons.
 
-The transcript shows tool calls (Bash, Edit, Read, Grep, etc.) and their results, plus user and assistant messages.
+The transcript shows tool calls (Bash, Edit, Read, Grep, etc.) and their results, plus user and assistant messages. Your primary job is to identify CAUSE-AND-EFFECT patterns — what failed, why, and what fixed it.
 
-Extract ONLY facts useful in FUTURE sessions:
-- Project conventions discovered (file structure, naming patterns, build tools, test frameworks)
-- Workflow patterns that worked or failed (e.g. "tests must be run from project root")
-- Technical constraints or gotchas encountered (e.g. "this project uses ESM, not CJS")
-- Environment requirements discovered (e.g. "needs Node 20+", "uses pnpm not npm")
+PRIORITY 1 — Failure → Fix sequences:
+Look for tool calls that failed (errors, timeouts, non-zero exits) followed by a different approach that succeeded. Extract the lesson as an imperative rule.
+Examples:
+- Command timed out because of interactive prompt → "scripts/upgrade-sandbox.sh requires interactive confirmation — pipe 'y' to auto-confirm"
+- Edit failed with old_string not found → "File X uses tabs not spaces — match exact indentation when editing"
+- Build failed after dependency change → "Run npm install after modifying package.json before building"
+
+PRIORITY 2 — Project conventions discovered:
+- File structure, naming patterns, build tools, test frameworks
+- Workflow patterns (e.g. "tests must be run from project root")
+- Technical constraints or gotchas (e.g. "this project uses ESM, not CJS")
+- Environment requirements (e.g. "needs Node 20+", "uses pnpm not npm")
+
+PRIORITY 3 — User corrections applied:
+- When the user corrected the agent's approach mid-session
 
 Do NOT extract:
-- Task-specific details (what was built, which files changed this session)
-- Debugging steps unlikely to recur
-- Code patterns visible by reading the codebase
+- Task-specific details (what was built, which files changed)
+- One-off debugging steps unlikely to recur
+- Code patterns derivable from reading the codebase
 - Anything in the EXISTING MEMORIES list below
 
 Respond with ONLY valid JSON (no markdown fences):
 [{"type":"project-knowledge|preference|devops|failure","content":"<imperative statement>","confidence":0.0-1.0}]
 
-Return [] if nothing durable was learned. Max 10 items. Each content should be a concise imperative statement (e.g. "Run tests with pnpm test, not npm test").`;
+Return [] if nothing durable was learned. Max 10 items. Each content should be a concise, actionable rule (e.g. "Pipe 'y' to scripts/upgrade-sandbox.sh — it has an interactive confirmation prompt").`;
 
 /**
  * Extract durable session learnings from a conversation summary using Haiku.
