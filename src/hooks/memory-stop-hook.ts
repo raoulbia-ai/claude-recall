@@ -79,8 +79,8 @@ export async function handleMemoryStop(input: any): Promise<void> {
     // Reject extracts that are too short or too long (not clean rules)
     if (result.extract.length < 10 || result.extract.length > 200) continue;
 
-    // Corrections and preferences need higher confidence
-    if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) continue;
+    // Corrections, preferences, and devops need higher confidence to prevent noise
+    if ((result.type === 'correction' || result.type === 'preference' || result.type === 'devops') && result.confidence < 0.75) continue;
     if (result.confidence < 0.6) continue;
 
     // Dedup

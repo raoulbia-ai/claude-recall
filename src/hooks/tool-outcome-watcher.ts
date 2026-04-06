@@ -234,7 +234,10 @@ async function handleBashFailure(
   const memoryService = MemoryService.getInstance();
   memoryService.store({
     key,
-    value: failureContent,
+    value: {
+      content: `${failureContent.what_failed}. ${failureContent.why_failed}`,
+      ...failureContent,
+    },
     type: 'failure',
     context: { timestamp: Date.now() },
     relevanceScore: 0.85,

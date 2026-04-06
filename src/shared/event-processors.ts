@@ -220,7 +220,10 @@ function storeToolFailure(
   const key = `hook_failure_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   MemoryService.getInstance().store({
     key,
-    value: failureContent,
+    value: {
+      content: `${failureContent.what_failed}. ${failureContent.why_failed}`,
+      ...failureContent,
+    },
     type: 'failure',
     context: { timestamp: Date.now() },
     relevanceScore: 0.75,
@@ -294,7 +297,7 @@ export async function processUserInput(text: string, sessionId: string): Promise
   if (!result) return null;
 
   if (result.extract.length < 10 || result.extract.length > 200) return null;
-  if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) return null;
+  if ((result.type === 'correction' || result.type === 'preference' || result.type === 'devops') && result.confidence < 0.75) return null;
   if (result.confidence < 0.6) return null;
 
   // Dedup
@@ -350,7 +353,7 @@ export async function processSessionEnd(
         if (stored >= maxStore) break;
         if (!result) continue;
         if (result.extract.length < 10 || result.extract.length > 200) continue;
-        if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) continue;
+        if ((result.type === 'correction' || result.type === 'preference' || result.type === 'devops') && result.confidence < 0.75) continue;
         if (result.confidence < 0.6) continue;
 
         const existing = searchExisting(result.extract.substring(0, 100));

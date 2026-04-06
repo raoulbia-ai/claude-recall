@@ -55,8 +55,8 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   // Reject short/garbage extracts and raw dumps (not clean rules)
   if (result.extract.length < 10 || result.extract.length > 200) return;
 
-  // Corrections and preferences need high confidence; others need moderate
-  if ((result.type === 'correction' || result.type === 'preference') && result.confidence < 0.7) return;
+  // Corrections, preferences, and devops need high confidence to prevent noise
+  if ((result.type === 'correction' || result.type === 'preference' || result.type === 'devops') && result.confidence < 0.75) return;
   if (result.confidence < 0.6) return;
 
   // Dedup check
