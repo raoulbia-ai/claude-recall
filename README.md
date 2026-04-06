@@ -65,12 +65,15 @@ Both agents use the same database (`~/.claude-recall/claude-recall.db`). Memorie
 ### Upgrading
 
 ```bash
-# Claude Code
+# Claude Code — update binary + re-install hooks in each project
 npm install -g claude-recall
+claude-recall setup --install    # run from each project directory
 
 # Pi
 pi update claude-recall
 ```
+
+The MCP server picks up the new version automatically. `setup --install` is needed to update hooks in `.claude/settings.json` (new hook events may have been added).
 
 ---
 
