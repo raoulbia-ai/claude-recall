@@ -767,8 +767,30 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '11.0.0';  // v11 = add SessionStart(compact) for post-compaction rule reload
+    settings.hooksVersion = '12.0.0';  // v12 = add SubagentStart/Stop for sub-agent recall integration
     settings.hooks = {
+      SubagentStart: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} subagent-start`,
+              timeout: 5
+            }
+          ]
+        }
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} subagent-stop`,
+              timeout: 10
+            }
+          ]
+        }
+      ],
       SessionStart: [
         {
           matcher: "compact",

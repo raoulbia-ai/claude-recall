@@ -58,6 +58,16 @@ export class HookCommands {
               await handlePostCompactReload(input);
               break;
             }
+            case 'subagent-start': {
+              const { handleSubagentStart } = await import('../../hooks/subagent-hooks');
+              await handleSubagentStart(input);
+              break;
+            }
+            case 'subagent-stop': {
+              const { handleSubagentStop } = await import('../../hooks/subagent-hooks');
+              await handleSubagentStop(input);
+              break;
+            }
             case 'bash-failure-watcher': {
               // Backward compat alias — routes to tool-outcome-watcher
               const { handleBashFailureWatcher } = await import('../../hooks/tool-outcome-watcher');
