@@ -81,10 +81,12 @@ Once installed, Claude Recall works automatically in the background:
 1. **Session start** — active rules are loaded before the first action. In Claude Code, this happens via the `search_enforcer` hook; in Pi, rules are injected into the system prompt automatically
 2. **As you work** — every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored
 3. **Tool outcomes** — results from all tools (Bash, Edit, Write, and more) are captured. Failures are stored as memories; Bash failures are paired with successful fixes
-4. **End of session** — session episodes are created, candidate lessons extracted from failures, and a promotion cycle graduates validated patterns into active rules
+4. **End of session** — session episodes are created, candidate lessons extracted from failures, and a promotion cycle graduates validated patterns into active rules. A session extraction pass sends the last 50 transcript entries to Haiku to extract durable project knowledge from long coding sessions
 5. **Reask detection** — frustration signals ("still broken", "that didn't work") are recorded as outcome events
 6. **Before context compression** — aggressive memory sweep captures important context before the window shrinks
-7. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
+7. **After context compression** (Claude Code only) — rules are automatically re-injected into context so they're not lost when the window shrinks
+8. **Multi-agent outcomes** — subagent completions (completed/failed/killed) are captured from task notifications and recorded as outcome events
+9. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
 
 Classification uses Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 
