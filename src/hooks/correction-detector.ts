@@ -74,7 +74,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
 
   // Output hook message that Claude sees
   console.log(
-    `<user-prompt-submit-hook>[Memory] Auto-captured ${result.type}: ${summary}</user-prompt-submit-hook>`
+    `<user-prompt-submit-hook>📌 Recall: auto-captured ${result.type} — ${summary}</user-prompt-submit-hook>`
   );
 
   hookLog('correction-detector', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);

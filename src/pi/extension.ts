@@ -157,16 +157,31 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
   // --- Event: detect corrections from user input ---
 
-  pi.on('input', (event, _ctx) => {
+  pi.on('input', (event, ctx) => {
     collectedUserTexts.push(event.text);
-    processUserInput(event.text, sessionId).catch(() => {});
+    processUserInput(event.text, sessionId).then(msg => {
+      if (msg && ctx.hasUI) {
+        try { ctx.ui.notify(`📌 ${msg}`, 'info'); } catch { /* non-critical */ }
+      }
+    }).catch(() => {});
     return { action: 'continue' as const };
   });
 
   // --- Event: session end — episode + promotion + session extraction ---
 
-  pi.on('session_shutdown', (_event, _ctx) => {
-    processSessionEnd(collectedUserTexts, sessionId, projectId).catch(() => {});
+  pi.on('session_shutdown', (_event, ctx) => {
+    processSessionEnd(collectedUserTexts, sessionId, projectId).then(result => {
+      if (ctx.hasUI) {
+        try {
+          if (result.stored > 0) {
+            ctx.ui.notify(`📝 Recall: captured ${result.stored} memories from this session`, 'info');
+          }
+          if (result.promoted > 0) {
+            ctx.ui.notify(`⬆️ Recall: ${result.promoted} lesson(s) promoted to active rules`, 'info');
+          }
+        } catch { /* non-critical */ }
+      }
+    }).catch(() => {});
 
     // Session extraction: learn from long coding sessions
     const allEntries: ConversationEntry[] = [
@@ -174,7 +189,11 @@ export default function(pi: PiTypes.ExtensionAPI) {
       ...collectedToolResults,
     ];
     if (allEntries.length >= 10) {
-      extractSessionLearnings(allEntries, sessionId, projectId, 5).catch(() => {});
+      extractSessionLearnings(allEntries, sessionId, projectId, 5).then(extracted => {
+        if (extracted > 0 && ctx.hasUI) {
+          try { ctx.ui.notify(`🔍 Recall: extracted ${extracted} learnings from session`, 'info'); } catch { /* non-critical */ }
+        }
+      }).catch(() => {});
     }
   });
 

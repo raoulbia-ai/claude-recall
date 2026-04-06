@@ -93,6 +93,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
     hookLog('memory-stop', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);
   }
 
+  if (stored > 0) {
+    console.log(`📝 Recall: captured ${stored} memories from this session`);
+  }
   hookLog('memory-stop', `Session end: stored ${stored} memories from ${entries.length} entries`);
 
   // Session extraction: learn from long coding sessions (reads wider window)
@@ -119,6 +122,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
       const extracted = await extractSessionLearnings(conversationEntries, input?.session_id ?? '', projectId, 5);
       if (extracted > 0) {
+        console.log(`🔍 Recall: extracted ${extracted} learnings from session analysis`);
         hookLog('memory-stop', `Session extraction: stored ${extracted} learnings`);
         stored += extracted;
       }
@@ -151,6 +155,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
     const { PromotionEngine } = await import('../services/promotion-engine');
     const result = PromotionEngine.getInstance().runCycle(projectId);
     if (result.promoted > 0 || result.archived > 0) {
+      if (result.promoted > 0) {
+        console.log(`⬆️ Recall: ${result.promoted} lesson(s) promoted to active rules`);
+      }
       hookLog('memory-stop', `Promotion: ${result.promoted} promoted, ${result.archived} archived`);
     }
   } catch (err) {

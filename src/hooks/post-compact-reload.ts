@@ -54,7 +54,7 @@ export async function handlePostCompactReload(input: any): Promise<void> {
     if (totalRules === 0) return;
 
     const body = formatRules(rules);
-    console.log(`${DIRECTIVE}\n\n---\n\n${body}`);
+    console.log(`🔄 Recall: ${totalRules} rules re-loaded after context compaction\n\n${DIRECTIVE}\n\n---\n\n${body}`);
 
     hookLog('post-compact-reload', `Re-injected ${totalRules} rules after compaction`);
   } catch (err) {

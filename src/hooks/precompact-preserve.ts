@@ -74,6 +74,9 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
     hookLog('precompact', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);
   }
 
+  if (stored > 0) {
+    console.log(`💾 Recall: preserved ${stored} memories before context compression`);
+  }
   hookLog('precompact', `PreCompact sweep: stored ${stored} memories from ${entries.length} entries`);
 
   // Reset search enforcer hook-state so Claude is forced to re-load rules
