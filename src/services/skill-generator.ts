@@ -308,12 +308,15 @@ export class SkillGenerator {
    * Get memories for a topic, filtered by type and optionally devops category
    */
   private getMemoriesForTopic(topic: TopicConfig, projectId?: string): Memory[] {
-    const searchContext: { project_id?: string; type: string } = {
+    const searchContext: { project_id?: string; type: string; includeAllProjects?: boolean } = {
       type: topic.memoryType
     };
 
     if (projectId) {
       searchContext.project_id = projectId;
+    } else {
+      // Skill generation runs across all projects for global skill discovery.
+      searchContext.includeAllProjects = true;
     }
 
     let memories = this.storage.searchByContext(searchContext);

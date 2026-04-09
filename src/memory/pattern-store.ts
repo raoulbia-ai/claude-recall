@@ -36,8 +36,9 @@ export class PatternStore {
     const memories = this.storage.searchByContext({
       type: 'correction-pattern',
       project_id: process.env.CLAUDE_PROJECT_DIR,
-      file_path: undefined
-    });
+      file_path: undefined,
+      includeAllProjects: !process.env.CLAUDE_PROJECT_DIR,
+    } as any);
     
     for (const memory of memories) {
       const stored = memory.value as any;
@@ -58,8 +59,9 @@ export class PatternStore {
     const patterns = this.storage.searchByContext({
       type: 'correction-pattern',
       project_id: process.env.CLAUDE_PROJECT_DIR,
-      file_path: undefined
-    });
+      file_path: undefined,
+      includeAllProjects: !process.env.CLAUDE_PROJECT_DIR,
+    } as any);
     
     return patterns
       .map(m => m.value as CorrectionPattern)

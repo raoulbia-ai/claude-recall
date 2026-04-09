@@ -207,7 +207,7 @@ describe('SkillGenerator', () => {
       const topics = SkillGenerator.getTopics();
       const correctionTopic = topics.find(t => t.id === 'corrections')!;
 
-      const memories = storage.searchByContext({ type: 'correction' });
+      const memories = storage.searchByContext({ type: 'correction', includeAllProjects: true } as any);
       const markdown = generator.renderSkillMarkdown(correctionTopic, memories);
 
       // Check frontmatter

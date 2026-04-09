@@ -8,6 +8,7 @@ export interface Context {
   timestamp?: number;
   query?: string;  // User's actual query content
   keywords?: string[];  // Extracted keywords from query
+  includeAllProjects?: boolean;  // v0.20.13+ explicit opt-in for cross-project search
 }
 
 export interface ScoredMemory extends Memory {

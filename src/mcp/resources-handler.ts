@@ -1,6 +1,7 @@
 import { MemoryService } from '../services/memory';
 import { MemoryStorage } from '../memory/storage';
 import { LoggingService } from '../services/logging';
+import { ConfigService } from '../services/config';
 import { MCPRequest, MCPResponse } from './server';
 
 export interface MCPResource {
@@ -180,7 +181,7 @@ export class ResourcesHandler {
    * Get preferences resource content
    */
   private async getPreferencesResource(uri: string): Promise<ResourceContent> {
-    const memories = this.memoryStorage.searchByContext({ type: 'preference' });
+    const memories = this.memoryStorage.searchByContext({ type: 'preference', project_id: ConfigService.getInstance().getProjectId() });
 
     // Format preferences for easy consumption
     const preferences = memories.map(m => ({
@@ -207,7 +208,7 @@ export class ResourcesHandler {
    * Get project knowledge resource content
    */
   private async getProjectKnowledgeResource(uri: string): Promise<ResourceContent> {
-    const memories = this.memoryStorage.searchByContext({ type: 'project-knowledge' });
+    const memories = this.memoryStorage.searchByContext({ type: 'project-knowledge', project_id: ConfigService.getInstance().getProjectId() });
 
     const knowledge = memories.map(m => ({
       key: m.key,
@@ -230,7 +231,7 @@ export class ResourcesHandler {
    * Get recent corrections resource content
    */
   private async getCorrectionsResource(uri: string): Promise<ResourceContent> {
-    const memories = this.memoryStorage.searchByContext({ type: 'correction' });
+    const memories = this.memoryStorage.searchByContext({ type: 'correction', project_id: ConfigService.getInstance().getProjectId() });
 
     // Get most recent 10 corrections
     const recentCorrections = memories
@@ -259,7 +260,7 @@ export class ResourcesHandler {
   private async getActiveContextResource(uri: string): Promise<ResourceContent> {
     // Get top 5 most accessed memories from last 24 hours
     const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-    const allMemories = this.memoryStorage.searchByContext({});
+    const allMemories = this.memoryStorage.searchByContext({ project_id: ConfigService.getInstance().getProjectId() });
 
     const recentMemories = allMemories
       .filter(m => (m.timestamp || 0) > oneDayAgo)

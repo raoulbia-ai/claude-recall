@@ -200,7 +200,7 @@ export class PromptsHandler {
    * Injects all user preferences into context
    */
   private async getPreferencesPrompt(): Promise<GetPromptResult> {
-    const preferences = this.memoryStorage.searchByContext({ type: 'preference' });
+    const preferences = this.memoryStorage.searchByContext({ type: 'preference', project_id: ConfigService.getInstance().getProjectId() });
 
     const preferencesText = this.formatPreferencesForPrompt(preferences);
 
@@ -224,7 +224,7 @@ Apply these preferences when generating code or making suggestions.`
    * Injects relevant project knowledge
    */
   private async getProjectContextPrompt(topic?: string): Promise<GetPromptResult> {
-    let knowledge = this.memoryStorage.searchByContext({ type: 'project-knowledge' });
+    let knowledge = this.memoryStorage.searchByContext({ type: 'project-knowledge', project_id: ConfigService.getInstance().getProjectId() });
 
     // Filter by topic if provided
     if (topic) {
@@ -257,7 +257,7 @@ Use this information when working with the project.`
    * Injects recent correction patterns
    */
   private async getCorrectionsPrompt(): Promise<GetPromptResult> {
-    const corrections = this.memoryStorage.searchByContext({ type: 'correction' });
+    const corrections = this.memoryStorage.searchByContext({ type: 'correction', project_id: ConfigService.getInstance().getProjectId() });
 
     // Get most recent 10
     const recentCorrections = corrections

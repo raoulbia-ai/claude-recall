@@ -79,7 +79,7 @@ describe('MemoryRetrieval', () => {
         relevance_score: 1.0
       });
       
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       
       const oldMemory = results.find(m => m.key === 'old_memory');
       const recentMemory = results.find(m => m.key === 'recent_memory');
@@ -106,7 +106,7 @@ describe('MemoryRetrieval', () => {
         relevance_score: 0.5
       });
       
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       
       const popular = results.find(m => m.key === 'popular');
       const unpopular = results.find(m => m.key === 'unpopular');
@@ -139,7 +139,7 @@ describe('MemoryRetrieval', () => {
       db.prepare('UPDATE memories SET last_accessed = ?, access_count = 10 WHERE key = ?').run(recentAccess, 'recent_access');
       db.prepare('UPDATE memories SET last_accessed = ?, access_count = 1 WHERE key = ?').run(oldAccess, 'old_access');
       
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       
       const recent = results.find(m => m.key === 'recent_access');
       const old = results.find(m => m.key === 'old_access');
@@ -160,7 +160,7 @@ describe('MemoryRetrieval', () => {
         });
       }
       
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       expect(results.length).toBe(5);
     });
   });
@@ -298,7 +298,7 @@ describe('MemoryRetrieval', () => {
           'promoted_mem', datetime('now'), datetime('now'))
       `);
 
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       const promoted = results.find(m => m.key === 'promoted_mem');
       const normal = results.find(m => m.key === 'normal_mem');
 
@@ -332,7 +332,7 @@ describe('MemoryRetrieval', () => {
         VALUES ('unhelpful_mem', 10, 0)
       `);
 
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       const helpful = results.find(m => m.key === 'helpful_mem');
       const unhelpful = results.find(m => m.key === 'unhelpful_mem');
 
@@ -369,7 +369,7 @@ describe('MemoryRetrieval', () => {
         VALUES ('stale_confirmed', 5, 3, '${oldDate}')
       `);
 
-      const results = retrieval.findRelevant({});
+      const results = retrieval.findRelevant({ includeAllProjects: true });
       const fresh = results.find(m => m.key === 'fresh_confirmed');
       const stale = results.find(m => m.key === 'stale_confirmed');
 

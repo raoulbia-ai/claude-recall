@@ -163,16 +163,20 @@ export class ConfigService {
   }
   
   getDatabasePath(): string {
-    // ALWAYS use ~/.claude-recall/claude-recall.db regardless of environment variables
-    // This ensures consistency across CLI and MCP server
-    const dbDir = path.join(os.homedir(), '.claude-recall');
-    const dbPath = path.join(dbDir, 'claude-recall.db');
-    
-    // Ensure database directory exists
-    if (!fs.existsSync(dbDir)) {
+    // Honor CLAUDE_RECALL_DB_PATH / CLAUDE_RECALL_DB_NAME via the loaded
+    // config (loadConfig already reads them with sensible defaults). The
+    // previous "always use ~/.claude-recall" behaviour broke test isolation:
+    // tests setting CLAUDE_RECALL_DB_PATH silently wrote to the production
+    // DB and polluted it with fixture rows.
+    const dbDir = this.config.database.path;
+    const dbPath = path.join(dbDir, this.config.database.name);
+
+    // Ensure database directory exists. Skip for in-memory DBs (`:memory:`)
+    // and any path that doesn't look like a real filesystem location.
+    if (dbDir && dbDir !== ':memory:' && !fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
-    
+
     return dbPath;
   }
   

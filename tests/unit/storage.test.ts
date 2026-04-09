@@ -77,10 +77,10 @@ describe('MemoryStorage', () => {
     const project1Memories = storage.searchByContext({ project_id: 'project1' });
     expect(project1Memories).toHaveLength(2);
     
-    const file1Memories = storage.searchByContext({ file_path: 'file1.ts' });
+    const file1Memories = storage.searchByContext({ file_path: 'file1.ts', includeAllProjects: true } as any);
     expect(file1Memories).toHaveLength(2);
     
-    const codeMemories = storage.searchByContext({ type: 'code' });
+    const codeMemories = storage.searchByContext({ type: 'code', includeAllProjects: true } as any);
     expect(codeMemories).toHaveLength(3);
   });
   

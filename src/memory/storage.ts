@@ -343,7 +343,17 @@ export class MemoryStorage {
     };
   }
   
-  searchByContext(context: { project_id?: string; file_path?: string; type?: string; keywords?: string[] }): Memory[] {
+  searchByContext(context: { project_id?: string; file_path?: string; type?: string; keywords?: string[]; includeAllProjects?: boolean }): Memory[] {
+    // Fail loud when called without scope. This prevents silent cross-project
+    // leakage that the previous default-allow behaviour caused. Callers that
+    // genuinely want all projects must opt in with includeAllProjects: true.
+    if (!context.project_id && !context.includeAllProjects) {
+      throw new Error(
+        'searchByContext requires context.project_id or context.includeAllProjects=true. ' +
+        'Calling without either would silently return memories from all projects.'
+      );
+    }
+
     let query = 'SELECT * FROM memories WHERE 1=1';
     const params: any[] = [];
 
@@ -352,6 +362,7 @@ export class MemoryStorage {
       query += ' AND (project_id = ? OR scope = ? OR project_id IS NULL)';
       params.push(context.project_id, 'universal');
     }
+    // includeAllProjects: no project filter — caller explicitly asked for everything.
 
     if (context.file_path) {
       query += ' AND file_path = ?';

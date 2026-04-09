@@ -96,12 +96,9 @@ class ClaudeRecallCLI {
    * Get stats for a specific project (includes universal and unscoped memories)
    */
   private getProjectStats(projectId: string): any {
-    const allMemories = this.memoryService.search('');
-    const projectMemories = allMemories.filter(m =>
-      m.project_id === projectId ||
-      m.scope === 'universal' ||
-      m.project_id === null
-    );
+    // Use getAllByProject for true enumeration. search() pre-ranks and caps
+    // at top-5, which silently masks most memories from stats.
+    const projectMemories = this.memoryService.getAllByProject(projectId);
 
     // Calculate byType breakdown
     const byType: Record<string, number> = {};
@@ -119,7 +116,8 @@ class ClaudeRecallCLI {
    * Show skills evolution breakdown
    */
   private showSkillsEvolution(): void {
-    const allMemories = this.memoryService.search('');
+    const projectId = ConfigService.getInstance().getProjectId();
+    const allMemories = this.memoryService.getAllByProject(projectId);
     const devopsMemories = allMemories.filter(m => m.type === 'devops');
 
     if (devopsMemories.length === 0) {
@@ -173,7 +171,8 @@ class ClaudeRecallCLI {
     // Rough estimation:
     // - Each memory saves ~200 tokens (vs repeating to LLM)
     // - DevOps memories save ~1,500 tokens each (vs loading reference files)
-    const allMemories = this.memoryService.search('');
+    const projectId = ConfigService.getInstance().getProjectId();
+    const allMemories = this.memoryService.getAllByProject(projectId);
     const devopsCount = allMemories.filter(m => m.type === 'devops').length;
     const otherCount = stats.total - devopsCount;
 
@@ -219,12 +218,9 @@ class ClaudeRecallCLI {
    * Show failure memories (v0.7.0)
    */
   showFailures(options: { limit?: number; project?: string }): void {
-    const allMemories = this.memoryService.search('');
-    let failures = allMemories.filter(m => m.type === 'failure');
-
-    if (options.project) {
-      failures = failures.filter(m => m.project_id === options.project);
-    }
+    const projectId = options.project || ConfigService.getInstance().getProjectId();
+    const allMemories = this.memoryService.getAllByProject(projectId);
+    const failures = allMemories.filter(m => m.type === 'failure');
 
     // Sort by timestamp (newest first)
     failures.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -387,8 +383,8 @@ class ClaudeRecallCLI {
     // Determine search scope
     let results;
     if (options.global) {
-      // Global search: all memories
-      results = this.memoryService.search(query);
+      // Global search: explicit cross-project opt-in
+      results = this.memoryService.search(query, { includeAllProjects: true });
     } else if (options.project) {
       // Project-specific search: project + universal
       results = this.memoryService.findRelevant({
@@ -447,8 +443,10 @@ class ClaudeRecallCLI {
     const format = options.format || 'json';
     
     try {
-      // Get all memories via search with empty query
-      const memories = this.memoryService.search('');
+      // Export all memories from the current project (+ universal). For a
+      // true cross-project dump, the user can run `--project` per project.
+      const projectId = ConfigService.getInstance().getProjectId();
+      const memories = this.memoryService.getAllByProject(projectId);
       
       if (format === 'json') {
         const exportData = {

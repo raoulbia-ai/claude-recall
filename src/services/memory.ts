@@ -188,21 +188,44 @@ export class MemoryService {
   }
   
   /**
-   * Search memories by keyword
+   * Search memories by keyword.
+   *
+   * Scope rules (post-Fix-2):
+   *   - Default: scoped to current project (projectId from ConfigService) +
+   *     universal/unscoped memories.
+   *   - Pass opts.projectId to scope to a specific project.
+   *   - Pass opts.includeAllProjects=true to opt into a true global search
+   *     (used by `claude-recall search --global`).
    */
-  search(query: string, sortBy: 'relevance' | 'timestamp' = 'relevance'): ScoredMemory[] {
+  search(
+    query: string,
+    optsOrSortBy:
+      | 'relevance'
+      | 'timestamp'
+      | { sortBy?: 'relevance' | 'timestamp'; projectId?: string; includeAllProjects?: boolean } = 'relevance'
+  ): ScoredMemory[] {
+    const opts = typeof optsOrSortBy === 'string' ? { sortBy: optsOrSortBy } : optsOrSortBy;
+    const sortBy = opts.sortBy || 'relevance';
+
     try {
-      // Use findRelevant with query context for better semantic matching
-      const context = {
+      const context: Context = {
         query: query,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
+
+      if (opts.includeAllProjects) {
+        (context as any).includeAllProjects = true;
+      } else {
+        context.project_id = opts.projectId || this.config.getProjectId();
+      }
 
       const results = this.retrieval.findRelevant(context, sortBy);
 
       this.logger.logRetrieval(query, results.length, {
         searchType: 'contextual',
-        sortBy
+        sortBy,
+        projectId: context.project_id,
+        includeAllProjects: !!opts.includeAllProjects,
       });
 
       return results;
@@ -212,6 +235,24 @@ export class MemoryService {
     }
   }
   
+  /**
+   * Enumerate ALL memories scoped to a project (project + universal + unscoped),
+   * with NO ranking and NO result cap.
+   *
+   * Use this for stats, exports, and any other "give me everything in scope"
+   * operation. Do NOT use search() / findRelevant() for enumeration — those
+   * pre-rank by type priority and cap at top-5, which silently hides most
+   * memories from callers that wanted a complete list.
+   */
+  getAllByProject(projectId: string): Memory[] {
+    try {
+      return this.storage.searchByContext({ project_id: projectId });
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'getAllByProject', error as Error, { projectId });
+      throw error;
+    }
+  }
+
   /**
    * Get memory storage statistics
    */
