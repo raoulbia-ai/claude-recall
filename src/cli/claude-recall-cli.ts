@@ -548,12 +548,49 @@ class ClaudeRecallCLI {
    */
   async status(): Promise<void> {
     console.log('\n🔍 Claude Recall Status\n');
-    
-    // MCP Server status
-    console.log('MCP Server:');
-    console.log('  Mode: Model Context Protocol (MCP)');
-    console.log('  Status: Ready for integration');
-    console.log('  Command: claude mcp add claude-recall claude-recall mcp start');
+
+    // Detect integration context
+    const hasPi = fs.existsSync(path.join(os.homedir(), '.pi'));
+    const claudeJsonPath = path.join(os.homedir(), '.claude.json');
+    let hasMcpRegistered = false;
+    if (fs.existsSync(claudeJsonPath)) {
+      try {
+        const claudeJson = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'));
+        const servers = claudeJson.mcpServers || {};
+        hasMcpRegistered = Object.keys(servers).some(k => k.includes('claude-recall') || k.includes('claude_recall'));
+      } catch { /* ignore parse errors */ }
+    }
+
+    // Show integration status per agent
+    if (hasPi) {
+      console.log('Pi Extension:');
+      try {
+        const { execSync } = require('child_process');
+        const piList = execSync('pi list 2>/dev/null', { encoding: 'utf-8' });
+        if (piList.includes('claude-recall')) {
+          console.log('  Status: Installed ✅');
+        } else {
+          console.log('  Status: Not installed');
+          console.log('  Install: pi install npm:claude-recall');
+        }
+      } catch {
+        console.log('  Status: Pi detected but could not verify installation');
+        console.log('  Install: pi install npm:claude-recall');
+      }
+    }
+
+    if (hasMcpRegistered) {
+      console.log('Claude Code MCP:');
+      console.log('  Status: Registered ✅');
+    } else if (!hasPi) {
+      console.log('Claude Code MCP:');
+      console.log('  Status: Not registered');
+      console.log('  Command: claude mcp add claude-recall claude-recall mcp start');
+    } else {
+      // Pi is present; show Claude Code MCP as optional
+      console.log('Claude Code MCP:');
+      console.log('  Status: Not registered (optional — Pi extension handles integration)');
+    }
     
     // Database status
     const configService = ConfigService.getInstance();
