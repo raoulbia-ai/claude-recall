@@ -104,8 +104,8 @@ describe('Pi Extension', () => {
   });
 
   describe('registration', () => {
-    it('registers 4 tools', () => {
-      expect(api.registerTool).toHaveBeenCalledTimes(4);
+    it('registers 6 tools', () => {
+      expect(api.registerTool).toHaveBeenCalledTimes(6);
     });
 
     it('registers recall_load_rules', () => {
@@ -116,6 +116,16 @@ describe('Pi Extension', () => {
     it('registers recall_store_memory', () => {
       const names = api._tools.map(t => t.name);
       expect(names).toContain('recall_store_memory');
+    });
+
+    it('registers recall_save_checkpoint', () => {
+      const names = api._tools.map(t => t.name);
+      expect(names).toContain('recall_save_checkpoint');
+    });
+
+    it('registers recall_load_checkpoint', () => {
+      const names = api._tools.map(t => t.name);
+      expect(names).toContain('recall_load_checkpoint');
     });
 
     it('registers recall_search_memory', () => {

@@ -544,6 +544,83 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * Save a task checkpoint for the current (or specified) project.
+   */
+  checkpointSave(opts: {
+    project?: string;
+    completed: string;
+    remaining: string;
+    blockers?: string;
+    notes?: string;
+  }): void {
+    try {
+      const projectId = opts.project || ConfigService.getInstance().getProjectId();
+      this.memoryService.saveCheckpoint(projectId, {
+        completed: opts.completed,
+        remaining: opts.remaining,
+        blockers: opts.blockers || 'none',
+        notes: opts.notes,
+      });
+      console.log(`\n✅ Checkpoint saved for project: ${projectId}\n`);
+      console.log(`  Completed: ${opts.completed}`);
+      console.log(`  Remaining: ${opts.remaining}`);
+      console.log(`  Blockers:  ${opts.blockers || 'none'}`);
+      if (opts.notes) console.log(`  Notes:     ${opts.notes}`);
+      console.log('');
+    } catch (error) {
+      console.error('❌ Checkpoint save failed:', error);
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Load the latest task checkpoint for the current (or specified) project.
+   */
+  checkpointLoad(opts: { project?: string; json?: boolean }): void {
+    try {
+      const projectId = opts.project || ConfigService.getInstance().getProjectId();
+      const checkpoint = this.memoryService.loadCheckpoint(projectId);
+      if (!checkpoint) {
+        console.log(`\nNo checkpoint found for project: ${projectId}\n`);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({ projectId, ...checkpoint }, null, 2));
+        return;
+      }
+      const updatedDate = new Date(checkpoint.updated_at).toLocaleString();
+      console.log(`\n📌 Checkpoint for project: ${projectId}`);
+      console.log(`   Updated: ${updatedDate}\n`);
+      console.log(`  Completed: ${checkpoint.completed}`);
+      console.log(`  Remaining: ${checkpoint.remaining}`);
+      console.log(`  Blockers:  ${checkpoint.blockers}`);
+      if (checkpoint.notes) console.log(`  Notes:     ${checkpoint.notes}`);
+      console.log('');
+    } catch (error) {
+      console.error('❌ Checkpoint load failed:', error);
+      process.exit(1);
+    }
+  }
+
+  /**
+   * Delete the task checkpoint for the current (or specified) project.
+   */
+  checkpointClear(opts: { project?: string }): void {
+    try {
+      const projectId = opts.project || ConfigService.getInstance().getProjectId();
+      const deleted = this.memoryService.deleteCheckpoint(projectId);
+      if (deleted) {
+        console.log(`\n✅ Checkpoint cleared for project: ${projectId}\n`);
+      } else {
+        console.log(`\nNo checkpoint to clear for project: ${projectId}\n`);
+      }
+    } catch (error) {
+      console.error('❌ Checkpoint clear failed:', error);
+      process.exit(1);
+    }
+  }
+
+  /**
    * Show system status
    */
   async status(): Promise<void> {
@@ -1505,6 +1582,52 @@ async function main() {
     .action(async (options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.clear(options);
+      process.exit(0);
+    });
+
+  // Checkpoint command group
+  const checkpoint = program
+    .command('checkpoint')
+    .description('Save and load task checkpoints (work-in-progress snapshots)');
+
+  checkpoint
+    .command('save')
+    .description('Save a task checkpoint for the current project (replaces previous)')
+    .requiredOption('--completed <text>', 'What is done')
+    .requiredOption('--remaining <text>', 'What is left to do')
+    .option('--blockers <text>', 'Current blockers (default: "none")')
+    .option('--notes <text>', 'Free-form notes, file refs, etc.')
+    .option('--project <id>', 'Project ID (default: current)')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.checkpointSave({
+        project: options.project,
+        completed: options.completed,
+        remaining: options.remaining,
+        blockers: options.blockers,
+        notes: options.notes,
+      });
+      process.exit(0);
+    });
+
+  checkpoint
+    .command('load')
+    .description('Load the latest task checkpoint for the current project')
+    .option('--project <id>', 'Project ID (default: current)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.checkpointLoad({ project: options.project, json: options.json });
+      process.exit(0);
+    });
+
+  checkpoint
+    .command('clear')
+    .description('Delete the task checkpoint for the current project')
+    .option('--project <id>', 'Project ID (default: current)')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.checkpointClear({ project: options.project });
       process.exit(0);
     });
 

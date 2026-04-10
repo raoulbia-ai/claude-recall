@@ -667,6 +667,29 @@ export class MemoryService {
   getDatabase() {
     return this.storage.getDatabase();
   }
+
+  // --- Task checkpoint methods ---
+
+  saveCheckpoint(projectId: string, input: { completed: string; remaining: string; blockers: string; notes?: string }): void {
+    this.storage.saveCheckpoint(projectId, input);
+    this.logger.info('MemoryService', `Checkpoint saved for project: ${projectId}`);
+  }
+
+  loadCheckpoint(projectId: string) {
+    return this.storage.loadCheckpoint(projectId);
+  }
+
+  hasCheckpoint(projectId: string): boolean {
+    return this.storage.hasCheckpoint(projectId);
+  }
+
+  deleteCheckpoint(projectId: string): boolean {
+    const deleted = this.storage.deleteCheckpoint(projectId);
+    if (deleted) {
+      this.logger.info('MemoryService', `Checkpoint deleted for project: ${projectId}`);
+    }
+    return deleted;
+  }
   
   /**
    * Check if database is connected

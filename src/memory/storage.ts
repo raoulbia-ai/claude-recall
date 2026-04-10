@@ -10,6 +10,22 @@ export interface StructuredMemoryValue {
   content: any;  // Actual memory data
 }
 
+// Task checkpoint — one-per-project structured snapshot of work in progress
+export interface TaskCheckpoint {
+  completed: string;
+  remaining: string;
+  blockers: string;
+  notes?: string;
+  updated_at: number;
+}
+
+export interface TaskCheckpointInput {
+  completed: string;
+  remaining: string;
+  blockers: string;
+  notes?: string;
+}
+
 export interface Memory {
   id?: number;
   key: string;
@@ -379,7 +395,79 @@ export class MemoryStorage {
     // This ensures that other processes (like CLI) can see the changes immediately
     this.db.pragma('wal_checkpoint(TRUNCATE)');
   }
-  
+
+  // --- Task checkpoint methods ---
+
+  private checkpointKey(projectId: string): string {
+    return `task-checkpoint:${projectId}`;
+  }
+
+  saveCheckpoint(projectId: string, input: TaskCheckpointInput): void {
+    const checkpoint: TaskCheckpoint = {
+      completed: input.completed,
+      remaining: input.remaining,
+      blockers: input.blockers,
+      notes: input.notes,
+      updated_at: Date.now(),
+    };
+    // Use a deterministic key per project so INSERT OR REPLACE replaces the previous one.
+    // Direct INSERT OR REPLACE bypasses fuzzy/hash dedup since they check `key != ?`.
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO memories
+      (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
+       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const value = JSON.stringify(checkpoint);
+    const contentHash = this.computeContentHash(checkpoint, 'task-checkpoint');
+    stmt.run(
+      this.checkpointKey(projectId),
+      value,
+      'task-checkpoint',
+      projectId,
+      null,
+      checkpoint.updated_at,
+      1.0,
+      0,
+      null,
+      1,
+      null,
+      null,
+      null,
+      1,
+      null,
+      contentHash,
+    );
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+  }
+
+  loadCheckpoint(projectId: string): TaskCheckpoint | null {
+    const row = this.db.prepare(
+      'SELECT value FROM memories WHERE key = ? AND type = ?'
+    ).get(this.checkpointKey(projectId), 'task-checkpoint') as { value: string } | undefined;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.value) as TaskCheckpoint;
+    } catch {
+      return null;
+    }
+  }
+
+  hasCheckpoint(projectId: string): boolean {
+    const row = this.db.prepare(
+      'SELECT 1 FROM memories WHERE key = ? AND type = ?'
+    ).get(this.checkpointKey(projectId), 'task-checkpoint');
+    return !!row;
+  }
+
+  deleteCheckpoint(projectId: string): boolean {
+    const result = this.db.prepare(
+      'DELETE FROM memories WHERE key = ? AND type = ?'
+    ).run(this.checkpointKey(projectId), 'task-checkpoint');
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return result.changes > 0;
+  }
+
   retrieve(key: string): Memory | null {
     const stmt = this.db.prepare('SELECT * FROM memories WHERE key = ?');
     const row = stmt.get(key) as any;

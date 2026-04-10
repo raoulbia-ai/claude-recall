@@ -180,6 +180,24 @@ claude-recall import backup.json             # Import memories from JSON
 claude-recall clear --force                  # Delete all memories (irreversible)
 ```
 
+### Task Checkpoints
+
+Persistent "where I left off" snapshots — one per project, replaces previous on save. Not loaded as a rule; `load_rules` only hints that one exists.
+
+```bash
+claude-recall checkpoint save \
+  --completed "inference layer, domain layer" \
+  --remaining "wire server.js, strip 3GPP URNs" \
+  --blockers "none" \
+  --notes "see inference/README.md"
+
+claude-recall checkpoint load              # Show the latest checkpoint
+claude-recall checkpoint load --json       # Machine-readable
+claude-recall checkpoint clear             # Delete the checkpoint
+```
+
+Agents can also save/load checkpoints via MCP tools (`mcp__claude-recall__save_checkpoint` / `mcp__claude-recall__load_checkpoint`) or Pi tools (`recall_save_checkpoint` / `recall_load_checkpoint`).
+
 ### Troubleshooting
 
 ```bash
@@ -245,6 +263,11 @@ claude-recall outcomes --section lessons # Just candidate lessons
 claude-recall outcomes --section stats   # Retrieval/helpfulness stats
 claude-recall outcomes --limit 20        # More items per section
 claude-recall monitor                    # Memory search monitoring stats
+
+# ── Task Checkpoints ────────────────────────────────────────────────
+claude-recall checkpoint save --completed <text> --remaining <text> [--blockers <text>] [--notes <text>] [--project <id>]
+claude-recall checkpoint load [--project <id>] [--json]
+claude-recall checkpoint clear [--project <id>]
 
 # ── Skills ───────────────────────────────────────────────────────────
 claude-recall skills generate            # Generate skills from memories

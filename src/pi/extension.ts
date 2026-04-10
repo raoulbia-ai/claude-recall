@@ -238,9 +238,21 @@ export default function(pi: PiTypes.ExtensionAPI) {
           for (const m of all) os.recordRetrieval(m.key);
         } catch { /* non-critical */ }
 
+        // Checkpoint hint — surface existence without dumping content
+        let checkpointHint = '';
+        try {
+          if (ms.hasCheckpoint(projectId)) {
+            const cp = ms.loadCheckpoint(projectId);
+            if (cp) {
+              const updatedDate = new Date(cp.updated_at).toLocaleString();
+              checkpointHint = `📌 You have an unfinished task checkpoint from ${updatedDate} — call \`recall_load_checkpoint\` to see completed/remaining/blockers before starting work.\n\n`;
+            }
+          }
+        } catch { /* non-critical */ }
+
         const text = body
-          ? `${LOAD_RULES_DIRECTIVE}\n\n---\n\n${body}`
-          : 'No active rules found. This may be a new project.';
+          ? `${LOAD_RULES_DIRECTIVE}\n\n${checkpointHint}---\n\n${body}`
+          : (checkpointHint || 'No active rules found. This may be a new project.');
 
         return {
           content: [{ type: 'text' as const, text }],
@@ -356,6 +368,75 @@ export default function(pi: PiTypes.ExtensionAPI) {
       } catch (err) {
         return {
           content: [{ type: 'text' as const, text: `Failed to search: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  });
+
+  // --- Tool: recall_save_checkpoint ---
+
+  pi.registerTool({
+    name: 'recall_save_checkpoint',
+    label: 'Save Task Checkpoint',
+    description: 'Save a structured snapshot of work in progress (completed/remaining/blockers/notes). Replaces any previous checkpoint for this project. Call when ending a session or pausing on a task.',
+    promptSnippet: 'Save a task checkpoint with what is done, what remains, and any blockers',
+    parameters: {},
+    async execute(_id, params: any, _signal, _onUpdate, _ctx) {
+      try {
+        const { completed, remaining, blockers, notes } = params || {};
+        if (typeof completed !== 'string' || typeof remaining !== 'string' || typeof blockers !== 'string') {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: completed, remaining, and blockers are required string fields' }],
+            isError: true,
+          };
+        }
+        const ms = MemoryService.getInstance();
+        ms.saveCheckpoint(projectId, { completed, remaining, blockers, notes });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            success: true,
+            projectId,
+            message: `Checkpoint saved for project: ${projectId}`,
+          }) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Failed to save checkpoint: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
+    },
+  });
+
+  // --- Tool: recall_load_checkpoint ---
+
+  pi.registerTool({
+    name: 'recall_load_checkpoint',
+    label: 'Load Task Checkpoint',
+    description: 'Load the latest task checkpoint for the current project. Returns null if none exists. Call at session start to recall where you left off.',
+    promptSnippet: 'Load the saved task checkpoint to see what was in progress',
+    parameters: {},
+    async execute(_id, _params: any, _signal, _onUpdate, _ctx) {
+      try {
+        const ms = MemoryService.getInstance();
+        const checkpoint = ms.loadCheckpoint(projectId);
+        if (!checkpoint) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ found: false, projectId }) }],
+          };
+        }
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            found: true,
+            projectId,
+            ...checkpoint,
+            updated_at_iso: new Date(checkpoint.updated_at).toISOString(),
+          }) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: `Failed to load checkpoint: ${(err as Error).message}` }],
           isError: true,
         };
       }
