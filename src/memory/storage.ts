@@ -246,6 +246,82 @@ export class MemoryStorage {
     return crypto.createHash('sha256').update(canonical).digest('hex');
   }
 
+  /**
+   * Find a same-type memory whose text content is a near-duplicate (Jaccard >= 0.85).
+   * Returns the key of the matching memory, or null if none found.
+   */
+  private findFuzzyDuplicate(memory: Memory): string | null {
+    const newText = this.extractText(memory.value).toLowerCase();
+    if (newText.length < 40) return null; // Too short to fuzzy-match reliably
+
+    // Scope fuzzy dedup to same type AND same project (or both null/universal)
+    const projectFilter = memory.project_id
+      ? 'AND project_id = ?'
+      : 'AND (project_id IS NULL OR project_id = \'\')';
+    const params: any[] = [memory.type, memory.key];
+    if (memory.project_id) params.push(memory.project_id);
+
+    const candidates = this.db.prepare(
+      `SELECT key, value FROM memories WHERE type = ? AND key != ? ${projectFilter}`
+    ).all(...params) as Array<{ key: string; value: string }>;
+
+    for (const candidate of candidates) {
+      let candidateText: string;
+      try {
+        const parsed = JSON.parse(candidate.value);
+        candidateText = this.extractText(parsed).toLowerCase();
+      } catch {
+        candidateText = candidate.value.toLowerCase();
+      }
+
+      if (this.jaccardSimilarity(newText, candidateText) >= 0.65) {
+        return candidate.key;
+      }
+    }
+    return null;
+  }
+
+  private extractText(value: any): string {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+      // Collect all leaf string values, ignoring JSON keys
+      const leaves: string[] = [];
+      const collect = (obj: any) => {
+        if (typeof obj === 'string') { leaves.push(obj); return; }
+        if (obj && typeof obj === 'object') {
+          for (const v of Object.values(obj)) collect(v);
+        }
+      };
+      collect(value);
+      return leaves.join(' ');
+    }
+    return String(value);
+  }
+
+  private static STOP_WORDS = new Set([
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as',
+    'and', 'or', 'but', 'not', 'no', 'do', 'does', 'did', 'this', 'that',
+    'it', 'its', 'via', 'can', 'should', 'will', 'would', 'may', 'might',
+  ]);
+
+  private jaccardSimilarity(a: string, b: string): number {
+    const tokenize = (s: string) => {
+      const words = s.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+      return new Set(words.filter(w => !MemoryStorage.STOP_WORDS.has(w)));
+    };
+    const wordsA = tokenize(a);
+    const wordsB = tokenize(b);
+    if (wordsA.size === 0 && wordsB.size === 0) return 1;
+    if (wordsA.size === 0 || wordsB.size === 0) return 0;
+    let intersection = 0;
+    for (const w of wordsA) {
+      if (wordsB.has(w)) intersection++;
+    }
+    const union = wordsA.size + wordsB.size - intersection;
+    return union === 0 ? 0 : intersection / union;
+  }
+
   save(memory: Memory): void {
     const contentHash = this.computeContentHash(memory.value, memory.type);
 
@@ -259,6 +335,16 @@ export class MemoryStorage {
       this.db.prepare(
         'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
       ).run(Date.now(), existing.key);
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      return;
+    }
+
+    // Fuzzy dedup: check if a same-type memory with very similar content exists
+    const fuzzyMatch = this.findFuzzyDuplicate(memory);
+    if (fuzzyMatch) {
+      this.db.prepare(
+        'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
+      ).run(Date.now(), fuzzyMatch);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
     }

@@ -183,6 +183,36 @@ export async function handleToolOutcomeWatcher(input: any): Promise<void> {
 // Backward compatibility alias
 export const handleBashFailureWatcher = handleToolOutcomeWatcher;
 
+/**
+ * Quality filter: should this bash failure be captured as a memory?
+ * Returns false for exploratory probes, command-not-found, and other low-signal failures.
+ */
+export function shouldCaptureFailure(command: string, exitCode: string, output: string): boolean {
+  // Very short commands (ls, cd, etc.) — not worth capturing
+  if (command.trim().length < 5) return false;
+
+  // Exploratory probes: commands ending in 2>/dev/null are intentionally suppressing errors
+  if (/2>\s*\/dev\/null\s*$/.test(command)) return false;
+
+  // Command-existence checks: which, type, command -v
+  const trimmed = command.trim();
+  if (/^(which|type)\s+/i.test(trimmed)) return false;
+  if (/^command\s+-v\s+/i.test(trimmed)) return false;
+
+  // Command not found (exit code 127 or output contains "command not found")
+  if (exitCode === '127') return false;
+  if (/command not found/i.test(output)) return false;
+
+  // No useful output — nothing to learn from
+  const cleanOutput = output.replace(/\(no output\)/gi, '').trim();
+  if (cleanOutput.length < 10 && !/^(npm|npx|node|python|pip|cargo|go|make|docker|git)\s/.test(trimmed)) return false;
+
+  // EISDIR / "Is a directory" — file read probes
+  if (/is a directory/i.test(output) || /EISDIR/i.test(output)) return false;
+
+  return true;
+}
+
 // --- Bash handler (original bash-failure-watcher logic) ---
 
 async function handleBashOutcome(input: any): Promise<void> {
@@ -211,6 +241,12 @@ async function handleBashFailure(
   output: string,
   sessionId: string,
 ): Promise<void> {
+  // Quality filter — skip low-signal failures
+  if (!shouldCaptureFailure(command, exitCode, output)) {
+    hookLog(HOOK_NAME, `Skipped low-quality failure: ${truncate(command, 60)} (exit ${exitCode})`);
+    return;
+  }
+
   // Dedup check
   const existing = searchExisting(command);
   if (isDuplicate(command, existing, 0.7)) {
