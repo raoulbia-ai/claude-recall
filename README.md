@@ -142,17 +142,76 @@ action → outcome event → episode → candidate lesson → promotion → acti
 
 ## CLI Reference
 
-### Common Commands
+### Health Check (run these first)
 
 ```bash
-claude-recall stats                  # Memory statistics
-claude-recall search "query"         # Search memories
-claude-recall failures               # View failure memories
-claude-recall outcomes               # Outcome-aware learning status
-claude-recall outcomes --section lessons  # Just candidate lessons
-claude-recall export backup.json     # Export memories to JSON
-claude-recall import backup.json     # Import memories from JSON
-claude-recall --version              # Check version
+claude-recall --version              # Confirm installed version
+claude-recall status                 # Installation health: hooks, MCP, DB path, project ID
+claude-recall stats                  # What's in the DB for this project
+claude-recall stats --global         # What's in the DB across ALL projects
+```
+
+### Inspecting Memories
+
+```bash
+claude-recall search "query"             # Search current project's memories
+claude-recall search "query" --global    # Search across all projects
+claude-recall search "query" --json      # Machine-readable output
+claude-recall search "query" --project <id>  # Search a specific project
+
+claude-recall failures                   # View failure memories (current project)
+claude-recall failures --limit 20        # Show more
+
+claude-recall outcomes                   # Outcome-aware learning status
+claude-recall outcomes --section lessons # Just candidate lessons
+claude-recall outcomes --section stats   # Retrieval/helpfulness stats per memory
+claude-recall outcomes --limit 20        # More items per section
+
+claude-recall monitor                    # Memory search monitoring stats
+```
+
+### Managing Memories
+
+```bash
+claude-recall store "content"                # Store a memory (default type: preference)
+claude-recall store "content" -t correction  # Store with specific type
+claude-recall export backup.json             # Export all memories to JSON
+claude-recall import backup.json             # Import memories from JSON
+claude-recall clear --force                  # Delete all memories (irreversible)
+```
+
+### Troubleshooting
+
+```bash
+# "Are my hooks installed?"
+claude-recall status                     # Shows hook registration status
+claude-recall hooks check                # Verify hook files exist and are valid
+
+# "Is the MCP server running?"
+claude-recall mcp status                 # Current project's server status
+claude-recall mcp ps                     # List all running servers
+
+# "Which project does this directory map to?"
+claude-recall project show               # Shows project ID for current directory
+claude-recall project list               # All registered projects
+
+# "Why do I see memories from other projects?"
+claude-recall search "query"             # Scoped to current project (default)
+claude-recall search "query" --global    # Explicitly cross-project
+
+# "How do I check what the DB actually contains?"
+sqlite3 ~/.claude-recall/claude-recall.db "SELECT type, COUNT(*) FROM memories GROUP BY type"
+sqlite3 ~/.claude-recall/claude-recall.db "SELECT type, COUNT(*) FROM memories WHERE project_id = '<id>' GROUP BY type"
+
+# "Hook logs — what did the hooks actually do?"
+tail -20 ~/.claude-recall/hook-logs/tool-outcome-watcher.log
+tail -20 ~/.claude-recall/hook-logs/memory-stop.log
+tail -20 ~/.claude-recall/hook-logs/correction-detector.log
+
+# "Something is broken, start fresh"
+claude-recall repair                     # Clean up old hooks, reinstall skills
+claude-recall setup --install            # Reinstall skills + hooks
+claude-recall mcp cleanup --all          # Stop all stale MCP servers
 ```
 
 <details>
@@ -164,11 +223,18 @@ claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Clean up old hooks, install skills
+claude-recall hooks check                # Verify hook files exist and are valid
+claude-recall hooks test-enforcement     # Test if search enforcer hook works
 
 # ── Memory ───────────────────────────────────────────────────────────
-claude-recall stats                      # Memory statistics
-claude-recall search "query"             # Search memories
+claude-recall stats                      # Memory statistics (current project)
+claude-recall stats --global             # Memory statistics (all projects)
+claude-recall search "query"             # Search memories (current project)
+claude-recall search "query" --global    # Search memories (all projects)
+claude-recall search "query" --json      # Output as JSON
+claude-recall search "query" --project <id>  # Search specific project
 claude-recall store "content"            # Store memory directly
+claude-recall store "content" -t <type>  # Store with type (preference, correction, failure, devops, project-knowledge)
 claude-recall export backup.json         # Export memories to JSON
 claude-recall import backup.json         # Import memories from JSON
 claude-recall clear --force              # Clear all memories
@@ -176,6 +242,7 @@ claude-recall failures                   # View failure memories
 claude-recall failures --limit 20        # Limit results
 claude-recall outcomes                   # Outcome-aware learning status
 claude-recall outcomes --section lessons # Just candidate lessons
+claude-recall outcomes --section stats   # Retrieval/helpfulness stats
 claude-recall outcomes --limit 20        # More items per section
 claude-recall monitor                    # Memory search monitoring stats
 
@@ -199,7 +266,15 @@ claude-recall mcp cleanup --all          # Stop all servers
 claude-recall project show               # Current project info
 claude-recall project list               # All registered projects
 claude-recall project register           # Register current project
+claude-recall project unregister [id]    # Unregister a project
 claude-recall project clean              # Remove stale registry entries
+
+# ── Database Migration ──────────────────────────────────────────────
+claude-recall migrate check              # Check if migration needed
+claude-recall migrate schema             # Show current schema version
+claude-recall migrate export             # Export pre-migration backup
+claude-recall migrate import             # Import from backup
+claude-recall migrate complete           # Run pending migrations
 
 # ── Auto-Capture Hooks (run automatically, registered via setup --install) ──
 claude-recall hook run correction-detector   # UserPromptSubmit hook
