@@ -64,16 +64,39 @@ Both agents use the same database (`~/.claude-recall/claude-recall.db`). Memorie
 
 ### Upgrading
 
-```bash
-# Claude Code — update binary + re-install hooks in each project
-npm install -g claude-recall
-claude-recall setup --install    # run from each project directory
+#### If you use Claude Code
 
-# Pi — must include the npm: prefix (matches the install command)
+Run this **once** to update the global binary:
+
+```bash
+npm install -g claude-recall
+```
+
+Then run this **in each project directory** where you use claude-recall (the binary upgrade alone isn't enough — new releases sometimes add hook events that need to be registered in each project's `.claude/settings.json`):
+
+```bash
+claude-recall setup --install
+```
+
+Restart Claude Code so the new MCP server starts (or run `claude-recall mcp restart` from the project directory to keep the current session running).
+
+**Verify**: `claude-recall --version` shows the new version, and asking *"Load my rules"* in Claude Code triggers `mcp__claude-recall__load_rules`.
+
+#### If you use Pi
+
+Run this **once** — the `npm:` prefix is required (it matches the original install command):
+
+```bash
 pi update npm:claude-recall
 ```
 
-The MCP server picks up the new version automatically. `setup --install` is needed to update hooks in `.claude/settings.json` (new hook events may have been added).
+Restart Pi to load the updated extension.
+
+**Verify**: `pi list` shows the new `claude-recall` version, and asking *"Load my rules"* in Pi triggers `recall_load_rules`.
+
+#### If you use both
+
+Both upgrades are independent — run the Claude Code section AND the Pi section. Both agents share the same `~/.claude-recall/claude-recall.db`, so memories captured in either are visible to the other.
 
 ---
 
