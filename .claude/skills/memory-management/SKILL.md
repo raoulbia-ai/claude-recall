@@ -137,13 +137,14 @@ a SKILL.md file that Claude Code loads automatically.
 
 ## Automatic Capture Hooks
 
-Claude Recall registers hooks on three Claude Code events to capture memories automatically — no MCP tool call needed:
+Claude Recall registers hooks on four Claude Code events to capture memories automatically — no MCP tool call needed:
 
 | Hook | Event | What it captures |
 |------|-------|-----------------|
 | `correction-detector` | UserPromptSubmit | User corrections, preferences, and project knowledge from natural language |
 | `memory-stop` | Stop | Corrections, preferences, failures, and devops patterns from the last 6 transcript entries |
 | `precompact-preserve` | PreCompact | Broader sweep of up to 50 transcript entries before context compression |
+| `session-end-checkpoint` | SessionEnd | Auto-saves a `{completed, remaining, blockers}` task checkpoint when the session ends voluntarily (`clear`, `prompt_input_exit`, `logout`). Spawns a detached worker so it stays within Claude Code's 1.5s SessionEnd timeout. Pi has the equivalent via the `session_shutdown` event handler. |
 
 **Key behaviors:**
 - **LLM-first classification** via Claude Haiku — detects natural statements like "we use tabs here" or "tests go in \_\_tests\_\_/" that regex would miss
@@ -152,9 +153,10 @@ Claude Recall registers hooks on three Claude Code events to capture memories au
 - Batch classification: Stop and PreCompact hooks send all texts in a single API call
 - Near-duplicate detection via Jaccard similarity (55% threshold) prevents redundant storage
 - Per-event limits: 3 (Stop), 5 (PreCompact) to prevent DB flooding
+- Auto-checkpoint quality gate: refuses to save when the LLM detects the task was already complete — manual checkpoints stay sticky
 - Always exits 0 — hooks never block Claude
 
-**Setup:** Run `npx claude-recall setup --install` to register hooks in `.claude/settings.json`.
+**Setup:** Run `npx claude-recall setup --install` to register hooks in `.claude/settings.json`. After upgrading to v0.21.2, re-run `setup --install` in each project to pick up the new SessionEnd hook (the `hooksVersion` bump to `13.0.0` signals that registration changed).
 
 ## Example Workflows
 

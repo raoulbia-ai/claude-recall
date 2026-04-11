@@ -15,7 +15,7 @@ import {
   jaccardSimilarity,
   safeErrorMessage,
 } from '../hooks/shared';
-import { extractSessionLearningsWithLLM, SessionLearning } from '../hooks/llm-classifier';
+import { extractSessionLearningsWithLLM, extractCheckpointWithLLM, SessionLearning } from '../hooks/llm-classifier';
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { FailureMemoryContent } from '../services/failure-extractor';
@@ -543,5 +543,113 @@ export async function extractSessionLearnings(
   } catch (err) {
     logFn('event-processor', `extractSessionLearnings error: ${safeErrorMessage(err)}`);
     return 0;
+  }
+}
+
+// --- Auto-Checkpoint Extraction ---
+
+const CHECKPOINT_SUMMARY_MAX_CHARS = 4000;
+const CHECKPOINT_MIN_ENTRIES = 3;
+const CHECKPOINT_MIN_REMAINING_LEN = 10;
+
+/**
+ * Build a summary of the MOST RECENT entries (not the start) for checkpoint extraction.
+ * Walks backward from the end, accumulates lines until char budget is exhausted,
+ * then returns them in chronological order.
+ *
+ * Distinct from buildSummary() which prefers the START of the session.
+ */
+export function buildRecentTaskSummary(entries: ConversationEntry[]): string {
+  const lines: string[] = [];
+  let totalChars = 0;
+
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    let line: string;
+    if (entry.role === 'tool_result') {
+      const status = entry.isError ? ' [ERROR]' : '';
+      const tool = entry.toolName ? `${entry.toolName}` : 'tool';
+      line = `[${tool}${status}] ${truncate(entry.text, 200)}`;
+    } else if (entry.role === 'assistant' && entry.toolName) {
+      line = `[assistant → ${entry.toolName}] ${truncate(entry.text, 150)}`;
+    } else {
+      line = `[${entry.role}] ${truncate(entry.text, 200)}`;
+    }
+
+    if (totalChars + line.length > CHECKPOINT_SUMMARY_MAX_CHARS) break;
+    lines.unshift(line);
+    totalChars += line.length + 1;
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Auto-extract a "where I left off" checkpoint from a session that is ending.
+ *
+ * Built for two callers with different runtime constraints:
+ *   - Pi: in-process synchronous call from session_shutdown handler
+ *   - Claude Code: detached worker process spawned from a SessionEnd hook
+ *
+ * Both runtimes pass the same ConversationEntry[] shape and get the same
+ * quality-gated behavior. Pi is the primary use case because Pi has no
+ * `--resume` equivalent — without this, restarted Pi sessions have no
+ * memory of what came before.
+ *
+ * Quality gate: skips the save if the LLM extraction has an empty/short
+ * `remaining` field. The whole point of a checkpoint is "what to resume
+ * from"; saving empty resumes would clobber any manual checkpoint with
+ * useless garbage.
+ *
+ * @param entries Recent conversation entries (last ~30 from session)
+ * @param projectId Current project ID
+ * @param runtime Tag for the notes field — distinguishes Pi vs CC auto-saves
+ * @returns true if a checkpoint was saved, false otherwise (no API key,
+ *          insufficient entries, empty extraction, save failure)
+ */
+export async function extractCheckpoint(
+  entries: ConversationEntry[],
+  projectId: string,
+  runtime: 'pi' | 'cc',
+): Promise<boolean> {
+  if (!entries || entries.length < CHECKPOINT_MIN_ENTRIES) {
+    return false;
+  }
+
+  try {
+    const summary = buildRecentTaskSummary(entries);
+    if (!summary || summary.trim().length === 0) return false;
+
+    const extraction = await extractCheckpointWithLLM(summary);
+
+    if (extraction === null) {
+      logFn('event-processor', 'extractCheckpoint: LLM returned null (no API key, parse error, or empty extraction)');
+      return false;
+    }
+
+    // Quality gate: must have meaningful `remaining` content to be worth saving
+    const remaining = (extraction.remaining || '').trim();
+    if (remaining.length < CHECKPOINT_MIN_REMAINING_LEN) {
+      logFn('event-processor', `extractCheckpoint: skipping save — remaining field empty or too short (${remaining.length} chars)`);
+      return false;
+    }
+
+    const completed = (extraction.completed || '').trim();
+    const blockers = (extraction.blockers || '').trim();
+    const timestamp = new Date().toISOString();
+    const notes = `[auto-saved on ${runtime} session exit at ${timestamp}]`;
+
+    try {
+      const ms = MemoryService.getInstance();
+      ms.saveCheckpoint(projectId, { completed, remaining, blockers, notes });
+      logFn('event-processor', `extractCheckpoint: saved auto-checkpoint for ${projectId} (runtime=${runtime})`);
+      return true;
+    } catch (saveErr) {
+      logFn('event-processor', `extractCheckpoint: saveCheckpoint failed: ${safeErrorMessage(saveErr)}`);
+      return false;
+    }
+  } catch (err) {
+    logFn('event-processor', `extractCheckpoint error: ${safeErrorMessage(err)}`);
+    return false;
   }
 }

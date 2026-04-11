@@ -90,6 +90,7 @@ Once installed, Claude Recall works automatically in the background:
 7. **After context compression** (Claude Code only) — rules are automatically re-injected into context so they're not lost when the window shrinks
 8. **Sub-agent recall** (Claude Code only) — when sub-agents are spawned, active rules are injected into their context automatically. Sub-agent outcomes (completed/failed/killed) are captured as events
 9. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
+10. **Auto-checkpoint on session exit** — when a session ends (Pi shutdown or Claude Code's `SessionEnd` for `clear`/`prompt_input_exit`/`logout`), the most recent task is extracted via Haiku into a structured `{completed, remaining, blockers}` checkpoint and saved for the next session. Critical for Pi (which has no `--resume` flag); a useful safety net for Claude Code users who exit without resuming. Conservative quality gate refuses to save when the LLM detects the task was already complete — manual checkpoints are never clobbered with garbage
 
 Classification uses Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 
@@ -197,6 +198,22 @@ claude-recall checkpoint clear             # Delete the checkpoint
 ```
 
 Agents can also save/load checkpoints via MCP tools (`mcp__claude-recall__save_checkpoint` / `mcp__claude-recall__load_checkpoint`) or Pi tools (`recall_save_checkpoint` / `recall_load_checkpoint`).
+
+#### Auto-checkpoint on session exit (v0.21.2+)
+
+Manual `checkpoint save` is the explicit path. **Auto-checkpoint** is the safety net: when a session ends, the most recent task is extracted into a checkpoint automatically so the next session can resume.
+
+- **Pi** — fires from the `session_shutdown` event handler. In-process synchronous call, runs as part of the existing session-end pipeline. **Critical for Pi: there is no `pi --resume` equivalent, so without this, restarting Pi loses all session context.**
+- **Claude Code** — fires from the `SessionEnd` hook for voluntary exit reasons (`clear`, `prompt_input_exit`, `logout`). Spawns a detached background worker (fork+unref) so it stays well within Claude Code's tight 1.5s `SessionEnd` timeout. Skips `bypass_permissions_disabled` and `other` reasons (those are system-driven, not user intent). Useful for users who exit and start fresh instead of using `claude --resume`.
+
+Both runtimes share the same Haiku-backed extraction (`extractCheckpointWithLLM`) and the same quality gate:
+
+- **Quality gate**: refuses to save if the LLM returns an empty or trivially-short `remaining` field. The model is prompted to detect completion signals (assistant said "Done.", user said "thanks", no follow-up question) and return empty `remaining` when the task is finished. **An empty checkpoint is far better than a fabricated one** — manual checkpoints are never overwritten with garbage.
+- **Notes tag**: auto-saved checkpoints include `[auto-saved on <pi|cc> session exit at <iso-timestamp>]` in the notes field, so you can tell auto from manual via `checkpoint load`.
+- **Requires `ANTHROPIC_API_KEY`**. Without it, `extractCheckpointWithLLM` returns `null` (graceful fallback) and no auto-checkpoint is saved. Manual `checkpoint save` still works.
+- **Disable**: remove the `SessionEnd` block from `.claude/settings.json` (Claude Code) or, for Pi, no per-project disable flag exists yet — open an issue if you need one.
+
+The auto-checkpoint never clobbers a useful manual checkpoint because of the quality gate. If the LLM doesn't see clear unfinished work, it returns empty and the gate refuses the save. Manual checkpoints stay sticky until you explicitly save over them.
 
 ### Troubleshooting
 

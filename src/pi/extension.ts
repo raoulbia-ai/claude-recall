@@ -19,6 +19,7 @@ import {
   setLogFunction,
   resetPendingFailures,
   extractSessionLearnings,
+  extractCheckpoint,
   ConversationEntry,
 } from '../shared/event-processors';
 
@@ -82,6 +83,12 @@ export default function(pi: PiTypes.ExtensionAPI) {
   const collectedToolResults: ConversationEntry[] = [];
   let rulesLoaded = false;
   const collectedUserTexts: string[] = [];
+  // Chronologically interleaved entries (user input + tool results in order)
+  // for auto-checkpoint extraction at session end. Distinct from the two
+  // arrays above which are kept for backward compat with processSessionEnd
+  // and extractSessionLearnings.
+  const collectedEntries: ConversationEntry[] = [];
+  const MAX_COLLECTED_ENTRIES = 100;
 
   // Route logs through Pi's UI when available
   setLogFunction((source, msg) => {
@@ -95,6 +102,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
     rulesLoaded = false;
     collectedUserTexts.length = 0;
     collectedToolResults.length = 0;
+    collectedEntries.length = 0;
     resetPendingFailures();
     try {
       ConfigService.getInstance().updateConfig({
@@ -141,6 +149,17 @@ export default function(pi: PiTypes.ExtensionAPI) {
       isError: event.isError,
     });
 
+    // Append to chronologically interleaved log for auto-checkpoint
+    collectedEntries.push({
+      role: 'tool_result',
+      text: output.substring(0, 300),
+      toolName: event.toolName,
+      isError: event.isError,
+    });
+    if (collectedEntries.length > MAX_COLLECTED_ENTRIES) {
+      collectedEntries.splice(0, collectedEntries.length - MAX_COLLECTED_ENTRIES);
+    }
+
     if (ctx.hasUI) {
       const label = event.input?.command
         ? truncateStr(event.input.command as string, 40)
@@ -159,6 +178,10 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
   pi.on('input', (event, ctx) => {
     collectedUserTexts.push(event.text);
+    collectedEntries.push({ role: 'user', text: event.text });
+    if (collectedEntries.length > MAX_COLLECTED_ENTRIES) {
+      collectedEntries.splice(0, collectedEntries.length - MAX_COLLECTED_ENTRIES);
+    }
     processUserInput(event.text, sessionId).then(msg => {
       if (msg && ctx.hasUI) {
         try { ctx.ui.notify(`📌 ${msg}`, 'info'); } catch { /* non-critical */ }
@@ -192,6 +215,21 @@ export default function(pi: PiTypes.ExtensionAPI) {
       extractSessionLearnings(allEntries, sessionId, projectId, 5).then(extracted => {
         if (extracted > 0 && ctx.hasUI) {
           try { ctx.ui.notify(`🔍 Recall: extracted ${extracted} learnings from session`, 'info'); } catch { /* non-critical */ }
+        }
+      }).catch(() => {});
+    }
+
+    // Auto-checkpoint: extract "where I left off" hint for next Pi session.
+    // Critical for Pi which has no `--resume` flag — without this, the next
+    // Pi session has no memory of what came before. Uses chronologically
+    // interleaved entries (collectedEntries) so the LLM sees the actual
+    // most-recent task, not user texts followed by all tool results.
+    if (collectedEntries.length >= 3 && projectId) {
+      extractCheckpoint(collectedEntries, projectId, 'pi').then(saved => {
+        if (saved && ctx.hasUI) {
+          try {
+            ctx.ui.notify('📌 Recall: saved task checkpoint for next session', 'info');
+          } catch { /* non-critical */ }
         }
       }).catch(() => {});
     }

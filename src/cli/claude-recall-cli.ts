@@ -879,7 +879,7 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '12.0.0';  // v12 = add SubagentStart/Stop for sub-agent recall integration
+    settings.hooksVersion = '13.0.0';  // v13 = add SessionEnd for auto-checkpoint on session exit
     settings.hooks = {
       SubagentStart: [
         {
@@ -986,6 +986,20 @@ async function main() {
               type: "command",
               command: `${hookCmd} memory-sync`,
               timeout: 10
+            }
+          ]
+        }
+      ],
+      // Auto-checkpoint on voluntary session exits. Worker is fire-and-forget,
+      // so the synchronous handler returns instantly (well within CC's tight
+      // 1.5s SessionEnd timeout). Symmetric with Pi's session_shutdown handler.
+      SessionEnd: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} session-end-checkpoint`,
+              timeout: 5
             }
           ]
         }

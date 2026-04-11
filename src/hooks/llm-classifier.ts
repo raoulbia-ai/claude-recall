@@ -242,6 +242,99 @@ export async function extractSessionLearningsWithLLM(
   }
 }
 
+// --- Auto-Checkpoint Extraction ---
+
+export interface CheckpointExtraction {
+  completed: string;
+  remaining: string;
+  blockers: string;
+}
+
+const CHECKPOINT_EXTRACTION_PROMPT = `You are extracting a "where I left off" checkpoint from a coding session that just ended. The next session — possibly minutes from now, possibly days later — needs a brief, accurate hint to resume from. Your output will overwrite any existing checkpoint, so it MUST be either accurate or empty. NEVER fabricate.
+
+You will see the FINAL portion of a session transcript. Your job is to extract THREE fields:
+
+- completed: what the user/agent finished in THIS recent task (concrete, brief, max 200 chars). Empty string if nothing was clearly completed.
+- remaining: what was still in flight when the session ended — the actual hand-off (concrete, brief, max 300 chars). MUST be non-empty if there is real unfinished work. EMPTY STRING if the task is done.
+- blockers: anything that was blocking progress (tools failing, decisions pending, dependencies). "none" if no blockers.
+
+THE MOST IMPORTANT RULE — completion detection:
+If the transcript ends with ANY signal that the task is finished, return remaining="". Completion signals include:
+- assistant says "Done.", "All set.", "All done.", "Finished.", "That's it.", "Complete.", or similar terminal acknowledgement
+- last user message is thanks/acknowledgement ("thanks", "perfect", "great") with no follow-up question
+- tool calls succeeded and there is no explicit next step in the user's most recent prompt
+- the conversation has reached a natural stopping point
+
+When in doubt, prefer remaining="". An empty checkpoint is far better than a fabricated one.
+
+THE SECOND MOST IMPORTANT RULE — no fabrication:
+- ONLY use information present in the transcript. Do NOT extrapolate, do NOT invent follow-up work.
+- If the most recent task is clearly complete, do NOT manufacture next steps from your imagination.
+- If you cannot determine what was happening with high confidence, return all-empty: {"completed":"","remaining":"","blockers":""}
+- "remaining" must be a SPECIFIC unfinished item visible in the transcript. Never generic ("continue work", "more testing", "documentation").
+
+Other rules:
+- Focus ONLY on the most recent coherent task. Ignore earlier work in the session.
+- Return JSON: {"completed":"...","remaining":"...","blockers":"..."}
+- Be terse and specific. Each field should help the future session pick up the thread.
+- Do NOT include markdown fences. Respond with raw JSON only.
+
+Examples of GOOD output:
+
+Scenario A — task finished, agent said "Done.":
+{"completed":"Copied cc-source-code into a dedicated dir under claude-recall/cc-source-code/","remaining":"","blockers":"none"}
+
+Scenario B — task in progress, midway through implementation:
+{"completed":"Added saveCheckpoint() to storage and MemoryService","remaining":"Wire CLI checkpoint command and add MCP/Pi tool wrappers","blockers":"none"}
+
+Scenario C — task in progress, blocked on something:
+{"completed":"Diagnosed [object Object] rendering bug in handleLoadRules","remaining":"Write failing test, extract formatRuleValue helper, replace 5 call sites","blockers":"none"}
+
+Scenario D — uncertain, sparse context, can't tell what's happening:
+{"completed":"","remaining":"","blockers":""}
+
+Scenario E — just a question, no work done:
+{"completed":"","remaining":"","blockers":""}
+
+Examples of BAD output (DO NOT DO THIS):
+{"completed":"various changes","remaining":"more work","blockers":"none"}              # too vague
+{"completed":"explored architecture","remaining":"document findings","blockers":"none"} # FABRICATED — there was no documentation task
+{"completed":"finished everything","remaining":"finish everything","blockers":"none"}   # nonsense filler`;
+
+export async function extractCheckpointWithLLM(
+  conversationSummary: string,
+): Promise<CheckpointExtraction | null> {
+  const client = getClient();
+  if (!client) return null;
+
+  if (!conversationSummary || conversationSummary.trim().length < 30) {
+    return null;
+  }
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 600,
+      system: CHECKPOINT_EXTRACTION_PROMPT,
+      messages: [{ role: 'user', content: conversationSummary }],
+    });
+
+    const content = response.content?.[0];
+    if (content?.type !== 'text') return null;
+
+    const result = parseJSON(content.text);
+    if (typeof result !== 'object' || result === null) return null;
+
+    return {
+      completed: typeof result.completed === 'string' ? result.completed : '',
+      remaining: typeof result.remaining === 'string' ? result.remaining : '',
+      blockers: typeof result.blockers === 'string' ? result.blockers : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function classifyBatchWithLLM(
   texts: string[]
 ): Promise<(ClassifyResult | null)[] | null> {

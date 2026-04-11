@@ -11,6 +11,9 @@ const mockLoadActiveRules = jest.fn().mockReturnValue({
   preferences: [], corrections: [], failures: [], devops: [], summary: '',
 });
 const mockRecordRetrieval = jest.fn();
+const mockSaveCheckpoint = jest.fn();
+const mockHasCheckpoint = jest.fn().mockReturnValue(false);
+const mockLoadCheckpoint = jest.fn().mockReturnValue(null);
 
 jest.mock('../../src/services/memory', () => ({
   MemoryService: {
@@ -20,8 +23,26 @@ jest.mock('../../src/services/memory', () => ({
       search: mockSearch,
       findRelevant: mockFindRelevant,
       loadActiveRules: mockLoadActiveRules,
+      saveCheckpoint: mockSaveCheckpoint,
+      hasCheckpoint: mockHasCheckpoint,
+      loadCheckpoint: mockLoadCheckpoint,
     }),
   },
+}));
+
+// Mock LLM classifier so checkpoint extraction is deterministic in tests
+const mockExtractCheckpointWithLLM = jest.fn();
+const mockExtractSessionLearningsWithLLM = jest.fn().mockResolvedValue(null);
+const mockClassifyWithLLM = jest.fn().mockResolvedValue(null);
+const mockClassifyBatchWithLLM = jest.fn().mockResolvedValue(null);
+const mockExtractHindsightHint = jest.fn().mockResolvedValue(null);
+
+jest.mock('../../src/hooks/llm-classifier', () => ({
+  extractCheckpointWithLLM: (...args: any[]) => mockExtractCheckpointWithLLM(...args),
+  extractSessionLearningsWithLLM: (...args: any[]) => mockExtractSessionLearningsWithLLM(...args),
+  classifyWithLLM: (...args: any[]) => mockClassifyWithLLM(...args),
+  classifyBatchWithLLM: (...args: any[]) => mockClassifyBatchWithLLM(...args),
+  extractHindsightHint: (...args: any[]) => mockExtractHindsightHint(...args),
 }));
 
 const mockUpdateConfig = jest.fn();
@@ -359,6 +380,168 @@ describe('Pi Extension', () => {
 
       // Should have created an outcome event via processToolOutcome
       expect(mockCreateOutcomeEvent).toHaveBeenCalled();
+    });
+  });
+
+  describe('session_shutdown auto-checkpoint (Pi has no --resume flag)', () => {
+    /**
+     * Helper: drive the Pi extension through a full session lifecycle:
+     * session_start → input(s) → tool_result(s) → session_shutdown,
+     * then flush microtasks so the fire-and-forget extractCheckpoint
+     * promise resolves before assertions.
+     */
+    async function runPiSession(opts: {
+      cwd?: string;
+      userTexts?: string[];
+      toolResults?: Array<{ name: string; output: string; isError?: boolean }>;
+    }) {
+      const ctx = mockCtx(opts.cwd ?? '/home/user/test-project');
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+
+      for (const text of opts.userTexts ?? []) {
+        api._handlers['input']({ type: 'input', text, source: 'interactive' }, ctx);
+      }
+
+      let toolCallId = 0;
+      for (const tr of opts.toolResults ?? []) {
+        api._handlers['tool_result'](
+          {
+            type: 'tool_result',
+            toolCallId: `tc${++toolCallId}`,
+            toolName: tr.name,
+            input: { command: 'fake' },
+            content: [{ type: 'text', text: tr.output }],
+            isError: tr.isError ?? false,
+            details: undefined,
+          },
+          ctx,
+        );
+      }
+
+      api._handlers['session_shutdown']({ type: 'session_shutdown' }, ctx);
+
+      // Flush microtasks so all fire-and-forget promises (extractCheckpoint,
+      // processSessionEnd, extractSessionLearnings) settle.
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+    }
+
+    it('saves a checkpoint when LLM extracts valid resumable work', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce({
+        completed: 'Added saveCheckpoint method to storage layer',
+        remaining: 'Wire CLI command and add MCP/Pi tool wrappers',
+        blockers: 'none',
+      });
+
+      await runPiSession({
+        userTexts: [
+          'Add a task-checkpoint feature to claude-recall',
+          'Now wire it through MemoryService',
+        ],
+        toolResults: [
+          { name: 'Read', output: 'storage.ts contents' },
+          { name: 'Edit', output: 'Edit successful' },
+        ],
+      });
+
+      expect(mockExtractCheckpointWithLLM).toHaveBeenCalledTimes(1);
+      expect(mockSaveCheckpoint).toHaveBeenCalledTimes(1);
+
+      const [pid, payload] = mockSaveCheckpoint.mock.calls[0];
+      expect(pid).toBe('test-project');
+      expect(payload.remaining).toBe('Wire CLI command and add MCP/Pi tool wrappers');
+      expect(payload.completed).toBe('Added saveCheckpoint method to storage layer');
+      expect(payload.notes).toContain('pi'); // runtime tag
+      expect(payload.notes).toContain('auto-saved');
+    });
+
+    it('does NOT save when extraction has empty remaining (quality gate)', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce({
+        completed: 'fixed bug',
+        remaining: '', // empty — nothing to resume
+        blockers: 'none',
+      });
+
+      await runPiSession({
+        userTexts: ['fix the [object Object] bug', 'looks good now'],
+        toolResults: [
+          { name: 'Edit', output: 'Edit successful' },
+          { name: 'Bash', output: 'tests passed' },
+        ],
+      });
+
+      expect(mockSaveCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('does NOT save when LLM returns null (no API key in test env)', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce(null);
+
+      await runPiSession({
+        userTexts: ['add a feature', 'continue', 'keep going'],
+        toolResults: [
+          { name: 'Edit', output: 'ok' },
+          { name: 'Bash', output: 'ok' },
+        ],
+      });
+
+      expect(mockSaveCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('skips extraction entirely when too few entries collected (<3)', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce({
+        completed: 'x',
+        remaining: 'this should not be saved because we never call the LLM',
+        blockers: 'none',
+      });
+
+      await runPiSession({
+        userTexts: ['hi'],
+        toolResults: [{ name: 'Read', output: 'ok' }],
+      });
+
+      // 1 user + 1 tool = 2 entries, below the 3-entry minimum
+      expect(mockExtractCheckpointWithLLM).not.toHaveBeenCalled();
+      expect(mockSaveCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('uses chronologically interleaved entries (not user-then-tool concat)', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce({
+        completed: '',
+        remaining: 'finishing the wire-up of save_checkpoint into MCP tools',
+        blockers: 'none',
+      });
+
+      await runPiSession({
+        userTexts: ['first prompt', 'second prompt'],
+        toolResults: [{ name: 'Edit', output: 'edit done' }],
+      });
+
+      expect(mockExtractCheckpointWithLLM).toHaveBeenCalledTimes(1);
+      const summary = mockExtractCheckpointWithLLM.mock.calls[0][0];
+      expect(typeof summary).toBe('string');
+      // Both user texts AND the tool result should be in the summary
+      expect(summary).toContain('first prompt');
+      expect(summary).toContain('second prompt');
+      expect(summary).toContain('edit done');
+    });
+
+    it('does not crash when saveCheckpoint throws (best-effort)', async () => {
+      mockExtractCheckpointWithLLM.mockResolvedValueOnce({
+        completed: 'x',
+        remaining: 'finishing the implementation of save handler',
+        blockers: 'none',
+      });
+      mockSaveCheckpoint.mockImplementationOnce(() => {
+        throw new Error('DB locked');
+      });
+
+      // Should not throw despite saveCheckpoint blowing up
+      await expect(
+        runPiSession({
+          userTexts: ['add feature', 'keep working'],
+          toolResults: [{ name: 'Edit', output: 'ok' }],
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });

@@ -74,9 +74,19 @@ export class HookCommands {
               await handleBashFailureWatcher(input);
               break;
             }
+            case 'session-end-checkpoint': {
+              const { handleSessionEndCheckpoint } = await import('../../hooks/session-end-checkpoint');
+              await handleSessionEndCheckpoint(input);
+              break;
+            }
+            case 'session-end-checkpoint-worker': {
+              const { handleSessionEndCheckpointWorker } = await import('../../hooks/session-end-checkpoint-worker');
+              await handleSessionEndCheckpointWorker(input);
+              break;
+            }
             default:
               console.error(`Unknown hook: ${name}`);
-              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, tool-outcome-watcher');
+              console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, tool-outcome-watcher, session-end-checkpoint');
           }
         } catch {
           // Hooks must never block Claude — always exit 0
