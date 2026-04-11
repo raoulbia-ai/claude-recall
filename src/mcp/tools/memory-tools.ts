@@ -6,6 +6,63 @@ import { SkillGenerator, GenerationResult } from '../../services/skill-generator
 import { OutcomeStorage } from '../../services/outcome-storage';
 import { MCPTool, MCPContext } from '../server';
 
+/**
+ * Render any memory.value shape as a readable string for load_rules output.
+ *
+ * Memory values land in the DB in several historical shapes. The previous
+ * rendering used `m.value.content || m.value.value || JSON.stringify(m.value)`
+ * which short-circuited on truthy non-string objects, producing "[object Object]"
+ * when string interpolation eventually called toString() on the returned object.
+ *
+ * Rules:
+ *   1. strings/numbers pass through (or coerce)
+ *   2. null/undefined → empty string
+ *   3. objects: prefer the first STRING field in order: content, value, title, description
+ *      (only string — non-string `content` falls through to title)
+ *   4. nested failure shapes: extract `what_failed` (top-level or under `content`)
+ *   5. last resort: truncated JSON.stringify (never raw object)
+ *
+ * Exported for direct unit testing in tests/unit/format-rule-value.test.ts.
+ */
+export function formatRuleValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'object') return String(value);
+
+  const v = value as Record<string, unknown>;
+
+  // Prefer the first non-empty string field. Order matters:
+  // - `content` covers legacy hook failures and promoted lessons (lesson text)
+  // - `value` covers preference shape
+  // - `title` covers tool-outcome-watcher failures whose `content` is a nested object
+  // - `description` is a last-ditch human label
+  for (const field of ['content', 'value', 'title', 'description'] as const) {
+    const candidate = v[field];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  // Nested failure object — extract what_failed if present
+  if (typeof v.what_failed === 'string' && v.what_failed.trim()) {
+    return v.what_failed;
+  }
+  if (v.content && typeof v.content === 'object') {
+    const inner = v.content as Record<string, unknown>;
+    if (typeof inner.what_failed === 'string' && inner.what_failed.trim()) {
+      return inner.what_failed;
+    }
+  }
+
+  // Last resort: truncated JSON. Never return a raw object.
+  try {
+    const json = JSON.stringify(value);
+    return json.length > 200 ? json.substring(0, 200) + '…' : json;
+  } catch {
+    return String(value);
+  }
+}
+
 export class MemoryTools {
   private static readonly LOAD_RULES_DIRECTIVE =
     'Before your FIRST action, briefly state which rules below you will apply to this task.\n' +
@@ -320,7 +377,7 @@ export class MemoryTools {
 
       if (rules.preferences.length > 0) {
         sections.push('## Preferences\n' + rules.preferences.map(m => {
-          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          const val = formatRuleValue(m.value);
           // Only show key prefix if it's a meaningful name (not auto-generated)
           const key = m.preference_key || m.key || '';
           const isAutoKey = key.startsWith('memory_') || key.startsWith('auto_') || key.startsWith('pref_');
@@ -330,7 +387,7 @@ export class MemoryTools {
 
       if (rules.corrections.length > 0) {
         sections.push('## Corrections\n' + rules.corrections.map(m => {
-          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          const val = formatRuleValue(m.value);
           const isPromoted = m.key.startsWith('promoted_') || m.value?.source === 'promotion-engine';
           const evidence = isPromoted && m.value?.evidence_count ? ` (learned from ${m.value.evidence_count} observations)` : '';
           return isPromoted ? `- [promoted lesson] ${val}${evidence}` : `- ${val}`;
@@ -344,7 +401,7 @@ export class MemoryTools {
 
         if (promotedLessons.length > 0) {
           sections.push('## Promoted Lessons (learned from repeated outcomes)\n' + promotedLessons.map(m => {
-            const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+            const val = formatRuleValue(m.value);
             const evidence = m.value?.evidence_count ? ` (seen ${m.value.evidence_count}x)` : '';
             return `- ${val}${evidence}`;
           }).join('\n'));
@@ -352,7 +409,7 @@ export class MemoryTools {
 
         if (regularFailures.length > 0) {
           sections.push('## Failures\n' + regularFailures.map(m => {
-            const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+            const val = formatRuleValue(m.value);
             return `- ${val}`;
           }).join('\n'));
         }
@@ -360,7 +417,7 @@ export class MemoryTools {
 
       if (rules.devops.length > 0) {
         sections.push('## DevOps Rules\n' + rules.devops.map(m => {
-          const val = typeof m.value === 'object' ? (m.value.content || m.value.value || JSON.stringify(m.value)) : m.value;
+          const val = formatRuleValue(m.value);
           return `- ${val}`;
         }).join('\n'));
       }
