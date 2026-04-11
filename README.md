@@ -172,17 +172,22 @@ See Anthropic's [Agent Skills blog post](https://claude.com/blog/equipping-agent
 
 ### Outcome-Aware Learning
 
-Claude Recall tracks what happens *after* the agent acts — not just what was said. The outcome processing pipeline:
+Claude Recall tracks what happens *after* the agent acts — not just what was said. The pipeline:
 
 ```
 action → outcome event → episode → candidate lesson → promotion → active rule
+                                                                        ↓
+                                                            JIT-injected before next action
+                                                                        ↓
+                                                       PostToolUse resolves outcome per rule
 ```
 
 - **Outcome events** capture results from all tool types (Bash, Edit, Write, MCP), test outcomes, user corrections, and reask signals
 - **Episodes** summarize entire sessions with outcome type, severity, and confidence
 - **Candidate lessons** are extracted from failure patterns — deduplicated by Jaccard similarity
-- **Promotion engine** graduates lessons into active rules after 2+ observations (or immediately for high-severity failures), and demotes never-helpful memories
-- **Outcome-aware retrieval** boosts memories with evidence, penalizes stale/unhelpful ones
+- **Promotion engine** graduates lessons into active rules after 2+ observations (or immediately for high-severity failures)
+- **Just-in-time rule injection (v0.22.0+)** — active rules are surfaced as a `<system-reminder>` block adjacent to each tool call (Claude Code) or each agent turn (Pi). Each injection is recorded in `rule_injection_events` and resolved with the tool's success/failure outcome by the PostToolUse hook. **This is the meter that measures rule effectiveness in practice.** It replaces the older citation-detection regex (which empirically returned 0 citations across thousands of opportunities — agents don't reliably write `(applied from memory: …)` markers, so the meter never had data to work with).
+- **Per-rule effectiveness data** accumulates over time in `rule_injection_events`. Future releases will use it to deboost rules that are repeatedly injected without correlating to successful tool calls, and to auto-promote rules that are repeatedly injected before failures. As of v0.22.0 the data is being collected; ranking is not yet feeding back from it.
 
 ---
 
