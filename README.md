@@ -115,21 +115,23 @@ Both upgrades are independent — run the Claude Code section AND the Pi section
 
 ## What to Expect
 
-Once installed, Claude Recall works automatically in the background:
+Once installed, Claude Recall works automatically in the background. Each row below is tagged with the runtime it applies to so you can skip what doesn't apply to you.
 
-1. **Session start** — active rules are loaded before the first action. In Claude Code, this happens via the `search_enforcer` hook; in Pi, rules are injected into the system prompt automatically
-2. **As you work** — every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* or *"no, put tests in `__tests__/`"* are detected and stored
-3. **Tool outcomes** — results from all tools (Bash, Edit, Write, and more) are captured. Failures are stored as memories; Bash failures are paired with successful fixes
-4. **End of session** — session episodes are created, candidate lessons extracted from failures, and a promotion cycle graduates validated patterns into active rules. A session extraction pass sends the last 50 transcript entries to Haiku to identify cause-and-effect patterns: what failed, why, and what fixed it
-5. **Reask detection** — frustration signals ("still broken", "that didn't work") are recorded as outcome events
-6. **Before context compression** — aggressive memory sweep captures important context before the window shrinks
-7. **After context compression** (Claude Code only) — rules are automatically re-injected into context so they're not lost when the window shrinks
-8. **Sub-agent recall** (Claude Code only) — when sub-agents are spawned, active rules are injected into their context automatically. Sub-agent outcomes (completed/failed/killed) are captured as events
-9. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
-10. **Auto-checkpoint on session exit** — when a session ends (Pi shutdown or Claude Code's `SessionEnd` for `clear`/`prompt_input_exit`/`logout`), the most recent task is extracted via Haiku into a structured `{completed, remaining, blockers}` checkpoint and saved for the next session. Critical for Pi (which has no `--resume` flag); a useful safety net for Claude Code users who exit without resuming. Conservative quality gate refuses to save when the LLM detects the task was already complete — manual checkpoints are never clobbered with garbage
-11. **Just-in-time rule injection (JITRI)** — before each tool call (Claude Code) or each agent turn (Pi), the most relevant active rules are searched against `tool_name + tool_input + recent prompt` and injected as a `<system-reminder>` block immediately adjacent to the action. This closes the rule-loading gap: rules are no longer just loaded once at session start (where attention decays as context grows) — they're surfaced at the moment of decision. Each injection is recorded in `rule_injection_events` and resolved with the tool outcome via PostToolUse, replacing the broken citation-detection regex with direct measurement of "was the relevant rule present when the action happened?"
+| When | What happens | CC | Pi |
+|---|---|:-:|:-:|
+| **Session start** | Active rules are loaded before the first action and injected into the agent's context | ✓ | ✓ |
+| **As you work** | Every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* are detected and stored | ✓ | ✓ |
+| **Before each tool call / agent turn** | **Just-in-time rule injection** — relevant rules are surfaced as a `<system-reminder>` block adjacent to the action so the agent sees them at the moment of decision (not 50,000 tokens upstream). Per-tool-call in CC; per-turn in Pi | ✓ | ✓ |
+| **Tool outcomes** | Tool results (Bash, Edit, Write, etc.) are captured. Failures are stored; Bash failures are paired with their successful fixes | ✓ | ✓ |
+| **Reask detection** | Frustration signals (*"still broken"*, *"that didn't work"*) are recorded as outcome events | ✓ | ✓ |
+| **Before context compression** | Aggressive memory sweep captures important context before the window shrinks | ✓ | ✓ |
+| **After context compression** | Rules are automatically re-injected into the new context so they're not lost | ✓ |   |
+| **Sub-agent spawned** | Active rules are injected into the sub-agent's context. Sub-agent outcomes (completed/failed/killed) are captured | ✓ |   |
+| **Rules sync** | Top 30 rules are exported as typed `.md` files to Claude Code's native memory directory | ✓ |   |
+| **Session exit** | **Auto-checkpoint** — the most recent task is extracted into a `{completed, remaining, blockers}` snapshot and saved for the next session. Critical for Pi (no `--resume` flag); safety net for CC users who exit without resuming | ✓ | ✓ |
+| **End of session** | Session episodes are created, candidate lessons are extracted from failures, and validated patterns are promoted into active rules | ✓ | ✓ |
 
-Classification uses Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
+Classification and checkpoint extraction use Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 
 **Next session:** `load_rules` returns everything captured previously — the agent applies your preferences without being told twice.
 
@@ -157,10 +159,16 @@ Claude Recall provides four memory tools backed by a local SQLite database with 
 
 ### Skills
 
-Claude Recall uses skill files to teach agents when and how to use memory tools:
+Claude Recall uses skill files to teach agents when and how to use memory tools.
 
-- **Claude Code** — uses Anthropic's [Agent Skills](https://agentskills.io/) open standard. A core skill (`.claude/skills/memory-management/SKILL.md`) guides memory behavior with progressive disclosure. Auto-generated skills (`.claude/skills/auto-*/`) crystallize from accumulated memories. See Anthropic's [blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for more.
-- **Pi** — ships a `skills/memory-management.md` skill loaded via Pi's package manifest
+**Claude Code** uses Anthropic's [Agent Skills](https://agentskills.io/) open standard:
+
+- `.claude/skills/memory-management/SKILL.md` — core skill, guides memory behavior
+- `.claude/skills/auto-*/` — auto-generated, crystallized from accumulated memories
+
+See Anthropic's [Agent Skills blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for the standard.
+
+**Pi** ships a single `skills/memory-management.md` loaded via Pi's package manifest. No setup needed.
 
 ### Outcome-Aware Learning
 
@@ -240,17 +248,22 @@ Agents can also save/load checkpoints via MCP tools (`mcp__claude-recall__save_c
 
 Manual `checkpoint save` is the explicit path. **Auto-checkpoint** is the safety net: when a session ends, the most recent task is extracted into a checkpoint automatically so the next session can resume.
 
-- **Pi** — fires from the `session_shutdown` event handler. In-process synchronous call, runs as part of the existing session-end pipeline. **Critical for Pi: there is no `pi --resume` equivalent, so without this, restarting Pi loses all session context.**
-- **Claude Code** — fires from the `SessionEnd` hook for voluntary exit reasons (`clear`, `prompt_input_exit`, `logout`). Spawns a detached background worker (fork+unref) so it stays well within Claude Code's tight 1.5s `SessionEnd` timeout. Skips `bypass_permissions_disabled` and `other` reasons (those are system-driven, not user intent). Useful for users who exit and start fresh instead of using `claude --resume`.
+**When it fires:**
 
-Both runtimes share the same Haiku-backed extraction (`extractCheckpointWithLLM`) and the same quality gate:
+- **Pi** — every `session_shutdown` event. **This is the only way to recover context in Pi: there is no `pi --resume` equivalent.**
+- **Claude Code** — voluntary `SessionEnd` reasons (`clear`, `prompt_input_exit`, `logout`). Skips `bypass_permissions_disabled` and `other` (system-driven exits, not user intent). Useful if you exit and start fresh instead of using `claude --resume`.
 
-- **Quality gate**: refuses to save if the LLM returns an empty or trivially-short `remaining` field. The model is prompted to detect completion signals (assistant said "Done.", user said "thanks", no follow-up question) and return empty `remaining` when the task is finished. **An empty checkpoint is far better than a fabricated one** — manual checkpoints are never overwritten with garbage.
-- **Notes tag**: auto-saved checkpoints include `[auto-saved on <pi|cc> session exit at <iso-timestamp>]` in the notes field, so you can tell auto from manual via `checkpoint load`.
-- **Requires `ANTHROPIC_API_KEY`**. Without it, `extractCheckpointWithLLM` returns `null` (graceful fallback) and no auto-checkpoint is saved. Manual `checkpoint save` still works.
-- **Disable**: remove the `SessionEnd` block from `.claude/settings.json` (Claude Code) or, for Pi, no per-project disable flag exists yet — open an issue if you need one.
+**Behavior (both runtimes):**
 
-The auto-checkpoint never clobbers a useful manual checkpoint because of the quality gate. If the LLM doesn't see clear unfinished work, it returns empty and the gate refuses the save. Manual checkpoints stay sticky until you explicitly save over them.
+- Uses Haiku to extract `{completed, remaining, blockers}` from the most recent task in the transcript
+- **Quality gate**: refuses to save if the LLM detects the task was already complete (e.g., agent said "Done.", user said "thanks"). **Manual checkpoints are never overwritten with garbage** — an empty checkpoint is far better than a fabricated one
+- **Tagged**: auto-saved checkpoints include `[auto-saved on <pi|cc> session exit at <iso-timestamp>]` in their notes field
+- **Requires `ANTHROPIC_API_KEY`**. Without it, no auto-checkpoint is saved and manual `checkpoint save` still works
+
+**Disable:**
+
+- **Claude Code**: remove the `SessionEnd` block from `.claude/settings.json`
+- **Pi**: no per-project disable flag yet — [open an issue](https://github.com/raoulbia-ai/claude-recall/issues) if you need one
 
 ### Troubleshooting
 
