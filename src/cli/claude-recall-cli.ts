@@ -913,6 +913,16 @@ async function main() {
               timeout: 10
             }
           ]
+        },
+        {
+          matcher: "startup",
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} session-preseed`,
+              timeout: 5
+            }
+          ]
         }
       ],
       PostToolUse: [

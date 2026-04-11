@@ -94,6 +94,11 @@ export class HookCommands {
               await handleRuleInjectionResolver(input);
               break;
             }
+            case 'session-preseed': {
+              const { handleSessionPreseed } = await import('../../hooks/session-preseed');
+              await handleSessionPreseed(input);
+              break;
+            }
             default:
               console.error(`Unknown hook: ${name}`);
               console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, tool-outcome-watcher, session-end-checkpoint');
