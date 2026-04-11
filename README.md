@@ -33,20 +33,33 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ### Install for Claude Code
 
+#### First-time install
+
+Run this **once** on your machine:
+
 ```bash
-# Install globally
 npm install -g claude-recall
+```
 
-# Set up hooks and skills in your project
+Then run these **in the project directory** where you want claude-recall active:
+
+```bash
 claude-recall setup --install
-
-# Register MCP server
 claude mcp add claude-recall -- claude-recall mcp start
 ```
 
-Then restart your Claude Code session. For additional projects, only the last two commands are needed.
+Restart Claude Code. **Verify**: ask *"Load my rules"* — Claude should call `mcp__claude-recall__load_rules`.
 
-**Verify:** Ask *"Load my rules"* — Claude should call `mcp__claude-recall__load_rules`.
+#### Adding to another project
+
+The global binary is already installed. Just `cd` into the new project and run the per-project commands:
+
+```bash
+claude-recall setup --install
+claude mcp add claude-recall -- claude-recall mcp start
+```
+
+Restart Claude Code in that project.
 
 ### Install for Pi
 
