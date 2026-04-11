@@ -84,6 +84,16 @@ export class HookCommands {
               await handleSessionEndCheckpointWorker(input);
               break;
             }
+            case 'rule-injector': {
+              const { handleRuleInjector } = await import('../../hooks/rule-injector');
+              await handleRuleInjector(input);
+              break;
+            }
+            case 'rule-injection-resolver': {
+              const { handleRuleInjectionResolver } = await import('../../hooks/rule-injection-resolver');
+              await handleRuleInjectionResolver(input);
+              break;
+            }
             default:
               console.error(`Unknown hook: ${name}`);
               console.error('Available: correction-detector, memory-stop, precompact-preserve, memory-sync, tool-outcome-watcher, session-end-checkpoint');

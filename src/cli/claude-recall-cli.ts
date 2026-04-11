@@ -879,7 +879,7 @@ async function main() {
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
     const hookCmd = `node ${cliScript} hook run`;
 
-    settings.hooksVersion = '13.0.0';  // v13 = add SessionEnd for auto-checkpoint on session exit
+    settings.hooksVersion = '14.0.0';  // v14 = add PreToolUse rule-injector + Post resolver for JITRI
     settings.hooks = {
       SubagentStart: [
         {
@@ -922,6 +922,11 @@ async function main() {
               type: "command",
               command: `${hookCmd} tool-outcome-watcher`,
               timeout: 3
+            },
+            {
+              type: "command",
+              command: `${hookCmd} rule-injection-resolver`,
+              timeout: 3
             }
           ]
         }
@@ -932,6 +937,11 @@ async function main() {
             {
               type: "command",
               command: `${hookCmd} tool-failure`,
+              timeout: 3
+            },
+            {
+              type: "command",
+              command: `${hookCmd} rule-injection-resolver`,
               timeout: 3
             }
           ]
@@ -944,6 +954,11 @@ async function main() {
             {
               type: "command",
               command: `python3 ${hookDest}`
+            },
+            {
+              type: "command",
+              command: `${hookCmd} rule-injector`,
+              timeout: 5
             }
           ]
         }

@@ -237,6 +237,33 @@ export class MemoryStorage {
         )`);
       }
 
+      // v0.21.x: Just-in-time rule injection tracking. Replaces the broken
+      // citation-detection regex with direct measurement of "was the rule
+      // present at the moment of action." See .research/rule-loading-gap.md
+      // for the design motivation.
+      const injectionTable = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = 'rule_injection_events'"
+      ).get() as { name: string } | undefined;
+
+      if (!injectionTable) {
+        this.db.exec(`CREATE TABLE rule_injection_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rule_key TEXT NOT NULL,
+          tool_name TEXT NOT NULL,
+          tool_use_id TEXT,
+          project_id TEXT,
+          match_score REAL,
+          matched_tokens TEXT,
+          injected_at INTEGER NOT NULL,
+          tool_outcome TEXT,
+          resolved_at INTEGER
+        )`);
+        this.db.exec('CREATE INDEX idx_injection_rule ON rule_injection_events(rule_key)');
+        this.db.exec('CREATE INDEX idx_injection_project ON rule_injection_events(project_id)');
+        this.db.exec('CREATE INDEX idx_injection_tool_use ON rule_injection_events(tool_use_id)');
+        this.db.exec('CREATE INDEX idx_injection_unresolved ON rule_injection_events(resolved_at) WHERE resolved_at IS NULL');
+      }
+
     } catch (error) {
       console.error('⚠️  Schema migration error:', error);
       // Don't throw - let the database continue with existing schema

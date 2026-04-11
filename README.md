@@ -69,8 +69,8 @@ Both agents use the same database (`~/.claude-recall/claude-recall.db`). Memorie
 npm install -g claude-recall
 claude-recall setup --install    # run from each project directory
 
-# Pi
-pi update claude-recall
+# Pi — must include the npm: prefix (matches the install command)
+pi update npm:claude-recall
 ```
 
 The MCP server picks up the new version automatically. `setup --install` is needed to update hooks in `.claude/settings.json` (new hook events may have been added).
@@ -91,6 +91,7 @@ Once installed, Claude Recall works automatically in the background:
 8. **Sub-agent recall** (Claude Code only) — when sub-agents are spawned, active rules are injected into their context automatically. Sub-agent outcomes (completed/failed/killed) are captured as events
 9. **Rules sync** (Claude Code only) — top 30 rules are exported as typed `.md` files to Claude Code's native memory directory
 10. **Auto-checkpoint on session exit** — when a session ends (Pi shutdown or Claude Code's `SessionEnd` for `clear`/`prompt_input_exit`/`logout`), the most recent task is extracted via Haiku into a structured `{completed, remaining, blockers}` checkpoint and saved for the next session. Critical for Pi (which has no `--resume` flag); a useful safety net for Claude Code users who exit without resuming. Conservative quality gate refuses to save when the LLM detects the task was already complete — manual checkpoints are never clobbered with garbage
+11. **Just-in-time rule injection (JITRI)** — before each tool call (Claude Code) or each agent turn (Pi), the most relevant active rules are searched against `tool_name + tool_input + recent prompt` and injected as a `<system-reminder>` block immediately adjacent to the action. This closes the rule-loading gap: rules are no longer just loaded once at session start (where attention decays as context grows) — they're surfaced at the moment of decision. Each injection is recorded in `rule_injection_events` and resolved with the tool outcome via PostToolUse, replacing the broken citation-detection regex with direct measurement of "was the relevant rule present when the action happened?"
 
 Classification uses Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 

@@ -167,9 +167,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
   // Prune old outcome data to prevent unbounded table growth
   try {
     const pruned = outcomeStorage.pruneOldData();
-    const total = pruned.episodes + pruned.events + pruned.lessons + pruned.stats;
+    const total = pruned.episodes + pruned.events + pruned.lessons + pruned.stats + pruned.injections;
     if (total > 0) {
-      hookLog('memory-stop', `Pruned: ${pruned.episodes} episodes, ${pruned.events} events, ${pruned.lessons} lessons, ${pruned.stats} orphaned stats`);
+      hookLog('memory-stop', `Pruned: ${pruned.episodes} episodes, ${pruned.events} events, ${pruned.lessons} lessons, ${pruned.stats} orphaned stats, ${pruned.injections} injections`);
     }
   } catch (err) {
     hookLog('memory-stop', `Prune error: ${safeErrorMessage(err)}`);

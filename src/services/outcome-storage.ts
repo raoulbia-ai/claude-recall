@@ -275,16 +275,110 @@ export class OutcomeStorage {
         times_unhelpful = times_unhelpful + 1
     `).run(key);
   }
+
+  // --- Rule injection events (just-in-time rule injection meter) ---
+  //
+  // Replaces the broken citation-detection regex. Every time the JITRI hook
+  // injects a rule into a tool call's context, we record an event here.
+  // PostToolUse later resolves the event with the tool outcome (success or
+  // failure), giving us direct evidence of whether rules-at-the-moment-of-action
+  // are correlated with successful tool calls — without depending on the model
+  // remembering to write "(applied from memory: ...)" markers.
+
+  recordRuleInjection(input: {
+    rule_key: string;
+    tool_name: string;
+    tool_use_id?: string;
+    project_id?: string;
+    match_score: number;
+    matched_tokens: string[];
+  }): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO rule_injection_events
+        (rule_key, tool_name, tool_use_id, project_id, match_score, matched_tokens, injected_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.rule_key,
+      input.tool_name,
+      input.tool_use_id ?? null,
+      input.project_id ?? null,
+      input.match_score,
+      JSON.stringify(input.matched_tokens),
+      now,
+    );
+  }
+
+  /**
+   * Resolve all unresolved injection events for a given tool_use_id with
+   * the tool's outcome. Called from PostToolUse / PostToolUseFailure.
+   */
+  resolveRuleInjections(toolUseId: string, outcome: 'success' | 'failure'): number {
+    const now = Date.now();
+    const result = this.db.prepare(`
+      UPDATE rule_injection_events
+      SET tool_outcome = ?, resolved_at = ?
+      WHERE tool_use_id = ? AND resolved_at IS NULL
+    `).run(outcome, now, toolUseId);
+    return result.changes;
+  }
+
+  /**
+   * Per-rule injection summary for the outcomes CLI.
+   * Returns: rule_key, total injections, success/failure counts, helpfulness rate.
+   */
+  getInjectionStats(opts?: { project_id?: string; limit?: number }): Array<{
+    rule_key: string;
+    total_injections: number;
+    successes: number;
+    failures: number;
+    unresolved: number;
+    success_rate: number;
+  }> {
+    const limit = opts?.limit ?? 50;
+    const where = opts?.project_id ? 'WHERE project_id = ?' : '';
+    const params = opts?.project_id ? [opts.project_id, limit] : [limit];
+
+    const rows = this.db.prepare(`
+      SELECT
+        rule_key,
+        COUNT(*) as total_injections,
+        SUM(CASE WHEN tool_outcome = 'success' THEN 1 ELSE 0 END) as successes,
+        SUM(CASE WHEN tool_outcome = 'failure' THEN 1 ELSE 0 END) as failures,
+        SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END) as unresolved
+      FROM rule_injection_events
+      ${where}
+      GROUP BY rule_key
+      ORDER BY total_injections DESC
+      LIMIT ?
+    `).all(...params) as Array<{
+      rule_key: string;
+      total_injections: number;
+      successes: number;
+      failures: number;
+      unresolved: number;
+    }>;
+
+    return rows.map(r => ({
+      ...r,
+      success_rate: (r.successes + r.failures) > 0
+        ? r.successes / (r.successes + r.failures)
+        : 0,
+    }));
+  }
+
   /**
    * Prune old data from outcome tables to prevent unbounded growth.
    * - Episodes older than 90 days
    * - Outcome events older than 90 days
    * - Rejected/archived candidate lessons older than 14 days
    * - Orphaned memory_stats entries (key no longer in memories table)
+   * - Rule injection events older than 90 days
    */
-  pruneOldData(): { episodes: number; events: number; lessons: number; stats: number } {
+  pruneOldData(): { episodes: number; events: number; lessons: number; stats: number; injections: number } {
     const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const cutoff14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff90Ms = Date.now() - 90 * 24 * 60 * 60 * 1000;
 
     const episodes = this.db.prepare(
       'DELETE FROM episodes WHERE created_at < ?'
@@ -302,7 +396,11 @@ export class OutcomeStorage {
       'DELETE FROM memory_stats WHERE memory_key NOT IN (SELECT key FROM memories)'
     ).run().changes;
 
-    return { episodes, events, lessons, stats };
+    const injections = this.db.prepare(
+      'DELETE FROM rule_injection_events WHERE injected_at < ?'
+    ).run(cutoff90Ms).changes;
+
+    return { episodes, events, lessons, stats, injections };
   }
 }
 

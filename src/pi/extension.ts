@@ -22,6 +22,7 @@ import {
   extractCheckpoint,
   ConversationEntry,
 } from '../shared/event-processors';
+import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
 
 const LOAD_RULES_DIRECTIVE =
   'Before your FIRST action, briefly state which rules below you will apply to this task.\n' +
@@ -55,6 +56,39 @@ function extractVal(value: any): string {
     return value.content || value.value || JSON.stringify(value);
   }
   return String(value ?? '');
+}
+
+/**
+ * Format the just-in-time relevant rules for injection into the per-turn
+ * system prompt addendum. Mirrors the CC rule-injector hook output but as
+ * plain text (no system-reminder wrapper since Pi handles that itself).
+ */
+function formatJitReminder(matches: RankedRule[]): string {
+  if (matches.length === 0) return '';
+  const TYPE_LABELS: Record<string, string> = {
+    correction: 'correction',
+    devops: 'devops',
+    preference: 'preference',
+    failure: 'avoid',
+    'project-knowledge': 'project',
+  };
+  const lines = matches.map(m => {
+    const label = TYPE_LABELS[m.rule.type] ?? m.rule.type;
+    const v = m.rule.value;
+    let snippet = '';
+    if (typeof v === 'string') snippet = v;
+    else if (v && typeof v === 'object') {
+      snippet = (typeof v.content === 'string' ? v.content
+        : typeof v.value === 'string' ? v.value
+        : typeof v.title === 'string' ? v.title
+        : JSON.stringify(v).substring(0, 200));
+    }
+    return `• [${label}] ${snippet.substring(0, 200).replace(/\s+/g, ' ').trim()}`;
+  });
+  return (
+    `Recall: ${matches.length} rule${matches.length === 1 ? '' : 's'} relevant to this turn. ` +
+    `Apply them or explicitly note why they don't fit:\n${lines.join('\n')}`
+  );
 }
 
 /** Format active rules as markdown sections. */
@@ -113,18 +147,68 @@ export default function(pi: PiTypes.ExtensionAPI) {
     }
   });
 
-  // --- Event: inject rules before first agent turn ---
+  // --- Event: inject rules before each agent turn (full load on first turn,
+  //     just-in-time relevant rules on subsequent turns based on the user's
+  //     current prompt — Pi's analog of CC's PreToolUse rule injector) ---
 
   pi.on('before_agent_start', (_event, _ctx) => {
-    if (rulesLoaded) return;
-    rulesLoaded = true;
-
     try {
       const ms = MemoryService.getInstance();
       const rules = ms.loadActiveRules(projectId || undefined);
-      const body = formatRules(rules);
-      if (body) {
-        return { systemPrompt: _event.systemPrompt + '\n\n' + LOAD_RULES_DIRECTIVE + '\n\n---\n\n' + body };
+      const allRulesFlat: Rule[] = [
+        ...rules.preferences,
+        ...rules.corrections,
+        ...rules.failures,
+        ...rules.devops,
+      ].map(m => ({
+        key: m.key,
+        type: m.type,
+        value: m.value,
+        is_active: m.is_active !== false,
+        timestamp: m.timestamp,
+        project_id: m.project_id,
+      }));
+
+      // First turn: full ruleset to seed context, plus JIT injection for the
+      // very first prompt. Subsequent turns: JIT only — context already has
+      // the full set from turn 1.
+      let systemPromptOut: string | undefined;
+
+      if (!rulesLoaded) {
+        rulesLoaded = true;
+        const body = formatRules(rules);
+        if (body) {
+          systemPromptOut = _event.systemPrompt + '\n\n' + LOAD_RULES_DIRECTIVE + '\n\n---\n\n' + body;
+        }
+      }
+
+      // JIT injection on every turn — match rules against the current user prompt
+      const userPrompt: string = (_event as any)?.prompt ?? '';
+      if (userPrompt && allRulesFlat.length > 0) {
+        const matches = rankRulesForToolCall('agent_turn', { command: userPrompt }, allRulesFlat);
+        if (matches.length > 0) {
+          const reminder = formatJitReminder(matches);
+          systemPromptOut = (systemPromptOut ?? _event.systemPrompt) + '\n\n' + reminder;
+
+          // Record each injection so we can correlate with success/failure later
+          try {
+            const outcomeStorage = OutcomeStorage.getInstance();
+            for (const m of matches) {
+              outcomeStorage.recordRuleInjection({
+                rule_key: m.rule.key,
+                tool_name: 'pi:agent_turn',
+                tool_use_id: `pi_turn_${Date.now()}`,
+                project_id: projectId,
+                match_score: m.score,
+                matched_tokens: m.matchedTokens,
+              });
+            }
+          } catch { /* non-critical */ }
+        }
+      }
+
+      if (systemPromptOut) {
+        return { systemPrompt: systemPromptOut };
       }
     } catch {
       // Non-critical — tools still available as fallback
