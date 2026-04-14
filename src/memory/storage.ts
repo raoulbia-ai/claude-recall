@@ -688,6 +688,24 @@ export class MemoryStorage {
   }
 
   /**
+   * Get active memories (any type) that share the given preference_key.
+   * Used by store_memory's override path — a user can override a rule of any
+   * type (devops, correction, preference) as long as it was stored with a
+   * preference_key.
+   */
+  getActiveByPreferenceKeyAnyType(preferenceKey: string, projectId?: string): Memory[] {
+    let query = 'SELECT * FROM memories WHERE preference_key = ? AND is_active = 1';
+    const params: any[] = [preferenceKey];
+    if (projectId) {
+      query += ' AND (project_id = ? OR project_id IS NULL)';
+      params.push(projectId);
+    }
+    query += ' ORDER BY timestamp DESC';
+    const rows = this.db.prepare(query).all(...params) as any[];
+    return rows.map(row => this.rowToMemory(row));
+  }
+
+  /**
    * Get preferences by preference key
    */
   getByPreferenceKey(preferenceKey: string, projectId?: string): Memory[] {

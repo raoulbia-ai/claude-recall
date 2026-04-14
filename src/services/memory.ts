@@ -60,6 +60,8 @@ export interface MemoryStoreRequest {
   type: string;
   context?: MemoryServiceContext;
   relevanceScore?: number;
+  preferenceKey?: string;
+  isOverride?: boolean;
 }
 
 export class MemoryService {
@@ -110,7 +112,9 @@ export class MemoryService {
         file_path: request.context?.filePath,
         timestamp: request.context?.timestamp || Date.now(),
         relevance_score: request.relevanceScore || 1.0,
-        scope: scope
+        scope: scope,
+        preference_key: request.preferenceKey,
+        is_active: true
       };
 
       this.storage.save(memory);
@@ -407,6 +411,29 @@ export class MemoryService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Mark all currently-active memories with the given preference_key as superseded by newKey.
+   * Returns the list of superseded keys so callers can surface them to the agent — this
+   * closes the "I stored an override but the old rule is still in my context" gap.
+   */
+  supersedeByPreferenceKey(preferenceKey: string, newKey: string, context: MemoryServiceContext): string[] {
+    if (!preferenceKey || !newKey) return [];
+    const superseded: string[] = [];
+    try {
+      const pid = context.projectId || this.config.getProjectId();
+      const existing = this.storage.getActiveByPreferenceKeyAnyType(preferenceKey, pid);
+      for (const prev of existing) {
+        if (prev.key !== newKey) {
+          this.storage.markSuperseded(prev.key, newKey);
+          superseded.push(prev.key);
+        }
+      }
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'supersedeByPreferenceKey', error as Error, { preferenceKey, newKey });
+    }
+    return superseded;
   }
 
   /**

@@ -302,6 +302,10 @@ export class MemoryTools {
         : 'preference';
 
       const key = `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const preferenceKey = typeof metadata?.preference_key === 'string' && metadata.preference_key.length > 0
+        ? metadata.preference_key
+        : undefined;
+      const isOverride = metadata?.isOverride === true;
 
       this.memoryService.store({
         key,
@@ -317,8 +321,22 @@ export class MemoryTools {
           projectId: scope === 'project' ? context.projectId : undefined,
           timestamp: context.timestamp,
           scope: scope || null
-        }
+        },
+        preferenceKey,
+        isOverride
       });
+
+      // If this store overrides an existing rule, mark previous active rules with
+      // the same preference_key as superseded and surface their keys so the agent
+      // knows to ignore the stale text sitting higher up in its context.
+      let supersededKeys: string[] = [];
+      if (isOverride && preferenceKey) {
+        supersededKeys = this.memoryService.supersedeByPreferenceKey(
+          preferenceKey,
+          key,
+          { sessionId: context.sessionId, projectId: context.projectId, timestamp: context.timestamp }
+        );
+      }
 
       this.logger.info('MemoryTools', 'Memory stored successfully', {
         key,
@@ -351,6 +369,10 @@ export class MemoryTools {
         activeRule: `Stored as active rule:\n- ${content}`,
         type: detectedType,
         _directive: 'Apply this rule immediately. No need to call load_rules again.',
+        ...(supersededKeys.length > 0 && {
+          supersededKeys,
+          _supersessionNotice: `Superseded ${supersededKeys.length} prior rule(s) for preference_key="${preferenceKey}". Ignore any earlier text from these rules still in your context: ${supersededKeys.join(', ')}`
+        }),
         ...(skillResults.length > 0 && {
           _skillsGenerated: skillResults
             .filter(r => r.action === 'created' || r.action === 'updated')
@@ -422,11 +444,21 @@ export class MemoryTools {
         }).join('\n'));
       }
 
-      // Add compliance section for rules loaded frequently but never cited
+      // Add compliance section for rules loaded frequently but never cited.
+      // Cap at top 10 by load_count so load_rules stays slim — this diagnostic
+      // list was previously unbounded and could dominate the payload.
+      const RULE_HEALTH_CAP = 10;
       const compliance = this.memoryService.getComplianceReport(projectId || context.projectId);
-      const lowCompliance = compliance.rules.filter(r => r.load_count >= 5 && r.cite_count === 0);
+      const allLowCompliance = compliance.rules.filter(r => r.load_count >= 5 && r.cite_count === 0);
+      const lowCompliance = [...allLowCompliance]
+        .sort((a, b) => (b.load_count || 0) - (a.load_count || 0))
+        .slice(0, RULE_HEALTH_CAP);
+      const hiddenCount = allLowCompliance.length - lowCompliance.length;
       if (lowCompliance.length > 0) {
-        sections.push('## Rule Health\nThese rules are loaded frequently but never cited — consider rewording or removing:\n' +
+        const heading = hiddenCount > 0
+          ? `## Rule Health (top ${RULE_HEALTH_CAP} of ${allLowCompliance.length})\nThese rules are loaded frequently but never cited — consider rewording or removing. ${hiddenCount} more hidden; run \`npx claude-recall outcomes\` to see all.`
+          : '## Rule Health\nThese rules are loaded frequently but never cited — consider rewording or removing:';
+        sections.push(heading + '\n' +
           lowCompliance.map(r => {
             let val: string;
             if (typeof r.value === 'string') {
