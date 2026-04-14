@@ -43,13 +43,13 @@ describe('Claude Code MCP Integration', () => {
 
       // Verify core memory tools are present
       const toolNames = response.result.tools.map((t: any) => t.name);
-      expect(toolNames).toContain('mcp__claude-recall__store_memory');
-      expect(toolNames).toContain('mcp__claude-recall__load_rules');
+      expect(toolNames).toContain('store_memory');
+      expect(toolNames).toContain('load_rules');
     });
 
     it('should have proper tool schemas', async () => {
       const response = await client.request('tools/list', {});
-      const storeMemoryTool = response.result.tools.find((t: any) => t.name === 'mcp__claude-recall__store_memory');
+      const storeMemoryTool = response.result.tools.find((t: any) => t.name === 'store_memory');
       
       expect(storeMemoryTool).toBeDefined();
       expect(storeMemoryTool.inputSchema).toBeDefined();
@@ -63,7 +63,7 @@ describe('Claude Code MCP Integration', () => {
     it('should store and retrieve memories', async () => {
       // Store a memory
       const storeResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: 'Test memory content',
           metadata: { type: 'preference', test: true }
@@ -77,7 +77,7 @@ describe('Claude Code MCP Integration', () => {
 
       // Retrieve it via load_rules
       const rulesResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
@@ -93,7 +93,7 @@ describe('Claude Code MCP Integration', () => {
       };
 
       const storeResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: 'Memory with complex metadata',
           metadata
@@ -110,7 +110,7 @@ describe('Claude Code MCP Integration', () => {
       const timestamp = Date.now();
       for (let i = 0; i < 3; i++) {
         await client.request('tools/call', {
-          name: 'mcp__claude-recall__store_memory',
+          name: 'store_memory',
           arguments: {
             content: `Test preference ${timestamp}-${i}`,
             metadata: { type: 'preference', index: i, testRun: timestamp }
@@ -120,7 +120,7 @@ describe('Claude Code MCP Integration', () => {
 
       // Load rules to verify they're included
       const rulesResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
@@ -133,7 +133,7 @@ describe('Claude Code MCP Integration', () => {
     it('should maintain session across restarts', async () => {
       // Load initial rules count
       const rules1 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
@@ -142,7 +142,7 @@ describe('Claude Code MCP Integration', () => {
       // Store a unique memory
       const uniqueContent = `Session test preference ${Date.now()}`;
       await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: uniqueContent,
           metadata: { type: 'preference', sessionTest: true }
@@ -154,7 +154,7 @@ describe('Claude Code MCP Integration', () => {
 
       // Verify session persisted via load_rules
       const rules2 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
@@ -166,7 +166,7 @@ describe('Claude Code MCP Integration', () => {
   describe('Error Handling', () => {
     it('should handle invalid tool calls gracefully', async () => {
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__invalid_tool',
+        name: 'invalid_tool',
         arguments: {}
       });
 
@@ -176,7 +176,7 @@ describe('Claude Code MCP Integration', () => {
 
     it('should validate required parameters', async () => {
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {} // Missing required 'content' parameter
       });
 
@@ -190,7 +190,7 @@ describe('Claude Code MCP Integration', () => {
     it('should handle calling removed tools gracefully', async () => {
       // Calling a removed tool should return "Tool not found"
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__clear_context',
+        name: 'clear_context',
         arguments: { confirm: true }
       });
 

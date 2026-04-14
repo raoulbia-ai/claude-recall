@@ -84,7 +84,7 @@ describe('YourMCPFeature Integration', () => {
     it('should have proper tool schema', async () => {
       const response = await client.request('tools/list', {});
       const yourTool = response.result.tools.find((t: any) =>
-        t.name === 'mcp__claude-recall__your_tool'
+        t.name === 'your_tool'
       );
 
       expect(yourTool).toBeDefined();
@@ -98,7 +98,7 @@ describe('YourMCPFeature Integration', () => {
     it('should execute tool successfully', async () => {
       // Call your MCP tool
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__your_tool',
+        name: 'your_tool',
         arguments: {
           // Your tool arguments
           param1: 'value1',
@@ -119,7 +119,7 @@ describe('YourMCPFeature Integration', () => {
     it('should handle multiple sequential calls', async () => {
       // First call
       const response1 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: 'First memory',
           metadata: { order: 1 }
@@ -129,7 +129,7 @@ describe('YourMCPFeature Integration', () => {
 
       // Second call
       const response2 = await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: 'Second memory',
           metadata: { order: 2 }
@@ -139,7 +139,7 @@ describe('YourMCPFeature Integration', () => {
 
       // Verify both exist via load_rules
       const rulesResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
@@ -151,7 +151,7 @@ describe('YourMCPFeature Integration', () => {
   describe('Error Handling', () => {
     it('should handle invalid tool name', async () => {
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__nonexistent_tool',
+        name: 'nonexistent_tool',
         arguments: {}
       });
 
@@ -161,7 +161,7 @@ describe('YourMCPFeature Integration', () => {
 
     it('should validate required parameters', async () => {
       const response = await client.request('tools/call', {
-        name: 'mcp__claude-recall__your_tool',
+        name: 'your_tool',
         arguments: {
           // Missing required parameters
         }
@@ -180,7 +180,7 @@ describe('YourMCPFeature Integration', () => {
 
       // Store memory
       await client.request('tools/call', {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         arguments: {
           content: uniqueContent,
           metadata: { persistent: true }
@@ -189,7 +189,7 @@ describe('YourMCPFeature Integration', () => {
 
       // Retrieve via load_rules
       const rulesResponse = await client.request('tools/call', {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         arguments: {}
       });
 
