@@ -640,6 +640,14 @@ export class MemoryService {
   }
 
   /**
+   * Retroactive fuzzy dedup. Write-time dedup (findFuzzyDuplicate) handles new
+   * writes; this method catches duplicates that predate it or crossed its threshold.
+   */
+  dedupSimilarRules(options?: { threshold?: number; dryRun?: boolean }): Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> {
+    return this.storage.dedupSimilar(options ?? {});
+  }
+
+  /**
    * Get top N rules scored for sync to Claude Code's auto-memory directory.
    * Scores by: (cite_count * 3) + (load_count * 0.5) + recency_bonus.
    * Maps Claude Recall types to CC types (feedback | project).

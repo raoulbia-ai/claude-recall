@@ -877,14 +877,120 @@ export class MemoryStorage {
   }
 
   /**
-   * Restore a previously auto-demoted rule. Only flips rules where
-   * superseded_by='auto-demote' — refuses to touch rules superseded by
-   * preference override logic. Returns true if a row was restored.
+   * Retroactive dedup: collapse near-duplicate active rules that predate write-time
+   * fuzzy dedup (or slipped past its threshold).
+   *
+   * For each (type, project_id) group:
+   *   1. Sort by timestamp ASC (oldest first — preserves original authoring order).
+   *   2. Greedy clustering: for each unassigned rule, pull in all later rules with
+   *      Jaccard >= threshold into a cluster.
+   *   3. In each cluster of size > 1, keep the oldest as winner; sum cite/load
+   *      counts into it; mark the rest is_active=0, superseded_by='auto-dedup'.
+   *
+   * Returns one entry per collapse: {winnerId, loserId, similarity}.
+   */
+  dedupSimilar(options: { threshold?: number; dryRun?: boolean }): Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> {
+    const threshold = options.threshold ?? 0.65;
+    const dryRun = options.dryRun ?? false;
+    const RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge'];
+    const collapses: Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> = [];
+
+    for (const type of RULE_TYPES) {
+      const rows = this.db.prepare(
+        `SELECT id, key, value, project_id, timestamp, load_count, cite_count
+         FROM memories
+         WHERE type = ? AND is_active = 1
+         ORDER BY COALESCE(project_id, ''), timestamp ASC`
+      ).all(type) as Array<{id: number; key: string; value: string; project_id: string | null; timestamp: number; load_count: number; cite_count: number}>;
+
+      // Sub-group by project so cross-project rules never collapse into each other.
+      const byProject = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const pid = row.project_id ?? '';
+        const bucket = byProject.get(pid) ?? [];
+        bucket.push(row);
+        byProject.set(pid, bucket);
+      }
+
+      for (const bucket of byProject.values()) {
+        // Pre-tokenize once to avoid O(n^2) re-parse.
+        const tokenized = bucket.map(r => {
+          let text = '';
+          try {
+            const parsed = JSON.parse(r.value);
+            text = this.extractText(parsed);
+          } catch {
+            text = r.value;
+          }
+          return { ...r, text: text.toLowerCase() };
+        });
+
+        const assigned = new Set<number>();
+        for (let i = 0; i < tokenized.length; i++) {
+          const winner = tokenized[i];
+          if (assigned.has(winner.id)) continue;
+          if (winner.text.length < 40) continue; // too short to fuzzy-match reliably
+
+          let mergedCite = winner.cite_count;
+          let mergedLoad = winner.load_count;
+          const losers: Array<{id: number; key: string; cite: number; load: number; sim: number}> = [];
+
+          for (let j = i + 1; j < tokenized.length; j++) {
+            const candidate = tokenized[j];
+            if (assigned.has(candidate.id)) continue;
+            if (candidate.text.length < 40) continue;
+
+            const sim = this.jaccardSimilarity(winner.text, candidate.text);
+            if (sim >= threshold) {
+              assigned.add(candidate.id);
+              losers.push({ id: candidate.id, key: candidate.key, cite: candidate.cite_count, load: candidate.load_count, sim });
+              mergedCite += candidate.cite_count;
+              mergedLoad += candidate.load_count;
+            }
+          }
+
+          if (losers.length === 0) continue;
+
+          for (const loser of losers) {
+            collapses.push({
+              winnerId: winner.id, winnerKey: winner.key,
+              loserId: loser.id, loserKey: loser.key,
+              similarity: Number(loser.sim.toFixed(3)),
+            });
+          }
+
+          if (!dryRun) {
+            const now = Date.now();
+            this.db.prepare(
+              'UPDATE memories SET cite_count = ?, load_count = ? WHERE id = ?'
+            ).run(mergedCite, mergedLoad, winner.id);
+            const loserIds = losers.map(l => l.id);
+            const placeholders = loserIds.map(() => '?').join(',');
+            this.db.prepare(
+              `UPDATE memories SET is_active = 0, superseded_by = 'auto-dedup', superseded_at = ?
+               WHERE id IN (${placeholders})`
+            ).run(now, ...loserIds);
+          }
+        }
+      }
+    }
+
+    if (!dryRun && collapses.length > 0) {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return collapses;
+  }
+
+  /**
+   * Restore a previously auto-demoted or auto-deduped rule. Only flips rows where
+   * superseded_by IN ('auto-demote', 'auto-dedup') — refuses to touch rules
+   * superseded by preference override logic (where superseded_by points at another key).
+   * Returns true if a row was restored.
    */
   promoteRule(id: number): boolean {
     const result = this.db.prepare(
       `UPDATE memories SET is_active = 1, superseded_at = NULL, superseded_by = NULL
-       WHERE id = ? AND is_active = 0 AND superseded_by = 'auto-demote'`
+       WHERE id = ? AND is_active = 0 AND superseded_by IN ('auto-demote', 'auto-dedup')`
     ).run(id);
     if (result.changes > 0) {
       this.db.pragma('wal_checkpoint(TRUNCATE)');

@@ -394,37 +394,72 @@ export class MemoryTools {
       const directive = this.getLoadRulesDirective();
       const rules = this.memoryService.loadActiveRules(projectId || context.projectId);
 
-      // Format categorized markdown sections
+      // Token budget — cap the load_rules payload so it doesn't dominate the host's
+      // context window (CC precedent: CAPPED_DEFAULT_MAX_TOKENS = 8_000 in utils/context.ts).
+      // Priority order of inclusion: corrections > preferences (by cite) > devops (by cite) > failures.
+      // Within each category, high-cited rules sink to the top so the first-to-drop are uncited.
+      const BUDGET = Number(process.env.CLAUDE_RECALL_LOAD_BUDGET_TOKENS ?? 2000);
+      const byCiteThenFresh = (a: any, b: any) =>
+        (b.cite_count || 0) - (a.cite_count || 0) ||
+        (b.timestamp || 0) - (a.timestamp || 0);
+
+      let remaining = BUDGET;
+      let droppedCount = 0;
+
+      const takeBounded = <T extends { value: unknown }>(items: T[], maxCount?: number): T[] => {
+        const kept: T[] = [];
+        const limit = maxCount ?? items.length;
+        for (const item of items) {
+          if (kept.length >= limit) {
+            droppedCount += items.length - kept.length;
+            break;
+          }
+          const cost = this.estimateTokens([item]);
+          if (remaining - cost < 0) {
+            droppedCount += items.length - kept.length;
+            break;
+          }
+          kept.push(item);
+          remaining -= cost;
+        }
+        return kept;
+      };
+
+      // Allocate in priority order (corrections first to protect high-signal items).
+      const keptCorrections = takeBounded(rules.corrections);
+      const keptPreferences = takeBounded([...rules.preferences].sort(byCiteThenFresh));
+      const keptDevops = takeBounded([...rules.devops].sort(byCiteThenFresh));
+      const keptFailures = takeBounded(rules.failures, 3);
+
+      // Format categorized markdown sections (output order stays user-familiar).
       const sections: string[] = [];
 
-      if (rules.preferences.length > 0) {
-        sections.push('## Preferences\n' + rules.preferences.map(m => {
+      if (keptPreferences.length > 0) {
+        sections.push('## Preferences\n' + keptPreferences.map(m => {
           const val = formatRuleValue(m.value);
-          // Only show key prefix if it's a meaningful name (not auto-generated)
           const key = m.preference_key || m.key || '';
           const isAutoKey = key.startsWith('memory_') || key.startsWith('auto_') || key.startsWith('pref_');
           return isAutoKey ? `- ${val}` : `- ${key}: ${val}`;
         }).join('\n'));
       }
 
-      if (rules.corrections.length > 0) {
-        sections.push('## Corrections\n' + rules.corrections.map(m => {
+      if (keptCorrections.length > 0) {
+        sections.push('## Corrections\n' + keptCorrections.map(m => {
           const val = formatRuleValue(m.value);
-          const isPromoted = m.key.startsWith('promoted_') || m.value?.source === 'promotion-engine';
-          const evidence = isPromoted && m.value?.evidence_count ? ` (learned from ${m.value.evidence_count} observations)` : '';
+          const isPromoted = m.key.startsWith('promoted_') || (m.value as any)?.source === 'promotion-engine';
+          const evidence = isPromoted && (m.value as any)?.evidence_count ? ` (learned from ${(m.value as any).evidence_count} observations)` : '';
           return isPromoted ? `- [promoted lesson] ${val}${evidence}` : `- ${val}`;
         }).join('\n'));
       }
 
-      if (rules.failures.length > 0) {
-        // Separate promoted lessons from regular failures
-        const promotedLessons = rules.failures.filter(m => m.key.startsWith('promoted_') || m.value?.source === 'promotion-engine');
-        const regularFailures = rules.failures.filter(m => !m.key.startsWith('promoted_') && m.value?.source !== 'promotion-engine');
+      if (keptFailures.length > 0) {
+        const promotedLessons = keptFailures.filter(m => m.key.startsWith('promoted_') || (m.value as any)?.source === 'promotion-engine');
+        const regularFailures = keptFailures.filter(m => !m.key.startsWith('promoted_') && (m.value as any)?.source !== 'promotion-engine');
 
         if (promotedLessons.length > 0) {
           sections.push('## Promoted Lessons (learned from repeated outcomes)\n' + promotedLessons.map(m => {
             const val = formatRuleValue(m.value);
-            const evidence = m.value?.evidence_count ? ` (seen ${m.value.evidence_count}x)` : '';
+            const evidence = (m.value as any)?.evidence_count ? ` (seen ${(m.value as any).evidence_count}x)` : '';
             return `- ${val}${evidence}`;
           }).join('\n'));
         }
@@ -437,59 +472,24 @@ export class MemoryTools {
         }
       }
 
-      if (rules.devops.length > 0) {
-        sections.push('## DevOps Rules\n' + rules.devops.map(m => {
+      if (keptDevops.length > 0) {
+        sections.push('## DevOps Rules\n' + keptDevops.map(m => {
           const val = formatRuleValue(m.value);
           return `- ${val}`;
         }).join('\n'));
       }
 
-      // Add compliance section for rules loaded frequently but never cited.
-      // Cap at top 10 by load_count so load_rules stays slim — this diagnostic
-      // list was previously unbounded and could dominate the payload.
-      const RULE_HEALTH_CAP = 10;
-      const compliance = this.memoryService.getComplianceReport(projectId || context.projectId);
-      const allLowCompliance = compliance.rules.filter(r => r.load_count >= 5 && r.cite_count === 0);
-      const lowCompliance = [...allLowCompliance]
-        .sort((a, b) => (b.load_count || 0) - (a.load_count || 0))
-        .slice(0, RULE_HEALTH_CAP);
-      const hiddenCount = allLowCompliance.length - lowCompliance.length;
-      if (lowCompliance.length > 0) {
-        const heading = hiddenCount > 0
-          ? `## Rule Health (top ${RULE_HEALTH_CAP} of ${allLowCompliance.length})\nThese rules are loaded frequently but never cited — consider rewording or removing. ${hiddenCount} more hidden; run \`npx claude-recall outcomes\` to see all.`
-          : '## Rule Health\nThese rules are loaded frequently but never cited — consider rewording or removing:';
-        sections.push(heading + '\n' +
-          lowCompliance.map(r => {
-            let val: string;
-            if (typeof r.value === 'string') {
-              try {
-                const parsed = JSON.parse(r.value);
-                val = typeof parsed === 'string' ? parsed
-                  : typeof parsed?.content === 'string' ? parsed.content
-                  : typeof parsed?.value === 'string' ? parsed.value
-                  : r.value;
-              } catch {
-                val = r.value;
-              }
-            } else if (typeof r.value === 'object' && r.value !== null) {
-              const v = r.value as any;
-              val = typeof v.content === 'string' ? v.content
-                : typeof v.value === 'string' ? v.value
-                : JSON.stringify(r.value);
-            } else {
-              val = String(r.value ?? '');
-            }
-            return `- "${String(val).substring(0, 80)}" (loaded ${r.load_count}x, cited 0x)`;
-          }).join('\n'));
+      // Truncation marker — turns a capacity failure into a discoverable affordance.
+      // Rule Health diagnostic moved to `npx claude-recall outcomes` to save ~10 lines/payload.
+      if (droppedCount > 0) {
+        sections.push(`*${droppedCount} more rules available via \`search_memory\`. Run \`npx claude-recall outcomes\` for full stats.*`);
       }
 
-      const totalRules = rules.preferences.length + rules.corrections.length +
-        rules.failures.length + rules.devops.length;
+      const totalRules = keptPreferences.length + keptCorrections.length +
+        keptFailures.length + keptDevops.length;
 
-      const resultTokens = this.estimateTokens([
-        ...rules.preferences, ...rules.corrections,
-        ...rules.failures, ...rules.devops
-      ]);
+      const keptAll = [...keptPreferences, ...keptCorrections, ...keptFailures, ...keptDevops];
+      const resultTokens = this.estimateTokens(keptAll);
 
       // Record to SearchMonitor so monitoring/stats still work
       this.searchMonitor.recordSearch(
@@ -500,11 +500,11 @@ export class MemoryTools {
         { tool: 'load_rules', tokenMetrics: { resultTokens, tokensSaved: totalRules > 0 ? totalRules * 200 : 0 } }
       );
 
-      // Track retrievals for outcome-aware scoring
+      // Track retrievals for outcome-aware scoring — only emitted rules, so dropped
+      // ones aren't credited as "retrieved" when the caller never saw them.
       try {
         const outcomeStorage = OutcomeStorage.getInstance();
-        const allMemories = [...rules.preferences, ...rules.corrections, ...rules.failures, ...rules.devops];
-        for (const m of allMemories) {
+        for (const m of keptAll) {
           outcomeStorage.recordRetrieval(m.key);
         }
       } catch {
@@ -539,11 +539,12 @@ export class MemoryTools {
       return {
         rules: rulesText,
         counts: {
-          preferences: rules.preferences.length,
-          corrections: rules.corrections.length,
-          failures: rules.failures.length,
-          devops: rules.devops.length,
-          total: totalRules
+          preferences: keptPreferences.length,
+          corrections: keptCorrections.length,
+          failures: keptFailures.length,
+          devops: keptDevops.length,
+          total: totalRules,
+          dropped: droppedCount,
         },
         summary: rules.summary,
       };

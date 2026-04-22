@@ -297,6 +297,42 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * Retroactively collapse near-duplicate rules (predate write-time fuzzy dedup or
+   * slipped past its threshold). Keeps the oldest per cluster; sums cite/load into winner.
+   */
+  dedupSimilarRules(options: { dryRun?: boolean; threshold?: number }): void {
+    const threshold = options.threshold ?? 0.65;
+    const dryRun = options.dryRun ?? false;
+
+    const collapses = this.memoryService.dedupSimilarRules({ threshold, dryRun });
+
+    const verb = dryRun ? 'Would collapse' : 'Collapsed';
+    console.log(`\n${verb} ${collapses.length} near-duplicate pairs (jaccard >= ${threshold})\n`);
+
+    if (collapses.length === 0) return;
+
+    const byWinner: Record<number, Array<{loserId: number; loserKey: string; sim: number}>> = {};
+    for (const c of collapses) {
+      byWinner[c.winnerId] ??= [];
+      byWinner[c.winnerId].push({ loserId: c.loserId, loserKey: c.loserKey, sim: c.similarity });
+    }
+
+    for (const [winnerId, losers] of Object.entries(byWinner)) {
+      const winnerKey = collapses.find(c => c.winnerId === Number(winnerId))?.winnerKey ?? '?';
+      console.log(`  [${winnerId}] ${winnerKey}`);
+      for (const l of losers) {
+        console.log(`    └─ ${l.loserKey} (sim ${l.sim})`);
+      }
+    }
+
+    if (dryRun) {
+      console.log('\nRun without --dry-run to apply. Losers are marked is_active=0 (reversible via `rules promote <id>`).');
+    } else {
+      console.log('\nLosers marked is_active=0; restore individually with `rules promote <id>`.');
+    }
+  }
+
+  /**
    * Delete legacy test-fixture rows that leaked into the production DB.
    * Destructive — run with --dry-run first to preview.
    */
@@ -1673,10 +1709,24 @@ async function main() {
 
   rulesCmd
     .command('promote <id>')
-    .description('Restore a previously auto-demoted rule (safety valve)')
+    .description('Restore a previously auto-demoted or auto-deduped rule (safety valve)')
     .action((id) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.promoteRule(parseInt(id));
+      process.exit(0);
+    });
+
+  rulesCmd
+    .command('dedup')
+    .description('Retroactively collapse near-duplicate rules (write-time dedup handles new writes)')
+    .option('--dry-run', 'Preview without mutating', false)
+    .option('--threshold <number>', 'Jaccard similarity threshold (0-1)', '0.65')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.dedupSimilarRules({
+        dryRun: options.dryRun,
+        threshold: parseFloat(options.threshold),
+      });
       process.exit(0);
     });
 
