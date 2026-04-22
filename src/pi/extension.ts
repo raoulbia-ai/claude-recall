@@ -395,7 +395,13 @@ export default function(pi: PiTypes.ExtensionAPI) {
     label: 'Store Memory',
     description: 'Store a rule or learning. Use for: corrections, preferences, devops rules, failures.',
     promptSnippet: 'Store a rule, correction, or preference to memory',
-    parameters: {},
+    parameters: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'The rule, correction, or preference to store' },
+      },
+      required: ['content'],
+    },
     async execute(_id, params: any, _signal, _onUpdate, _ctx) {
       try {
         const content = params.content;
@@ -450,7 +456,13 @@ export default function(pi: PiTypes.ExtensionAPI) {
     label: 'Search Memory',
     description: 'Search memories by keyword. Returns matched memories ranked by relevance.',
     promptSnippet: 'Search stored memories by keyword',
-    parameters: {},
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Keyword or phrase to search for' },
+      },
+      required: ['query'],
+    },
     async execute(_id, params: any, _signal, _onUpdate, _ctx) {
       try {
         const query = params.query;
@@ -503,7 +515,16 @@ export default function(pi: PiTypes.ExtensionAPI) {
     label: 'Save Task Checkpoint',
     description: 'Save a structured snapshot of work in progress (completed/remaining/blockers/notes). Replaces any previous checkpoint for this project. Call when ending a session or pausing on a task.',
     promptSnippet: 'Save a task checkpoint with what is done, what remains, and any blockers',
-    parameters: {},
+    parameters: {
+      type: 'object',
+      properties: {
+        completed: { type: 'string', description: 'What has been completed so far' },
+        remaining: { type: 'string', description: 'What remains to be done' },
+        blockers: { type: 'string', description: 'Any blockers or issues (use "none" if none)' },
+        notes: { type: 'string', description: 'Optional additional notes' },
+      },
+      required: ['completed', 'remaining', 'blockers'],
+    },
     async execute(_id, params: any, _signal, _onUpdate, _ctx) {
       try {
         const { completed, remaining, blockers, notes } = params || {};
@@ -571,7 +592,13 @@ export default function(pi: PiTypes.ExtensionAPI) {
     name: 'recall_delete_memory',
     label: 'Delete Memory',
     description: 'Delete a specific memory by its ID. Use recall_search_memory first to find the ID.',
-    parameters: {},
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Memory ID to delete (use recall_search_memory to find IDs)' },
+      },
+      required: ['id'],
+    },
     async execute(_id, params: any, _signal, _onUpdate, _ctx) {
       try {
         const id = params.id;
