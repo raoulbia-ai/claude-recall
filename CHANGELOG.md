@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.1] - 2026-04-22
+
+### Fixed
+
+- **`search_enforcer` no longer blocks read-only exploration before `load_rules`** (#10). On session start, tools like `Read`, `Glob`, and `Grep` previously hit the "LOAD RULES REQUIRED" gate, adding 1–3 blocked calls of friction with no safety benefit. The gate now only fires for mutation tools (`Write`, `Edit`, `Bash`, `Task`). The guarantee that matters — rules loaded before mutations — is preserved unchanged.
+
 ## [0.23.0] - 2026-04-21
 
 ### Added
