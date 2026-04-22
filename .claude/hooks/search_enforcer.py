@@ -131,10 +131,15 @@ def main():
     last_search = state.get('lastSearchAt')
 
     # FIRST TOOL CALL GATE: If rules have never been loaded this session,
-    # block on codebase-interacting tools (Read/Glob/Grep/Write/Edit/Bash/Task).
-    # This ensures Claude loads rules before forming opinions from exploration.
+    # only block mutation tools. Read-only exploration (Read/Glob/Grep) passes
+    # freely — reading a file can't bypass preferences or corrections, and
+    # gating it added 1–3 blocked calls of friction per session with no safety
+    # benefit. The guarantee that matters (load_rules before mutations) is
+    # preserved by the ENFORCE_TOOLS check below.
     if not last_search:
-        pass  # Fall through to blocking logic below
+        if tool_name not in ENFORCE_TOOLS:
+            sys.exit(0)
+        # Mutation tool on first call — fall through to blocking logic below.
     else:
         # Rules loaded at least once — only enforce on mutation tools
         if tool_name not in ENFORCE_TOOLS:
