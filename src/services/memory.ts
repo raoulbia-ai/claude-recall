@@ -520,24 +520,29 @@ export class MemoryService {
       const pid = projectId || this.config.getProjectId();
       const searchContext = { project_id: pid };
 
+      // All categories filter is_active so auto-demoted rules are excluded uniformly.
+      const isActive = (m: Memory) => m.is_active !== false;
+
       // Preferences: active only
       const allPreferences = this.storage.searchByContext({ ...searchContext, type: 'preference' });
-      const preferences = allPreferences.filter(m => m.is_active !== false);
+      const preferences = allPreferences.filter(isActive);
 
       // Corrections: top 10 by timestamp
       const allCorrections = this.storage.searchByContext({ ...searchContext, type: 'correction' });
       const corrections = allCorrections
+        .filter(isActive)
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         .slice(0, 10);
 
       // Failures: top 5 by timestamp
       const allFailures = this.storage.searchByContext({ ...searchContext, type: 'failure' });
       const failures = allFailures
+        .filter(isActive)
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         .slice(0, 5);
 
-      // DevOps: all rules
-      const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' });
+      // DevOps: all active rules
+      const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' }).filter(isActive);
 
       const counts = [
         preferences.length && `${preferences.length} preferences`,
@@ -576,6 +581,42 @@ export class MemoryService {
     if (memory?.id) {
       this.storage.incrementCiteCount(memory.id);
     }
+  }
+
+  /**
+   * Auto-demote rules that burn context without earning citations.
+   * Reads env vars: CLAUDE_RECALL_AUTO_DEMOTE (gate), CLAUDE_RECALL_DEMOTE_MIN_LOADS (default 20),
+   * CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS (default 7).
+   * Safe to call on every boot — idempotent, only acts on newly-qualifying rules.
+   */
+  autoDemoteStaleRules(options?: { minLoads?: number; minAgeDays?: number; dryRun?: boolean; force?: boolean }): Array<{id: number; key: string; type: string; load_count: number; cite_count: number; timestamp: number}> {
+    const force = options?.force ?? false;
+    if (!force && process.env.CLAUDE_RECALL_AUTO_DEMOTE !== 'true') {
+      return [];
+    }
+    const minLoads = options?.minLoads ?? Number(process.env.CLAUDE_RECALL_DEMOTE_MIN_LOADS ?? 20);
+    const minAgeDays = options?.minAgeDays ?? Number(process.env.CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS ?? 7);
+    const dryRun = options?.dryRun ?? false;
+
+    try {
+      const demoted = this.storage.demoteStaleRules({ minLoads, minAgeDays, dryRun });
+      if (demoted.length > 0) {
+        this.logger.info('MemoryService',
+          `${dryRun ? 'Would demote' : 'Demoted'} ${demoted.length} stale rules (load>=${minLoads}, cite=0, age>${minAgeDays}d)`,
+          { count: demoted.length, dryRun });
+      }
+      return demoted;
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'autoDemoteStaleRules', error as Error);
+      return [];
+    }
+  }
+
+  /**
+   * Restore an auto-demoted rule. Returns true if the row was flipped back.
+   */
+  promoteRule(id: number): boolean {
+    return this.storage.promoteRule(id);
   }
 
   /**

@@ -804,6 +804,61 @@ export class MemoryStorage {
   }
 
   /**
+   * Demote rules that are loaded frequently but never cited.
+   * Matches rules where is_active=1, load_count >= minLoads, cite_count = 0,
+   * and timestamp older than minAgeDays. Flips is_active=0 and marks
+   * superseded_by='auto-demote' so they can be distinguished from preference supersession
+   * and selectively promoted back via promoteRule().
+   *
+   * Returns rows that were (or would be, in dryRun) demoted.
+   */
+  demoteStaleRules(options: {
+    minLoads: number;
+    minAgeDays: number;
+    dryRun?: boolean;
+  }): Array<{id: number; key: string; type: string; load_count: number; cite_count: number; timestamp: number}> {
+    const cutoff = Date.now() - options.minAgeDays * 86400000;
+    const candidates = this.db.prepare(`
+      SELECT id, key, type, load_count, cite_count, timestamp
+      FROM memories
+      WHERE is_active = 1
+        AND load_count >= ?
+        AND cite_count = 0
+        AND timestamp < ?
+        AND type IN ('preference', 'correction', 'failure', 'devops', 'project-knowledge')
+      ORDER BY load_count DESC
+    `).all(options.minLoads, cutoff) as Array<{id: number; key: string; type: string; load_count: number; cite_count: number; timestamp: number}>;
+
+    if (!options.dryRun && candidates.length > 0) {
+      const ids = candidates.map(c => c.id);
+      const placeholders = ids.map(() => '?').join(',');
+      const now = Date.now();
+      this.db.prepare(
+        `UPDATE memories SET is_active = 0, superseded_at = ?, superseded_by = 'auto-demote'
+         WHERE id IN (${placeholders})`
+      ).run(now, ...ids);
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return candidates;
+  }
+
+  /**
+   * Restore a previously auto-demoted rule. Only flips rules where
+   * superseded_by='auto-demote' — refuses to touch rules superseded by
+   * preference override logic. Returns true if a row was restored.
+   */
+  promoteRule(id: number): boolean {
+    const result = this.db.prepare(
+      `UPDATE memories SET is_active = 1, superseded_at = NULL, superseded_by = NULL
+       WHERE id = ? AND is_active = 0 AND superseded_by = 'auto-demote'`
+    ).run(id);
+    if (result.changes > 0) {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return result.changes > 0;
+  }
+
+  /**
    * Get rules with their compliance metrics (load_count, cite_count).
    * Returns rules that have been loaded at least once.
    */

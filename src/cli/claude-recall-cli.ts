@@ -265,6 +265,50 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * Demote rules loaded often but never cited — excludes them from future load_rules payloads.
+   * Rules remain searchable via search_memory and can be restored with `rules promote <id>`.
+   */
+  demoteRules(options: { dryRun?: boolean; minLoads?: number; minAgeDays?: number }): void {
+    const minLoads = options.minLoads ?? 20;
+    const minAgeDays = options.minAgeDays ?? 7;
+    const dryRun = options.dryRun ?? false;
+
+    const demoted = this.memoryService.autoDemoteStaleRules({
+      minLoads,
+      minAgeDays,
+      dryRun,
+      force: true,
+    });
+
+    const verb = dryRun ? 'Would demote' : 'Demoted';
+    console.log(`\n${verb} ${demoted.length} stale rules (load>=${minLoads}, cite=0, age>${minAgeDays}d)\n`);
+
+    if (demoted.length === 0) return;
+
+    demoted.forEach(r => {
+      console.log(`  [${r.id}] ${r.type} · loaded ${r.load_count}x, cited 0x — key: ${r.key}`);
+    });
+
+    if (dryRun) {
+      console.log('\nRun without --dry-run to apply. Restore any row with `claude-recall rules promote <id>`.');
+    } else {
+      console.log('\nRestore any row with `claude-recall rules promote <id>`.');
+    }
+  }
+
+  /**
+   * Restore a previously auto-demoted rule. Refuses to touch preference-supersession rows.
+   */
+  promoteRule(id: number): void {
+    const ok = this.memoryService.promoteRule(id);
+    if (ok) {
+      console.log(`Rule #${id} restored (is_active=1).`);
+    } else {
+      console.log(`No change. Rule #${id} was not auto-demoted (may not exist, already active, or superseded by another mechanism).`);
+    }
+  }
+
+  /**
    * Show outcome-aware learning status: episodes, outcome events, candidate lessons, memory stats
    */
   showOutcomes(options: { limit?: number; section?: string }): void {
@@ -1578,6 +1622,36 @@ async function main() {
         limit: parseInt(options.limit),
         section: options.section
       });
+      process.exit(0);
+    });
+
+  // Rules group: manage load_rules payload hygiene
+  const rulesCmd = program
+    .command('rules')
+    .description('Manage rule lifecycle: demote stale rules, restore demoted rules');
+
+  rulesCmd
+    .command('demote')
+    .description('Demote rules loaded >=N times with zero citations (excludes from load_rules)')
+    .option('--dry-run', 'Preview without mutating', false)
+    .option('--min-loads <number>', 'Minimum load count to qualify', '20')
+    .option('--min-age-days <number>', 'Minimum age in days (avoid demoting brand-new rules)', '7')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.demoteRules({
+        dryRun: options.dryRun,
+        minLoads: parseInt(options.minLoads),
+        minAgeDays: parseInt(options.minAgeDays),
+      });
+      process.exit(0);
+    });
+
+  rulesCmd
+    .command('promote <id>')
+    .description('Restore a previously auto-demoted rule (safety valve)')
+    .action((id) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.promoteRule(parseInt(id));
       process.exit(0);
     });
 

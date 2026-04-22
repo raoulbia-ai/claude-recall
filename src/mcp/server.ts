@@ -393,6 +393,13 @@ export class MCPServer {
       // Write PID file after successful startup
       this.processManager.writePidFile(projectId, process.pid);
       this.logger.info('MCPServer', `MCP server started successfully (PID: ${process.pid}, Project: ${projectId})`);
+
+      // Prune stale rules (loaded often, never cited) from load_rules payload.
+      // Gated on CLAUDE_RECALL_AUTO_DEMOTE=true. Idempotent; safe per-boot.
+      const demoted = this.memoryService.autoDemoteStaleRules();
+      if (demoted.length > 0) {
+        this.logger.info('MCPServer', `Auto-demoted ${demoted.length} stale rules on boot`);
+      }
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);
       throw error;
