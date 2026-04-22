@@ -55,8 +55,10 @@ describe('load_rules token budget', () => {
     const service = MemoryService.getInstance();
     const logger = LoggingService.getInstance();
     const tools = new MemoryTools(service, logger);
+    // Tool registers unprefixed as of #8 — Claude Code adds `mcp__claude-recall__`
+    // at call time, but the MemoryTools registry itself holds the raw name.
     const handler = tools.getTools()
-      .find(t => t.name === 'mcp__claude-recall__load_rules');
+      .find(t => t.name === 'load_rules');
     expect(handler).toBeDefined();
     const ctx = { sessionId: 'test-session', projectId: undefined } as unknown as MCPContext;
     return await handler!.handler({}, ctx);
