@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-04-21
+
+### Added
+
+- **Token-budgeted `load_rules` payload.** Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures). Dropped rules are surfaced via a `"N more rules available via search_memory"` marker so nothing is silently hidden. Budget configurable via `CLAUDE_RECALL_LOAD_BUDGET_TOKENS` (default 2000).
+- **Citation-aware auto-demotion.** Rules loaded many times but never cited can be auto-demoted (flipped to `is_active = 0`) on MCP boot. Env-gated via `CLAUDE_RECALL_AUTO_DEMOTE=true`; thresholds tunable via `CLAUDE_RECALL_DEMOTE_MIN_LOADS` (default 20) and `CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS` (default 7). Demoted rules remain searchable via `search_memory` and can be restored with `rules promote <id>`.
+- **Retroactive fuzzy dedup.** New CLI `rules dedup [--dry-run] [--threshold N]` collapses near-duplicate rules that predate write-time dedup. Keeps the oldest rule per cluster and sums cite/load counts into the winner. Losers are flipped `is_active=0, superseded_by='auto-dedup'` and restorable via `rules promote <id>`.
+- **Test-pollution write-time guard + cleanup.** `MemoryService.store()` silently drops writes matching legacy test-fixture patterns (`Test preference 177…`, `Session test preference …`, `Memory with complex metadata`, `Test memory content`). New CLI `cleanup test-pollution [--dry-run]` purges historical pollution.
+- **New CLI commands:** `rules demote`, `rules promote <id>`, `rules dedup`, `cleanup test-pollution`.
+
+### Changed
+
+- **`load_rules` no longer emits the Rule Health diagnostic block.** Rules loaded often but never cited still contribute to telemetry and are visible via `npx claude-recall outcomes`; they no longer consume ~10 lines of every `load_rules` response.
+- **`load_rules` response shape** now includes `counts.dropped` (integer) indicating how many rules were truncated by the token budget.
+- **`loadActiveRules` filters `is_active`** across all categories (preferences, corrections, failures, devops) so auto-demoted rules are excluded uniformly. Previously only preferences were filtered.
+- **`promoteRule` widened** to accept both `superseded_by = 'auto-demote'` and `superseded_by = 'auto-dedup'` sentinels. Refuses to restore rules superseded by preference override logic.
+
+### Fixed
+
+- **Integration tests no longer repollute the memory DB.** Integration-test fixture values were the historical source of the `Test preference …` and `Memory with complex metadata` rows in production databases; the new write-time guard surfaced the issue. Fixtures now use unambiguous `integration-fixture …` strings.
+
+### Migration
+
+Existing installs see no behavior change by default (all new auto-demotion is opt-in). To adopt:
+
+```bash
+# Preview what auto-demotion would do
+npx claude-recall rules demote --dry-run
+
+# Apply
+npx claude-recall rules demote
+
+# Retroactively collapse near-duplicates
+npx claude-recall rules dedup --dry-run
+npx claude-recall rules dedup
+
+# Purge legacy test-pollution rows (if any)
+npx claude-recall cleanup test-pollution --dry-run
+npx claude-recall cleanup test-pollution
+```
+
+To enable auto-demotion on every MCP boot: `export CLAUDE_RECALL_AUTO_DEMOTE=true`.
+
 ## [0.7.8] - 2025-11-17
 
 ### Added

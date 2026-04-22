@@ -18,6 +18,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 - **Failure Learning** — captures what failed, why, and what to do instead — so the agent doesn't repeat mistakes
 - **Outcome-Aware Learning** — tracks action outcomes (all tool results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
 - **Skill Crystallization** — auto-generates `.claude/skills/auto-*/` files from accumulated memories, using Anthropic's [Agent Skills](https://agentskills.io/) open standard
+- **Rule Hygiene** — token-budgeted `load_rules` payload, citation-aware auto-demotion of rules that never earn citations, and retroactive dedup for near-duplicates
 - **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
 
 ---
@@ -336,6 +337,17 @@ claude-recall outcomes --section stats   # Retrieval/helpfulness stats
 claude-recall outcomes --limit 20        # More items per section
 claude-recall monitor                    # Memory search monitoring stats
 
+# ── Rule Hygiene ─────────────────────────────────────────────────────
+claude-recall rules demote [--dry-run]              # Demote rules loaded >=N times but never cited
+claude-recall rules demote --min-loads 20           # Tune load-count threshold (default 20)
+claude-recall rules demote --min-age-days 7         # Minimum age before demotion (default 7)
+claude-recall rules promote <id>                    # Restore an auto-demoted or auto-deduped rule
+claude-recall rules dedup [--dry-run]               # Collapse near-duplicate rules (Jaccard >= threshold)
+claude-recall rules dedup --threshold 0.8           # Stricter similarity (default 0.65)
+
+# ── Cleanup (destructive — always --dry-run first) ─────────────────
+claude-recall cleanup test-pollution [--dry-run]    # Delete legacy test-fixture rows
+
 # ── Task Checkpoints ────────────────────────────────────────────────
 claude-recall checkpoint save --completed <text> --remaining <text> [--blockers <text>] [--notes <text>] [--project <id>]
 claude-recall checkpoint load [--project <id>] [--json]
@@ -414,6 +426,25 @@ which claude-recall
 Global installation does **not** affect project scoping — project ID is still detected from Claude Code's working directory.
 
 </details>
+
+---
+
+## Environment Variables
+
+Runtime behavior can be tuned via environment variables. Defaults are chosen so out-of-the-box behavior stays close to historical output; opt in as needed.
+
+| Variable                                 | Default | Effect                                                                                                   |
+| ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `CLAUDE_RECALL_DB_PATH`                  | `~/.claude-recall/` | Database directory.                                                                          |
+| `ANTHROPIC_API_KEY`                      | _(unset)_ | Enables LLM-based classification (Haiku). Falls back to regex silently when missing.                   |
+| `CLAUDE_RECALL_LOAD_BUDGET_TOKENS`       | `2000`  | Token budget for the `load_rules` payload. Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures) and dropped rules surface via `search_memory`. |
+| `CLAUDE_RECALL_AUTO_DEMOTE`              | `false` | When `true`, auto-demote rules on MCP boot where `load_count >= CLAUDE_RECALL_DEMOTE_MIN_LOADS`, `cite_count = 0`, and age `> CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`. Still reversible via `rules promote <id>`. |
+| `CLAUDE_RECALL_DEMOTE_MIN_LOADS`         | `20`    | Minimum load count before a rule qualifies for auto-demotion.                                            |
+| `CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`      | `7`     | Minimum rule age before auto-demotion can fire (avoids demoting brand-new rules).                        |
+| `CLAUDE_RECALL_AUTO_CLEANUP`             | `false` | Auto-kill stale MCP processes on start (otherwise reports and exits).                                    |
+| `CLAUDE_RECALL_COMPACT_THRESHOLD`        | `10MB`  | DB size at which automatic compaction kicks in.                                                          |
+| `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
+| `CLAUDE_RECALL_ENFORCE_MODE`             | `on`    | Set to `off` to bypass the search-enforcer hook.                                                         |
 
 ---
 
