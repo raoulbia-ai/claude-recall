@@ -164,7 +164,7 @@ export class MemoryTools {
   private registerTools(): void {
     this.tools = [
       {
-        name: 'mcp__claude-recall__load_rules',
+        name: 'load_rules',
         description: 'Load all active rules before starting work. Returns preferences, corrections, past failures, and devops rules. Call this once at the start of every task. No query needed.',
         inputSchema: {
           type: 'object',
@@ -178,7 +178,7 @@ export class MemoryTools {
         handler: this.handleLoadRules.bind(this)
       },
       {
-        name: 'mcp__claude-recall__store_memory',
+        name: 'store_memory',
         description: 'Store a rule or learning. Use for: corrections, preferences, devops rules, failures. The stored rule is immediately active in this conversation.',
         inputSchema: {
           type: 'object',
@@ -202,7 +202,7 @@ export class MemoryTools {
         handler: this.handleStoreMemory.bind(this)
       },
       {
-        name: 'mcp__claude-recall__search_memory',
+        name: 'search_memory',
         description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance.',
         inputSchema: {
           type: 'object',
@@ -229,7 +229,7 @@ export class MemoryTools {
         handler: this.handleSearchMemory.bind(this)
       },
       {
-        name: 'mcp__claude-recall__delete_memory',
+        name: 'delete_memory',
         description: 'Delete a specific memory by its ID (key). Use search_memory first to find the ID of the memory to delete.',
         inputSchema: {
           type: 'object',
@@ -244,7 +244,7 @@ export class MemoryTools {
         handler: this.handleDeleteMemory.bind(this)
       },
       {
-        name: 'mcp__claude-recall__save_checkpoint',
+        name: 'save_checkpoint',
         description: 'Save a task checkpoint — a structured snapshot of work in progress (completed/remaining/blockers/notes). Replaces any previous checkpoint for this project. Call when ending a work session or pausing on a task.',
         inputSchema: {
           type: 'object',
@@ -260,7 +260,7 @@ export class MemoryTools {
         handler: this.handleSaveCheckpoint.bind(this),
       },
       {
-        name: 'mcp__claude-recall__load_checkpoint',
+        name: 'load_checkpoint',
         description: 'Load the latest task checkpoint for the current project. Returns null if none exists. Call at the start of a session to recall where you left off — load_rules will hint when one exists.',
         inputSchema: {
           type: 'object',

@@ -1255,7 +1255,7 @@ async function main() {
       lastSearchAt: Date.now(),
       searchQuery: 'test query',
       toolHistory: [
-        { tool: 'mcp__claude-recall__search', at: Date.now() }
+        { tool: 'search_memory', at: Date.now() }
       ]
     };
     fs.writeFileSync(stateFile, JSON.stringify(stateData, null, 2));
@@ -1497,7 +1497,7 @@ async function main() {
         console.log('\nTo use with Claude Code:');
         console.log('1. Ensure Claude Code is not running');
         console.log('2. Start Claude Code');
-        console.log('3. Use MCP tools like mcp__claude-recall__store_memory');
+        console.log('3. Use MCP tools like store_memory (Claude Code adds the mcp__claude-recall__ prefix automatically)');
 
       } catch (error) {
         console.error('❌ Test failed:', error);
