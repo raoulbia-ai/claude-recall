@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TEST_POLLUTION_LIKE } from '../services/test-pollution';
 
 // Structured memory value format (v0.7.0+)
 export interface StructuredMemoryValue {
@@ -837,6 +838,39 @@ export class MemoryStorage {
         `UPDATE memories SET is_active = 0, superseded_at = ?, superseded_by = 'auto-demote'
          WHERE id IN (${placeholders})`
       ).run(now, ...ids);
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return candidates;
+  }
+
+  /**
+   * Delete rows whose stored value matches legacy test-fixture patterns.
+   * Matches against json_extract(value, '$.content') OR the raw value (covers both
+   * structured and legacy string payloads). Returns rows that were (or would be,
+   * in dryRun) deleted. Destructive — CLI-gated, not called from boot.
+   */
+  deleteTestPollution(options?: { dryRun?: boolean }): Array<{id: number; key: string; type: string; value: string}> {
+    const dryRun = options?.dryRun ?? false;
+    if (TEST_POLLUTION_LIKE.length === 0) return [];
+
+    const likeClauses = TEST_POLLUTION_LIKE
+      .map(() => `(json_extract(value, '$.content') LIKE ? OR value LIKE ?)`)
+      .join(' OR ');
+    const params: string[] = [];
+    for (const pat of TEST_POLLUTION_LIKE) {
+      params.push(pat, `%${pat.replace(/%$/, '')}%`);
+    }
+
+    const candidates = this.db
+      .prepare(`SELECT id, key, type, value FROM memories WHERE ${likeClauses}`)
+      .all(...params) as Array<{id: number; key: string; type: string; value: string}>;
+
+    if (!dryRun && candidates.length > 0) {
+      const ids = candidates.map(c => c.id);
+      const placeholders = ids.map(() => '?').join(',');
+      this.db
+        .prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+        .run(...ids);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
     }
     return candidates;

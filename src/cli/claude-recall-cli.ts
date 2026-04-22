@@ -297,6 +297,31 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * Delete legacy test-fixture rows that leaked into the production DB.
+   * Destructive — run with --dry-run first to preview.
+   */
+  cleanupTestPollution(options: { dryRun?: boolean }): void {
+    const dryRun = options.dryRun ?? false;
+    const rows = this.memoryService.cleanupTestPollution({ dryRun });
+
+    const verb = dryRun ? 'Would delete' : 'Deleted';
+    console.log(`\n${verb} ${rows.length} test-pollution rows\n`);
+
+    if (rows.length === 0) return;
+
+    const byType: Record<string, number> = {};
+    for (const r of rows) byType[r.type] = (byType[r.type] || 0) + 1;
+
+    for (const [type, count] of Object.entries(byType)) {
+      console.log(`  ${type}: ${count}`);
+    }
+
+    if (dryRun) {
+      console.log('\nRun without --dry-run to apply.');
+    }
+  }
+
+  /**
    * Restore a previously auto-demoted rule. Refuses to touch preference-supersession rows.
    */
   promoteRule(id: number): void {
@@ -1652,6 +1677,21 @@ async function main() {
     .action((id) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.promoteRule(parseInt(id));
+      process.exit(0);
+    });
+
+  // Cleanup group: destructive maintenance — opt-in only, always offers --dry-run
+  const cleanupCmd = program
+    .command('cleanup')
+    .description('Maintenance commands (destructive — always preview with --dry-run first)');
+
+  cleanupCmd
+    .command('test-pollution')
+    .description('Delete legacy test-fixture rows (Test preference 177…, Memory with complex metadata, etc.)')
+    .option('--dry-run', 'Preview without deleting', false)
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.cleanupTestPollution({ dryRun: options.dryRun });
       process.exit(0);
     });
 

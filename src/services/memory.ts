@@ -3,6 +3,7 @@ import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { ExtractedPreference } from './preference-extractor';
+import { isTestPollution } from './test-pollution';
 
 export interface MemoryServiceContext {
   projectId?: string;
@@ -91,6 +92,17 @@ export class MemoryService {
    */
   store(request: MemoryStoreRequest): void {
     try {
+      // Write-time guard: silently drop values matching known test-fixture patterns
+      // (Test preference 177…, Session test preference …, Memory with complex metadata,
+      // Test memory content). Prevents legacy test harnesses from re-polluting the DB.
+      if (isTestPollution(request.value)) {
+        this.logger.info('MemoryService', 'Dropped test-pollution write', {
+          key: request.key,
+          type: request.type,
+        });
+        return;
+      }
+
       // Check memory limits and notify if approaching
       const stats = this.getStats();
       const config = this.config.getConfig();
@@ -617,6 +629,14 @@ export class MemoryService {
    */
   promoteRule(id: number): boolean {
     return this.storage.promoteRule(id);
+  }
+
+  /**
+   * Delete legacy test-fixture rows that leaked into the production DB.
+   * Destructive — exposed via CLI only, not called from boot.
+   */
+  cleanupTestPollution(options?: { dryRun?: boolean }): Array<{id: number; key: string; type: string; value: string}> {
+    return this.storage.deleteTestPollution(options);
   }
 
   /**
