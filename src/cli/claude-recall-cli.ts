@@ -265,6 +265,86 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * One-shot upgrade: check registry, install latest globally, clean up any
+   * running MCP servers (so fresh 0.x spawns on next Claude Code tool call).
+   *
+   * Handles the common failure modes inline so users don't have to figure them out:
+   *   - EACCES on `/usr/lib/node_modules` → print sudo + permanent-prefix fix
+   *   - No npm in PATH → actionable error
+   *   - Registry unreachable → clear error, don't leave install half-done
+   */
+  async upgrade(): Promise<void> {
+    const { execSync, spawnSync } = require('child_process');
+
+    // Current version from package.json shipped with the installed binary
+    let current: string;
+    try {
+      const pkg = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', '..', 'package.json'), 'utf-8'
+      ));
+      current = pkg.version;
+    } catch {
+      current = 'unknown';
+    }
+
+    // Latest version from registry
+    let latest: string;
+    try {
+      latest = execSync('npm view claude-recall version', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch (err: any) {
+      console.error('❌ Could not reach the npm registry.');
+      console.error(`   ${err?.stderr?.toString().trim() || err?.message || 'unknown error'}`);
+      console.error('\nCheck your connection, then run `claude-recall upgrade` again.');
+      process.exit(1);
+    }
+
+    console.log(`Installed: ${current}`);
+    console.log(`Latest:    ${latest}`);
+
+    if (current === latest) {
+      console.log('\n✓ Already up to date.');
+      return;
+    }
+
+    console.log(`\n📦 Upgrading ${current} → ${latest}...\n`);
+
+    // Run npm install -g, streaming output so the user sees progress / errors live
+    const install = spawnSync('npm', ['install', '-g', 'claude-recall@latest'], {
+      stdio: 'inherit',
+    });
+
+    if (install.status !== 0) {
+      // npm prints its own error — add the practical remediation on top
+      console.error('\n❌ Install failed.');
+      console.error('\nMost common cause: your global npm prefix is owned by root (EACCES).');
+      console.error('\nQuick fix:');
+      console.error('  sudo npm install -g claude-recall');
+      console.error('\nPermanent fix (no more sudo for any global install on this machine):');
+      console.error('  mkdir -p ~/.npm-global');
+      console.error("  npm config set prefix ~/.npm-global");
+      console.error("  echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc");
+      console.error('  source ~/.bashrc');
+      console.error('\nThen re-run: claude-recall upgrade');
+      process.exit(install.status ?? 1);
+    }
+
+    // Kill any running MCP servers so Claude Code respawns them with the new binary
+    console.log('\n🧹 Cleaning up running MCP servers (Claude Code respawns them on next tool call)...');
+    try {
+      spawnSync('claude-recall', ['mcp', 'cleanup', '--all'], { stdio: 'inherit' });
+    } catch {
+      // Non-fatal — the user can restart Claude Code manually if this fails
+    }
+
+    console.log(`\n✓ Upgraded to ${latest}. No need to re-run \`claude mcp add\` — existing`);
+    console.log('  registrations point at the `claude-recall` command and pick up the new');
+    console.log('  binary automatically. Just run any tool in Claude Code.');
+  }
+
+  /**
    * Demote rules loaded often but never cited — excludes them from future load_rules payloads.
    * Rules remain searchable via search_memory and can be restored with `rules promote <id>`.
    */
@@ -1742,6 +1822,16 @@ async function main() {
     .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.cleanupTestPollution({ dryRun: options.dryRun });
+      process.exit(0);
+    });
+
+  // Upgrade command: one-shot upgrade, handles EACCES inline
+  program
+    .command('upgrade')
+    .description('Upgrade claude-recall to the latest version and clear stale MCP servers')
+    .action(async () => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      await cli.upgrade();
       process.exit(0);
     });
 
