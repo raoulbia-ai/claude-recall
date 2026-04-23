@@ -69,30 +69,37 @@ Both agents use the same database at `~/.claude-recall/claude-recall.db`, scoped
 claude-recall upgrade
 ```
 
-One command. Checks the registry, refreshes the global binary, clears any running MCP servers (Claude Code respawns them on the next tool call, automatically picking up the new version). **No `claude mcp add` re-run needed** — existing registrations point at the `claude-recall` command, not a pinned path.
+One command. Checks the registry, refreshes the global binary, clears any running MCP servers — Claude Code respawns them on the next tool call, picking up the new version. **No `claude mcp add` re-run needed** — existing registrations point at the `claude-recall` command, not a pinned path.
 
 For Pi, run `pi update npm:claude-recall` and restart Pi.
 
-<details>
-<summary><b>If <code>claude-recall upgrade</code> reports <code>EACCES: permission denied</code></b></summary>
+> **Seeing `error: unknown command 'upgrade'`?** Your installed version predates 0.23.2 (the release that added the `upgrade` command). Bootstrap once with `npm install -g claude-recall@latest`, then all future upgrades use `claude-recall upgrade`.
 
-Your global npm prefix is root-owned (common with `apt install nodejs`). Pick one:
+<details>
+<summary><b>If the install step reports <code>EACCES: permission denied</code></b></summary>
+
+Your global npm prefix is root-owned (common when node was installed via `apt install nodejs`). Pick one:
 
 **Quick** — one-time sudo:
 ```bash
-sudo npm install -g claude-recall
+sudo npm install -g claude-recall@latest
 ```
 
-**Permanent** — move the prefix to a user-owned directory, then no global install ever needs sudo again:
+**Permanent** — move the prefix to a user-owned directory so no global install ever needs sudo again:
 ```bash
 mkdir -p ~/.npm-global
 npm config set prefix ~/.npm-global
 echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 
-# now re-run
-claude-recall upgrade
+# Install claude-recall into the new user-owned prefix:
+npm install -g claude-recall@latest
+
+# Verify and you're done:
+claude-recall --version
 ```
+
+The prefix fix only tells npm *where* to install; it doesn't install anything itself. The explicit `npm install -g` line picks up the new binary into the new prefix so `claude-recall` on your PATH has the `upgrade` command.
 
 </details>
 

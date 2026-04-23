@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.3] - 2026-04-23
+
+### Changed
+
+- **README upgrade instructions** now cover the pre-0.23.2 bootstrap case. Users on older versions who run `claude-recall upgrade` hit `error: unknown command 'upgrade'` — the section now explicitly says to bootstrap once with `npm install -g claude-recall@latest`, then future upgrades use `claude-recall upgrade`.
+- The EACCES details block now includes the missing `npm install -g claude-recall@latest` step inside the permanent-prefix-fix recipe. Previously the block jumped straight from `source ~/.bashrc` to `claude-recall upgrade`, which fails when the old binary is still on PATH — the prefix fix only changes *where* npm installs, not what is installed.
+
 ## [0.23.2] - 2026-04-23
 
 ### Added
