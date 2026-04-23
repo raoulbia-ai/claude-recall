@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.2] - 2026-04-23
+
+### Added
+
+- **`claude-recall upgrade` command.** One-shot upgrade path: checks the npm registry, runs `npm install -g claude-recall@latest`, then clears any running MCP servers so Claude Code respawns them with the new binary on the next tool call. No need to re-run `claude mcp add` — existing registrations point at the `claude-recall` command name, not a pinned path, so they pick up the new binary automatically.
+- On `EACCES: permission denied`, the command prints both remediation paths inline (one-time `sudo`, or the permanent user-owned `~/.npm-global` prefix fix) so users don't have to go hunting for a solution.
+
+### Changed
+
+- **README install & upgrade instructions rewritten** for clarity. The Upgrading section collapses from three conditional sub-sections into a single `claude-recall upgrade` command plus an optional collapsible block for the EACCES case. Install section adds an inline note for the same error.
+
 ## [0.23.1] - 2026-04-22
 
 ### Fixed

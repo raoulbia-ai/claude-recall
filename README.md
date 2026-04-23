@@ -34,33 +34,22 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 ### Install for Claude Code
 
-#### First-time install
-
-Run this **once** on your machine:
+Install the global binary once per machine:
 
 ```bash
 npm install -g claude-recall
 ```
 
-Then run these **in the project directory** where you want claude-recall active:
+Then, in each project directory where you want claude-recall active:
 
 ```bash
 claude-recall setup --install
 claude mcp add claude-recall -- claude-recall mcp start
 ```
 
-Restart Claude Code. **Verify**: ask *"Load my rules"* — Claude should call `mcp__claude-recall__load_rules`.
+Restart Claude Code. Ask *"Load my rules"* to verify — Claude should call `load_rules`.
 
-#### Adding to another project
-
-The global binary is already installed. Just `cd` into the new project and run the per-project commands:
-
-```bash
-claude-recall setup --install
-claude mcp add claude-recall -- claude-recall mcp start
-```
-
-Restart Claude Code in that project.
+> **Hit `EACCES: permission denied`?** Your global npm is owned by root. Either `sudo npm install -g claude-recall` once, or do the permanent fix described in [Upgrading](#upgrading) below.
 
 ### Install for Pi
 
@@ -68,49 +57,44 @@ Restart Claude Code in that project.
 pi install npm:claude-recall
 ```
 
-That's it. The extension registers tools and loads a skill automatically. No further configuration needed.
-
-**Verify:** Start Pi and ask *"Load my rules"* — Pi should call `recall_load_rules`.
+That's it. Ask Pi to *"Load my rules"* to verify.
 
 ### Shared Database
 
-Both agents use the same database (`~/.claude-recall/claude-recall.db`). Memories are scoped per project by working directory. A correction learned in Claude Code is available in Pi and vice versa.
+Both agents use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the other.
 
 ### Upgrading
 
-#### If you use Claude Code
-
-Run this **once** to update the global binary:
-
 ```bash
-npm install -g claude-recall
+claude-recall upgrade
 ```
 
-Then run this **in each project directory** where you use claude-recall (the binary upgrade alone isn't enough — new releases sometimes add hook events that need to be registered in each project's `.claude/settings.json`):
+One command. Checks the registry, refreshes the global binary, clears any running MCP servers (Claude Code respawns them on the next tool call, automatically picking up the new version). **No `claude mcp add` re-run needed** — existing registrations point at the `claude-recall` command, not a pinned path.
 
+For Pi, run `pi update npm:claude-recall` and restart Pi.
+
+<details>
+<summary><b>If <code>claude-recall upgrade</code> reports <code>EACCES: permission denied</code></b></summary>
+
+Your global npm prefix is root-owned (common with `apt install nodejs`). Pick one:
+
+**Quick** — one-time sudo:
 ```bash
-claude-recall setup --install
+sudo npm install -g claude-recall
 ```
 
-Restart Claude Code so the new MCP server starts (or run `claude-recall mcp restart` from the project directory to keep the current session running).
-
-**Verify**: `claude-recall --version` shows the new version, and asking *"Load my rules"* in Claude Code triggers `mcp__claude-recall__load_rules`.
-
-#### If you use Pi
-
-Run this **once** — the `npm:` prefix is required (it matches the original install command):
-
+**Permanent** — move the prefix to a user-owned directory, then no global install ever needs sudo again:
 ```bash
-pi update npm:claude-recall
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# now re-run
+claude-recall upgrade
 ```
 
-Restart Pi to load the updated extension.
-
-**Verify**: `pi list` shows the new `claude-recall` version, and asking *"Load my rules"* in Pi triggers `recall_load_rules`.
-
-#### If you use both
-
-Both upgrades are independent — run the Claude Code section AND the Pi section. Both agents share the same `~/.claude-recall/claude-recall.db`, so memories captured in either are visible to the other.
+</details>
 
 ---
 
@@ -312,6 +296,7 @@ claude-recall mcp cleanup --all          # Stop all stale MCP servers
 # ── Setup & Diagnostics ─────────────────────────────────────────────
 claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks
+claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Clean up old hooks, install skills
 claude-recall hooks check                # Verify hook files exist and are valid
