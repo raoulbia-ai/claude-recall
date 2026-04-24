@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-04-24
+
+### Added
+
+- **`claude-recall repair` is now a conservative hook-path fixer by default, runnable on any machine.** Motivated by a real stale-hook failure on a user's VM where `~/.claude/settings.json` pointed at `/home/USER/node_modules/claude-recall/dist/cli/claude-recall-cli.js` — a path that no longer existed, so every `Stop` / `UserPromptSubmit` / `PreCompact` hook threw `MODULE_NOT_FOUND`. Running `claude-recall repair` now:
+  - Scans user-global (`~/.claude/settings.json` + `settings.local.json`) and the closest project (`.claude/settings.json`) settings files.
+  - Finds hooks whose commands reference claude-recall but point at a missing absolute script path.
+  - If `claude-recall` is on PATH, rewrites those commands to the portable `claude-recall hook run <id>` form — preserving each hook's `timeout`, each group's `matcher`, and every sibling (non-claude-recall) hook verbatim. If `claude-recall` is not on PATH, reports the issue and exits 0 with install instructions.
+  - Writes a `<path>.bak.<iso-timestamp>` before any mutation.
+  - **Does not touch `hooksVersion`, does not re-install missing hooks, and does not rewrite non-claude-recall hooks.**
+  - New flags: `--auto` (non-interactive), `--dry-run` (report only), `--scope user|project|all`, `--reinstall-hooks` (legacy opinionated path that rewrites the whole block from the current template; `--force` kept as an alias for backwards compatibility).
+- **`postinstall` now runs `claude-recall repair --auto --scope user` on upgrade.** Self-heals the common "global claude-recall moved/renamed and left stale hook commands in `~/.claude/settings.json`" failure without ever installing hooks where none exist (which would repeat the 0.24.0 clobber bug). Non-fatal if it errors — `npm install` always succeeds.
+
 ## [0.24.2] - 2026-04-24
 
 ### Fixed

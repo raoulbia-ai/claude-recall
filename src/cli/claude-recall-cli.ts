@@ -17,6 +17,7 @@ import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { runRepair } from './commands/repair';
 
 const program = new Command();
 
@@ -1383,14 +1384,40 @@ async function main() {
       process.exit(0);
     });
 
-  // Repair command - cleans up old hooks and installs skills
+  // Repair command — conservative by default: fix broken hook paths without
+  // touching user customizations. --reinstall-hooks (or legacy --force) runs
+  // the opinionated installer that rewrites the entire hook block from template.
   program
     .command('repair')
-    .description('Clean up old hooks and install skills (v0.9.0+ migration)')
-    .option('--force', 'Force overwrite existing configuration')
-    .action((options) => {
-      installSkillsAndHook(options.force || false);
-      process.exit(0);
+    .description('Fix broken claude-recall hook paths in settings.json (conservative)')
+    .option('--auto', 'Non-interactive; apply safe fixes without prompting')
+    .option('--dry-run', 'Report what would change without writing any files')
+    .option('--reinstall-hooks', 'Rewrite the entire hook block from current template (opinionated)')
+    .option('--scope <scope>', 'user | project | all', 'all')
+    .option('--force', '[deprecated alias for --reinstall-hooks]')
+    .action(async (options) => {
+      if (options.reinstallHooks || options.force) {
+        installSkillsAndHook(true);
+        process.exit(0);
+      }
+      const scope = (options.scope || 'all') as 'user' | 'project' | 'all';
+      if (!['user', 'project', 'all'].includes(scope)) {
+        console.error(`Invalid --scope: ${scope}. Use user, project, or all.`);
+        process.exit(2);
+      }
+      try {
+        const result = await runRepair({
+          auto: !!options.auto,
+          dryRun: !!options.dryRun,
+          scope,
+        });
+        process.exit(result.exitCode);
+      } catch (err) {
+        // Never crash postinstall. Log and exit 0 on unexpected errors so
+        // `npm install` continues. Surface via non-zero only for interactive runs.
+        console.error(`repair: unexpected error: ${(err as Error).message}`);
+        process.exit(options.auto ? 0 : 1);
+      }
     });
 
   // Check hooks function
