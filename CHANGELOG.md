@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.1] - 2026-04-24
+
+### Fixed
+
+- **`claude-recall upgrade` now detects stale project-local installs** that shadow the just-upgraded global binary. After running `npm install -g`, walks from cwd up to `$HOME` (and explicitly checks `$HOME/node_modules/`) looking for `node_modules/claude-recall/`. For each one found, prints the path, the version, and a drift indicator. By default it just warns and prints copy-paste `rm` commands; pass `--clean-locals` to auto-remove.
+
+  Why this matters: `npx claude-recall` walks UP the directory tree from cwd looking for `node_modules/.bin/claude-recall` and uses the first match — not the global install. A stray `~/node_modules/claude-recall/` (a common WSL/Windows accident, or leftover from a one-off `npm install` somewhere) traps every `npx claude-recall` invocation under `$HOME` and silently runs an old version. After upgrading globally, users had no obvious way to know this until they noticed a feature missing.
+
+  The walk stops at `$HOME` so global installs (under `/lib/node_modules/`, `/.nvm/`, `/usr/local/`, etc.) are never reported or touched.
+
 ## [0.24.0] - 2026-04-24
 
 ### Security

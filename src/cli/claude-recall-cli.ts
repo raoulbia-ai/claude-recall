@@ -265,6 +265,97 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * Find project-local node_modules/claude-recall/ installs that shadow the
+   * global one when invoked via `npx claude-recall`. npx walks up from cwd
+   * looking for node_modules/.bin/claude-recall and uses the first match,
+   * not the globally-installed binary. A stray ~/node_modules/claude-recall/
+   * (a common WSL/Windows accident) traps every npx invocation under $HOME.
+   *
+   * Returns dir + version for each stale install found. Skips the global
+   * install (heuristic: paths containing /lib/node_modules/ or /.nvm/).
+   * Walk stops at $HOME so we never report or touch system locations.
+   */
+  private findStaleLocalInstalls(): { dir: string; version: string }[] {
+    const found: { dir: string; version: string }[] = [];
+    const seen = new Set<string>();
+    const home = os.homedir();
+
+    const checkDir = (dir: string) => {
+      if (seen.has(dir)) return;
+      seen.add(dir);
+      const pkgPath = path.join(dir, 'node_modules', 'claude-recall', 'package.json');
+      if (!fs.existsSync(pkgPath)) return;
+      // Skip global install paths so we never propose nuking them.
+      if (pkgPath.includes('/lib/node_modules/')) return;
+      if (pkgPath.includes('/.nvm/')) return;
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        if (pkg && typeof pkg.version === 'string') {
+          found.push({ dir, version: pkg.version });
+        }
+      } catch {
+        // Unreadable manifest — skip silently.
+      }
+    };
+
+    // Walk cwd up to $HOME (don't traverse above the user's home).
+    let dir = process.cwd();
+    while (true) {
+      checkDir(dir);
+      if (dir === home) break;
+      const parent = path.dirname(dir);
+      if (parent === dir) break; // hit filesystem root
+      dir = parent;
+    }
+
+    // If cwd was outside the home tree, the walk skipped $HOME. Check it.
+    checkDir(home);
+
+    return found;
+  }
+
+  /**
+   * Print a warning about stale local installs. If `autoClean` is true,
+   * actually remove them. Otherwise print copy-paste rm commands.
+   */
+  private warnOrCleanStaleLocals(globalVersion: string, autoClean: boolean): void {
+    const stale = this.findStaleLocalInstalls();
+    if (stale.length === 0) return;
+
+    console.log('\n⚠ Stale local claude-recall installs detected:');
+    for (const s of stale) {
+      const drift = s.version !== globalVersion
+        ? ` (drift: global is ${globalVersion})`
+        : '';
+      console.log(`   ${path.join(s.dir, 'node_modules', 'claude-recall')}  v${s.version}${drift}`);
+    }
+    console.log('');
+    console.log('   These shadow the global install. `npx claude-recall` walks up from cwd');
+    console.log('   looking for node_modules/.bin/claude-recall and uses the first match —');
+    console.log(`   not the global v${globalVersion}.`);
+
+    if (autoClean) {
+      console.log('\n🧹 Removing...');
+      for (const s of stale) {
+        const target = path.join(s.dir, 'node_modules', 'claude-recall');
+        try {
+          fs.rmSync(target, { recursive: true, force: true });
+          console.log(`   ✓ removed ${target}`);
+        } catch (e) {
+          console.log(`   ✗ failed to remove ${target}: ${(e as Error).message}`);
+        }
+      }
+      console.log('\n   Verify with: npx claude-recall --version');
+    } else {
+      console.log('\n   To remove them all:');
+      for (const s of stale) {
+        console.log(`     rm -rf ${path.join(s.dir, 'node_modules', 'claude-recall')}`);
+      }
+      console.log('\n   Or re-run upgrade with auto-clean: claude-recall upgrade --clean-locals');
+    }
+  }
+
+  /**
    * One-shot upgrade: check registry, install latest globally, clean up any
    * running MCP servers (so fresh 0.x spawns on next Claude Code tool call).
    *
@@ -272,8 +363,9 @@ class ClaudeRecallCLI {
    *   - EACCES on `/usr/lib/node_modules` → print sudo + permanent-prefix fix
    *   - No npm in PATH → actionable error
    *   - Registry unreachable → clear error, don't leave install half-done
+   *   - Stale project-local installs shadowing the global → warn (or clean with --clean-locals)
    */
-  async upgrade(): Promise<void> {
+  async upgrade(opts: { cleanLocals?: boolean } = {}): Promise<void> {
     const { execSync, spawnSync } = require('child_process');
 
     // Current version from package.json shipped with the installed binary
@@ -338,6 +430,10 @@ class ClaudeRecallCLI {
     } catch {
       // Non-fatal — the user can restart Claude Code manually if this fails
     }
+
+    // Detect stale project-local installs that would shadow the just-installed
+    // global binary when invoked via `npx claude-recall`.
+    this.warnOrCleanStaleLocals(latest, opts.cleanLocals === true);
 
     console.log(`\n✓ Upgraded to ${latest}. No need to re-run \`claude mcp add\` — existing`);
     console.log('  registrations point at the `claude-recall` command and pick up the new');
@@ -1850,9 +1946,10 @@ async function main() {
   program
     .command('upgrade')
     .description('Upgrade claude-recall to the latest version and clear stale MCP servers')
-    .action(async () => {
+    .option('--clean-locals', 'Also remove stale project-local installs that shadow the global binary')
+    .action(async (options) => {
       const cli = new ClaudeRecallCLI(program.opts());
-      await cli.upgrade();
+      await cli.upgrade({ cleanLocals: options.cleanLocals === true });
       process.exit(0);
     });
 
