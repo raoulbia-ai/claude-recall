@@ -291,7 +291,9 @@ tail -20 ~/.claude-recall/hook-logs/memory-stop.log
 tail -20 ~/.claude-recall/hook-logs/correction-detector.log
 
 # "Something is broken, start fresh"
-claude-recall repair                     # Clean up old hooks, reinstall skills
+claude-recall repair                     # Conservative: fix broken hook paths in settings.json (preserves your customizations)
+claude-recall repair --dry-run           # Preview what repair would change
+claude-recall repair --reinstall-hooks   # Opinionated: rewrite entire hook block from current template
 claude-recall setup --install            # Reinstall skills + hooks
 claude-recall mcp cleanup --all          # Stop all stale MCP servers
 ```
@@ -305,7 +307,11 @@ claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
-claude-recall repair                     # Clean up old hooks, install skills
+claude-recall repair                     # Fix broken claude-recall hook paths (conservative: preserves user customizations)
+claude-recall repair --auto              # Non-interactive; apply safe fixes without prompting (used by postinstall)
+claude-recall repair --dry-run           # Report what would change without writing
+claude-recall repair --scope user|project|all  # Scope the scan (default: all)
+claude-recall repair --reinstall-hooks   # Opinionated: rewrite entire hook block from current template
 claude-recall hooks check                # Verify hook files exist and are valid
 claude-recall hooks test-enforcement     # Test if search enforcer hook works
 
