@@ -117,6 +117,30 @@ try {
   // `claude-recall setup` invocation by the user, which is conscious and
   // produces a diff the user can see.
 
+  // Conservative repair on upgrade: fix broken absolute hook paths in
+  // ~/.claude/settings.json that reference a defunct claude-recall install
+  // (common when node/nvm versions change, or when the package was reinstalled
+  // into a different location). The --auto --scope user flags mean:
+  //   • only user-global settings are touched (no project files)
+  //   • only commands pointing at MISSING absolute scripts get rewritten
+  //   • user customizations (timeouts, matchers, sibling hooks) preserved
+  //   • writes a .bak.<timestamp> before any change
+  //   • never installs hooks where none exist — satisfies the "don't clobber"
+  //     rule above
+  try {
+    const cliPath = path.join(__dirname, '..', 'dist', 'cli', 'claude-recall-cli.js');
+    if (fs.existsSync(cliPath)) {
+      execSync(`node "${cliPath}" repair --auto --scope user`, {
+        stdio: 'inherit',
+        timeout: 15000
+      });
+    }
+  } catch (repairError) {
+    // Non-fatal: postinstall must never fail the npm install. Any repair
+    // problem can be fixed manually with `claude-recall repair`.
+    console.log('⚠️  Auto-repair skipped (non-fatal):', repairError.message);
+  }
+
   console.log('\n✅ Installation complete!\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📌 ACTIVATE CLAUDE RECALL:');
