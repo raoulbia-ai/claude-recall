@@ -1,0 +1,53 @@
+# Pre-publish tarball lint, run on every PR (including from forks) and on
+# pushes to main. Catches accidental leaks of internal product names,
+# personal paths, credential prefixes, or forbidden files (auto-skills,
+# settings.json, audit reports, etc.) before they can be merged.
+#
+# This is a defense-in-depth complement to the local `prepublishOnly` hook
+# in package.json — that one fires when a maintainer runs `npm publish`,
+# this one fires earlier in the workflow on every contributor PR.
+#
+# Security model:
+#   - Triggered by `pull_request` (NOT `pull_request_target`), which means
+#     fork PRs run in a sandbox with read-only GITHUB_TOKEN and no access
+#     to repo secrets. The check is purely an inspection of source files,
+#     so this restricted environment is sufficient.
+#   - Explicit `permissions: contents: read` (least privilege).
+#   - First-party `actions/*` actions only.
+#
+# Bypass for legitimate publish-time false positives is documented in
+# scripts/check-publish.js (allowlist by tightening the regex).
+
+name: publish-check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-tarball:
+    name: Lint would-be npm tarball
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        # npm ci honors package-lock.json exactly; no version drift.
+        # Build deps are needed because `npm pack --dry-run` may fire
+        # `prepare` (which runs `tsc`) on some npm versions.
+        run: npm ci
+
+      - name: Run pre-publish tarball check
+        run: npm run check:publish
