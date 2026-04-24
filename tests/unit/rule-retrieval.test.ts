@@ -215,14 +215,14 @@ describe('rankRulesForToolCall — failure exclusion (raw failures are noise)', 
         key: 'promoted_1234_abc',
         type: 'failure',
         value: {
-          content: 'always run pre-flight checks before nemoclaw onboard',
+          content: 'always run pre-flight checks before mycli onboard',
           source: 'promotion-engine',
           evidence_count: 3,
         },
       }),
     ];
 
-    const matches = rankRulesForToolCall('Bash', { command: 'nemoclaw onboard --from blueprint' }, rules);
+    const matches = rankRulesForToolCall('Bash', { command: 'mycli onboard --from blueprint' }, rules);
 
     expect(matches.length).toBe(1);
     expect(matches[0].rule.key).toBe('promoted_1234_abc');
@@ -233,11 +233,11 @@ describe('rankRulesForToolCall — failure exclusion (raw failures are noise)', 
       rule({
         key: 'somekey',
         type: 'failure',
-        value: { content: 'always pipe y to nemoclaw upgrade prompt', source: 'promotion-engine' },
+        value: { content: 'always pipe y to mycli upgrade prompt', source: 'promotion-engine' },
       }),
     ];
 
-    const matches = rankRulesForToolCall('Bash', { command: 'nemoclaw upgrade' }, rules);
+    const matches = rankRulesForToolCall('Bash', { command: 'mycli upgrade' }, rules);
 
     expect(matches.length).toBe(1);
     expect(matches[0].rule.key).toBe('somekey');

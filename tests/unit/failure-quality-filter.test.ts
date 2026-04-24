@@ -2,8 +2,8 @@
  * Fix B — Quality filter for failure capture.
  *
  * Pre-fix bug: tool-outcome-watcher stores ANY non-zero exit code as a failure
- * memory with generic boilerplate advice. Commands like `openshell sandbox list
- * 2>/dev/null`, `ericai eristatus`, `which nonexistent-tool` get stored as
+ * memory with generic boilerplate advice. Commands like `apptool sandbox list
+ * 2>/dev/null`, `mytool eristatus`, `which nonexistent-tool` get stored as
  * permanent failure lessons with no actionable insight.
  *
  * Post-fix contract:
@@ -20,19 +20,19 @@ import { shouldCaptureFailure } from '../../src/hooks/tool-outcome-watcher';
 
 describe('failure quality filter', () => {
   test('skips commands ending in 2>/dev/null (exploratory probes)', () => {
-    expect(shouldCaptureFailure('openshell sandbox list 2>/dev/null', '1', 'command not found')).toBe(false);
+    expect(shouldCaptureFailure('apptool sandbox list 2>/dev/null', '1', 'command not found')).toBe(false);
     expect(shouldCaptureFailure('some-tool --check 2>/dev/null', '1', '')).toBe(false);
   });
 
   test('skips command-existence checks (which, type, command -v)', () => {
-    expect(shouldCaptureFailure('which openshell', '1', '')).toBe(false);
-    expect(shouldCaptureFailure('type ericai', '1', '')).toBe(false);
+    expect(shouldCaptureFailure('which apptool', '1', '')).toBe(false);
+    expect(shouldCaptureFailure('type mytool', '1', '')).toBe(false);
     expect(shouldCaptureFailure('command -v nonexistent', '127', '')).toBe(false);
   });
 
   test('skips command-not-found errors regardless of command', () => {
-    expect(shouldCaptureFailure('ericai eristatus', '127', 'ericai: command not found')).toBe(false);
-    expect(shouldCaptureFailure('openshell sandbox list', '127', 'openshell: command not found')).toBe(false);
+    expect(shouldCaptureFailure('mytool eristatus', '127', 'mytool: command not found')).toBe(false);
+    expect(shouldCaptureFailure('apptool sandbox list', '127', 'apptool: command not found')).toBe(false);
   });
 
   test('skips very short commands', () => {
