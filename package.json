@@ -49,6 +49,8 @@
     "search": "npm run claude-recall search",
     "preuninstall": "node scripts/uninstall.js",
     "prepare": "npm run build",
+    "prepublishOnly": "node scripts/check-publish.js",
+    "check:publish": "node scripts/check-publish.js",
     "mcp:start": "node dist/cli/claude-recall-cli.js mcp start",
     "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",

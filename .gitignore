@@ -69,12 +69,13 @@ swarm-tasks/
 test-instructions-*.md
 CLAUDE.md
 
-# Scripts - exclude all except postinstall.js and publish.sh
+# Scripts - exclude all except specifically allowlisted maintainer scripts
 scripts/*
 !scripts/postinstall.js
 !scripts/postinstall-claude-md.js
 !scripts/uninstall.js
 !scripts/publish.sh
+!scripts/check-publish.js
 
 # Research / reference
 .research/
