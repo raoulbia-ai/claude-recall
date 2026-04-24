@@ -396,48 +396,55 @@ class ClaudeRecallCLI {
     console.log(`Installed: ${current}`);
     console.log(`Latest:    ${latest}`);
 
-    if (current === latest) {
-      console.log('\n✓ Already up to date.');
-      return;
+    const needsInstall = current !== latest;
+
+    if (needsInstall) {
+      console.log(`\n📦 Upgrading ${current} → ${latest}...\n`);
+
+      // Run npm install -g, streaming output so the user sees progress / errors live
+      const install = spawnSync('npm', ['install', '-g', 'claude-recall@latest'], {
+        stdio: 'inherit',
+      });
+
+      if (install.status !== 0) {
+        // npm prints its own error — add the practical remediation on top
+        console.error('\n❌ Install failed.');
+        console.error('\nMost common cause: your global npm prefix is owned by root (EACCES).');
+        console.error('\nQuick fix:');
+        console.error('  sudo npm install -g claude-recall');
+        console.error('\nPermanent fix (no more sudo for any global install on this machine):');
+        console.error('  mkdir -p ~/.npm-global');
+        console.error("  npm config set prefix ~/.npm-global");
+        console.error("  echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc");
+        console.error('  source ~/.bashrc');
+        console.error('\nThen re-run: claude-recall upgrade');
+        process.exit(install.status ?? 1);
+      }
+
+      // Kill any running MCP servers so Claude Code respawns them with the new binary
+      console.log('\n🧹 Cleaning up running MCP servers (Claude Code respawns them on next tool call)...');
+      try {
+        spawnSync('claude-recall', ['mcp', 'cleanup', '--all'], { stdio: 'inherit' });
+      } catch {
+        // Non-fatal — the user can restart Claude Code manually if this fails
+      }
     }
 
-    console.log(`\n📦 Upgrading ${current} → ${latest}...\n`);
-
-    // Run npm install -g, streaming output so the user sees progress / errors live
-    const install = spawnSync('npm', ['install', '-g', 'claude-recall@latest'], {
-      stdio: 'inherit',
-    });
-
-    if (install.status !== 0) {
-      // npm prints its own error — add the practical remediation on top
-      console.error('\n❌ Install failed.');
-      console.error('\nMost common cause: your global npm prefix is owned by root (EACCES).');
-      console.error('\nQuick fix:');
-      console.error('  sudo npm install -g claude-recall');
-      console.error('\nPermanent fix (no more sudo for any global install on this machine):');
-      console.error('  mkdir -p ~/.npm-global');
-      console.error("  npm config set prefix ~/.npm-global");
-      console.error("  echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc");
-      console.error('  source ~/.bashrc');
-      console.error('\nThen re-run: claude-recall upgrade');
-      process.exit(install.status ?? 1);
-    }
-
-    // Kill any running MCP servers so Claude Code respawns them with the new binary
-    console.log('\n🧹 Cleaning up running MCP servers (Claude Code respawns them on next tool call)...');
-    try {
-      spawnSync('claude-recall', ['mcp', 'cleanup', '--all'], { stdio: 'inherit' });
-    } catch {
-      // Non-fatal — the user can restart Claude Code manually if this fails
-    }
-
-    // Detect stale project-local installs that would shadow the just-installed
-    // global binary when invoked via `npx claude-recall`.
+    // Detect stale project-local installs that would shadow the global binary
+    // when invoked via `npx claude-recall`. Runs on every upgrade invocation,
+    // including when already up-to-date — so `claude-recall upgrade` doubles
+    // as a diagnostic for the npx-walks-up-and-finds-stale-local trap, and
+    // `claude-recall upgrade --clean-locals` works as a one-shot cleanup
+    // command even when no version change is pending.
     this.warnOrCleanStaleLocals(latest, opts.cleanLocals === true);
 
-    console.log(`\n✓ Upgraded to ${latest}. No need to re-run \`claude mcp add\` — existing`);
-    console.log('  registrations point at the `claude-recall` command and pick up the new');
-    console.log('  binary automatically. Just run any tool in Claude Code.');
+    if (needsInstall) {
+      console.log(`\n✓ Upgraded to ${latest}. No need to re-run \`claude mcp add\` — existing`);
+      console.log('  registrations point at the `claude-recall` command and pick up the new');
+      console.log('  binary automatically. Just run any tool in Claude Code.');
+    } else {
+      console.log('\n✓ Already up to date.');
+    }
   }
 
   /**

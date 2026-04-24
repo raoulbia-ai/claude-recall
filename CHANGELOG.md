@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.2] - 2026-04-24
+
+### Fixed
+
+- **`claude-recall upgrade` now scans for stale local installs even when already up-to-date.** 0.24.1 added the scan but only ran it after a successful upgrade — users on the latest version had no way to invoke just the diagnostic. Now the scan runs on every `claude-recall upgrade` invocation regardless of whether a version change happened, so:
+  - `claude-recall upgrade` on an outdated global → upgrades + scans (as before)
+  - `claude-recall upgrade` on a current global → scans only (now acts as a diagnostic)
+  - `claude-recall upgrade --clean-locals` → always scans, auto-removes anything found, works even with no upgrade pending
+
+  Note: this also addresses the chicken-and-egg from 0.24.0 → 0.24.1 — users who upgraded with the old 0.24.0 binary never saw the scan run, because the running process didn't have the new code. Re-running `claude-recall upgrade` on 0.24.2+ from the same machine now invokes the scan whether or not an install is needed.
+
 ## [0.24.1] - 2026-04-24
 
 ### Fixed
