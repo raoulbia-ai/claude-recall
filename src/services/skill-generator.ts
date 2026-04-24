@@ -163,15 +163,23 @@ export class SkillGenerator {
   }
 
   /**
-   * Auto-trigger entry point: check thresholds and generate if needed
+   * Auto-trigger entry point: check thresholds and generate if needed.
+   *
+   * Always resolves a projectId, never falls back to cross-project mode.
+   * Cross-project generation caused a leak: when the MCP server ran inside
+   * the claude-recall dev directory while the maintainer also used
+   * claude-recall on other projects, the SkillGenerator pulled OTHER
+   * projects' memories into the auto-skills subdir, which then shipped via
+   * npm publish. Hard-scoping to the current project prevents that.
    */
   checkAndGenerate(projectDir: string, projectId?: string): GenerationResult[] {
     const results: GenerationResult[] = [];
+    const scopedProjectId = projectId || ConfigService.getInstance().getProjectId();
 
     for (const topic of TOPICS) {
-      const memories = this.getMemoriesForTopic(topic, projectId);
+      const memories = this.getMemoriesForTopic(topic, scopedProjectId);
       if (memories.length >= topic.threshold) {
-        const result = this.generateTopic(topic.id, projectDir, false, projectId);
+        const result = this.generateTopic(topic.id, projectDir, false, scopedProjectId);
         results.push(result);
       }
     }
@@ -315,8 +323,13 @@ export class SkillGenerator {
     if (projectId) {
       searchContext.project_id = projectId;
     } else {
-      // Skill generation runs across all projects for global skill discovery.
-      searchContext.includeAllProjects = true;
+      // Default to the current project rather than every project. Cross-project
+      // collection here previously caused memories from other projects to land
+      // in the auto-skills subdir of whatever directory the MCP server happened
+      // to be running from, which then shipped to npm when that directory was
+      // claude-recall itself. CLI commands that genuinely want global scope
+      // must call generateAll/generateTopic with an explicit projectId.
+      searchContext.project_id = ConfigService.getInstance().getProjectId();
     }
 
     let memories = this.storage.searchByContext(searchContext);

@@ -305,8 +305,13 @@ export class DatabaseManager {
       const toRemove = scored.slice(keepCount);
 
       if (!dryRun && toRemove.length > 0) {
-        const ids = toRemove.map(r => r.id).join(',');
-        db.exec(`DELETE FROM memories WHERE id IN (${ids})`);
+        // Prepared-statement deletion. Previous code used string interpolation
+        // of `id IN (${ids})` which was safe today (ids come from local
+        // autoincrement INTEGER PKs) but would silently become a SQLi vector
+        // if `id` ever became externally controlled. Audit 2026-04-23.
+        const placeholders = toRemove.map(() => '?').join(',');
+        db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+          .run(...toRemove.map(r => r.id));
       }
 
       this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories (kept ${keepCount} strongest)`);

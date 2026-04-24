@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.23.3",
+  "version": "0.24.0",
   "description": "Persistent memory for Claude Code and Pi with native Skills integration, automatic capture, failure learning, and project scoping",
   "main": "dist/index.js",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "files": [
     "dist/",
-    ".claude/",
+    ".claude/hooks/",
+    ".claude/skills/memory-management/",
     "skills/",
     "scripts/postinstall.js",
     "scripts/uninstall.js",
@@ -93,7 +94,6 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
-    "claude-recall": "^0.15.31",
     "commander": "^12.1.0"
   }
 }

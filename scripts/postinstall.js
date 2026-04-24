@@ -104,112 +104,36 @@ try {
     console.log('⚠️  Failed to register project (non-fatal):', error.message);
   }
 
-  // Install skills + minimal enforcement hook (v0.9.3+ hybrid approach)
-  try {
-    const cwd = process.cwd();
-    const projectName = path.basename(cwd);
-    const packageSkillsDir = path.join(__dirname, '../.claude/skills');
-    const packageHooksDir = path.join(__dirname, '../.claude/hooks');
-
-    if (projectName !== 'claude-recall' && !cwd.includes('node_modules/.pnpm') && !cwd.includes('node_modules/claude-recall')) {
-      const claudeDir = path.join(cwd, '.claude');
-      const hooksDir = path.join(claudeDir, 'hooks');
-      const settingsPath = path.join(claudeDir, 'settings.json');
-
-      // === CLEANUP: Remove OLD hooks (not the new search_enforcer.py) ===
-      if (fs.existsSync(hooksDir)) {
-        const oldHooks = [
-          'memory_enforcer.py',  // Old v0.8.x hook
-          'pre_tool_search_enforcer.py',
-          'mcp_tool_tracker.py',
-          'pubnub_pre_tool_hook.py',
-          'pubnub_prompt_hook.py',
-          'user_prompt_capture.py',
-          'user_prompt_reminder.py'
-        ];
-
-        let removedCount = 0;
-        for (const hook of oldHooks) {
-          const hookPath = path.join(hooksDir, hook);
-          if (fs.existsSync(hookPath)) {
-            fs.unlinkSync(hookPath);
-            removedCount++;
-          }
-        }
-
-        if (removedCount > 0) {
-          console.log(`🧹 Removed ${removedCount} old hook file(s)`);
-        }
-      }
-
-      // === INSTALL: New minimal search_enforcer.py ===
-      if (!fs.existsSync(hooksDir)) {
-        fs.mkdirSync(hooksDir, { recursive: true });
-      }
-
-      const hookSource = path.join(packageHooksDir, 'search_enforcer.py');
-      const hookDest = path.join(hooksDir, 'search_enforcer.py');
-
-      if (fs.existsSync(hookSource)) {
-        fs.copyFileSync(hookSource, hookDest);
-        fs.chmodSync(hookDest, 0o755);
-        console.log('✅ Installed search_enforcer.py to .claude/hooks/');
-      }
-
-      // === CONFIGURE: Update settings.json with new hook ===
-      let settings = {};
-      if (fs.existsSync(settingsPath)) {
-        try {
-          settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-        } catch (e) {
-          settings = {};
-        }
-      }
-
-      settings.hooksVersion = '3.0.0';  // v3 = hybrid (skill + minimal hook)
-      settings.hooks = {
-        PreToolUse: [
-          {
-            matcher: ".*",
-            hooks: [
-              {
-                type: "command",
-                command: `python3 ${hookDest}`
-              }
-            ]
-          }
-        ]
-      };
-
-      if (!fs.existsSync(claudeDir)) {
-        fs.mkdirSync(claudeDir, { recursive: true });
-      }
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-      console.log('✅ Configured search enforcement hook');
-
-      // === INSTALL: Copy skills directory ===
-      if (fs.existsSync(packageSkillsDir)) {
-        const skillsDir = path.join(claudeDir, 'skills');
-        copyDirRecursive(packageSkillsDir, skillsDir);
-        console.log('✅ Installed SKILL.md to .claude/skills/');
-      }
-    }
-  } catch (error) {
-    console.log('⚠️  Failed to install (non-fatal):', error.message);
-  }
+  // Hooks + Skills: opt-in via `claude-recall setup`.
+  //
+  // Earlier versions of this postinstall wrote to <cwd>/.claude/settings.json
+  // and replaced the user's `hooks` block wholesale. That silently destroyed any
+  // existing hook configuration the user had (security scanners, audit logs,
+  // unrelated PreToolUse hooks). When `npm install -g` was run from $HOME it
+  // even clobbered the user's GLOBAL Claude Code settings at ~/.claude/settings.json.
+  //
+  // The MCP registration above is enough for memory tools to work. Hook-based
+  // auto-capture and search enforcement now require an explicit
+  // `claude-recall setup` invocation by the user, which is conscious and
+  // produces a diff the user can see.
 
   console.log('\n✅ Installation complete!\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('📌 ACTIVATE CLAUDE RECALL:');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+  console.log('  1. Register the MCP server (if the auto-register above failed):');
+  console.log('       claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+  console.log('');
+  console.log('  2. (Optional) Enable hook-based auto-capture and search enforcement');
+  console.log('     in the CURRENT project. This writes to .claude/settings.json — review');
+  console.log('     the diff before committing:');
+  console.log('       npx claude-recall setup');
   console.log('');
   console.log('  Then restart Claude Code.');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('ℹ️  v0.9.3+ uses Skills (guidance) + minimal hook (enforcement).');
   console.log('💡 Your memories persist across conversations and restarts.\n');
 
 } catch (error) {

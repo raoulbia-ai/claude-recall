@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-04-24
+
+### Security
+
+A 2026-04-23 internal audit found that earlier published versions of this package shipped artifacts produced by the maintainer's own runtime use of claude-recall. This release closes the architectural causes and ensures published tarballs contain only the product itself, not runtime exhaust.
+
+- **Cross-project memory leak via auto-generated skills.** The `SkillGenerator` defaulted to `includeAllProjects = true` when no `projectId` was passed, which combined with the package shipping `.claude/skills/` wholesale caused memories from the maintainer's other projects (paths, command lines, internal product/component names) to land in the npm tarball. Every `npm publish` since 2026-04-09 in which auto-skills had been (re)generated on the publishing machine was affected. Fix:
+  - `SkillGenerator.checkAndGenerate` and `getMemoriesForTopic` now hard-scope to the current project (`ConfigService.getProjectId()`) — never broaden to all projects implicitly. CLI commands that genuinely want global generation must pass an explicit `projectId`.
+  - `package.json` `files` narrowed from `.claude/skills/` to `.claude/skills/memory-management/` so even if auto-skills are written to disk on a maintainer machine they cannot be packed.
+  - `.gitignore` adds `.claude/skills/auto-*/` to prevent accidental commits.
+- **Self-dependency removed.** `dependencies` previously listed `claude-recall: ^0.15.31`, causing `npm install -g claude-recall` to also pull a separate older copy of itself into `node_modules/claude-recall/`. That older copy ran its own `postinstall`, doubled the supply-chain attack surface, and would have auto-installed any malicious 0.15.x version published later. Removed.
+- **`postinstall` no longer overwrites `.claude/settings.json`.** The previous postinstall read the user's `<cwd>/.claude/settings.json`, then assigned a brand-new object to `settings.hooks`, silently destroying any other `PreToolUse` / `PostToolUse` / `Stop` / `UserPromptSubmit` / `SessionEnd` / `PreCompact` hooks the user had configured (including security tooling). When `npm install -g` was run from `$HOME` it clobbered the user's GLOBAL Claude Code settings. The postinstall now registers the MCP server only and prints activation instructions; hook installation is opt-in via `npx claude-recall setup`.
+- **`.claude/settings.local.json` no longer ships in the npm tarball.** The previous `files` entry `.claude/` packed the maintainer's local-settings file (which `.gitignore` correctly excluded but `npm publish` does not honor). This leaked the maintainer's home-directory paths and Bash permission allowlist. The new `files` entry is explicit (`hooks/`, `skills/memory-management/`).
+- **`claude-recall setup` now backs up `settings.json` before mutating it.** Opt-in invocation, but the wholesale `settings.hooks =` replacement could still surprise users who had hooks from other tools. A timestamped `.bak` is written first when existing hooks are detected.
+- **`load_rules` and rule-injector reframed as advisory user-data, not authoritative system instructions.** The directive previously told the model "If a rule conflicts with your plan, follow the rule — it reflects a user decision," and the rule-injector emitted bare snippets that Claude Code wraps in `<system-reminder>`. Combined, this turned any content that reached `store_memory` (including content captured from files or web pages the model read) into a persistent prompt-injection vector across sessions. The directive now explicitly identifies stored items as user data subject to safety/correctness defaults, and rule-injector wraps content in `<recalled-memory source="user-stored" advisory="true">`.
+- **`DELETE FROM memories WHERE id IN (...)` now uses prepared statements** in `database-manager.ts`. The previous string-interpolation form was safe in current usage (ids come from local autoincrement INTEGER PKs) but would have silently become an SQL-injection vector if `id` ever became externally controlled.
+- **MCP error responses no longer include the JavaScript stack trace.** Stacks leak file paths and code structure to the wire. Local diagnosis still has full stacks via `logServiceError()`.
+
+### Breaking
+
+- **Hook activation is now opt-in via `npx claude-recall setup`.** New installs no longer auto-write `.claude/settings.json` from `npm install`. Memory tools (load_rules, store_memory, search_memory, delete_memory, save_checkpoint, load_checkpoint) work out of the box via the MCP server registration. Hook-based features (auto-capture from user prompts, search enforcement, just-in-time rule injection, post-tool failure capture) require the explicit `setup` command. This is a one-time step per project where you want hooks active.
+
+### Maintenance
+
+- `.gitignore` updated to cover known gaps: `.ericai_authrecord` (and `*_authrecord`), `.jest-cache/`, `claude-recall-*.tgz` (the previous `claude-recall.db*.tgz` pattern only matched a literal `.db` substring).
+- Audit log committed at `.gstack/security-reports/2026-04-24-fixes-applied.md`.
+
+### Note on previously published versions
+
+Versions 0.20.13 through 0.23.3 were published with auto-skills bundled. Versions still inside the 72-hour npm unpublish window will be unpublished; older versions will be deprecated with a pointer to 0.24.0. The leaked content was cross-project memory data (file paths, command-line history, internal component names) — no credentials, no customer data, no source code from the originating projects.
+
 ## [0.23.3] - 2026-04-23
 
 ### Changed

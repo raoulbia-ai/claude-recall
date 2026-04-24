@@ -82,3 +82,15 @@ scripts/*
 # User-specific
 .claude-recall.json
 claude-recall.db*.tgz
+claude-recall-*.tgz
+
+# Editor/tool caches
+.jest-cache/
+
+# Auth records (e.g., MSAL/Azure AD tokens written into cwd by enterprise tools)
+.ericai_authrecord
+*_authrecord
+.azure/
+
+# Auto-generated skills (per-user/per-project — must never ship in npm publish)
+.claude/skills/auto-*/

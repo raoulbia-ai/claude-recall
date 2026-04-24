@@ -1049,13 +1049,34 @@ async function main() {
     }
 
     // === CONFIGURE: Update settings.json with new hook ===
+    // Back up existing settings.json before any mutation so the user can
+    // recover if claude-recall's hook block displaces a hook configuration
+    // they cared about. Earlier versions of this code overwrote `settings.hooks`
+    // wholesale with no backup, silently destroying user hook setups (audit
+    // 2026-04-23 Finding 2). The opt-in nature of `setup` makes overwrite
+    // defensible, but only with a recoverable backup.
     let settings: Record<string, unknown> = {};
 
     if (fs.existsSync(settingsPath)) {
+      const existingContent = fs.readFileSync(settingsPath, 'utf8');
       try {
-        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        settings = JSON.parse(existingContent);
       } catch (e) {
         settings = {};
+      }
+
+      const existingHooks = (settings as any).hooks;
+      const hasExistingHooks = existingHooks
+        && typeof existingHooks === 'object'
+        && Object.keys(existingHooks).length > 0;
+
+      if (hasExistingHooks) {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupPath = `${settingsPath}.bak.${ts}`;
+        fs.writeFileSync(backupPath, existingContent);
+        console.log(`📦 Backed up existing settings to: ${backupPath}`);
+        console.log('   claude-recall will replace settings.hooks. Restore from the backup if you had hooks');
+        console.log('   from other tools that need to coexist.');
       }
     }
 

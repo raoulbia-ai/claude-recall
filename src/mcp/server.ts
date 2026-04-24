@@ -323,8 +323,11 @@ export class MCPServer {
             duration: Date.now() - startTime,
             sessionId: this.generateSessionId(),
             error: {
-              message: (error as Error).message,
-              stack: (error as Error).stack
+              message: (error as Error).message
+              // Stack trace intentionally omitted from the wire response —
+              // exposes internal file paths and code structure. Full stack
+              // is still captured by logServiceError() for local diagnosis
+              // (audit 2026-04-23 deferred item).
             }
           }
         }
