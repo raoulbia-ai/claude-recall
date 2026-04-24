@@ -95,3 +95,10 @@ claude-recall-*.tgz
 
 # Auto-generated skills (per-user/per-project — must never ship in npm publish)
 .claude/skills/auto-*/
+
+# External reference repos kept under ~/external-refs/
+beads/
+claude-flow/
+
+# Per-machine settings (use `claude-recall setup` to regenerate)
+.claude/settings.json
