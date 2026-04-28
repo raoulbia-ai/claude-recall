@@ -118,21 +118,24 @@ try {
   // produces a diff the user can see.
 
   // Conservative repair on upgrade: fix broken absolute hook paths in
-  // ~/.claude/settings.json that reference a defunct claude-recall install
-  // (common when node/nvm versions change, or when the package was reinstalled
-  // into a different location). The --auto --scope user flags mean:
-  //   • only user-global settings are touched (no project files)
+  // ~/.claude/settings.json AND every project's .claude/settings.json under
+  // the user's home. Common when node/nvm versions change, or when the package
+  // was reinstalled into a different location (e.g. moving from a root-owned
+  // global prefix to ~/.npm-global). The --auto --scope all flags mean:
+  //   • user-global settings AND every nested project settings file are scanned
   //   • only commands pointing at MISSING absolute scripts get rewritten
   //   • user customizations (timeouts, matchers, sibling hooks) preserved
   //   • writes a .bak.<timestamp> before any change
   //   • never installs hooks where none exist — satisfies the "don't clobber"
   //     rule above
+  // Timeout raised because the home walk can touch many directories on
+  // larger machines.
   try {
     const cliPath = path.join(__dirname, '..', 'dist', 'cli', 'claude-recall-cli.js');
     if (fs.existsSync(cliPath)) {
-      execSync(`node "${cliPath}" repair --auto --scope user`, {
+      execSync(`node "${cliPath}" repair --auto --scope all`, {
         stdio: 'inherit',
-        timeout: 15000
+        timeout: 60000
       });
     }
   } catch (repairError) {
