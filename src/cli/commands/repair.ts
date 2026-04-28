@@ -166,6 +166,93 @@ function pickSiblings(settingsPath: string): string[] {
   return out;
 }
 
+// Directory names that are guaranteed not to contain a project's `.claude/`
+// dir but tend to be huge. Pruning them keeps the home walk fast even on
+// machines with sprawling node_modules/cache trees.
+const HOME_WALK_PRUNE = new Set<string>([
+  'node_modules',
+  '.git',
+  '.npm',
+  '.nvm',
+  '.cache',
+  '.pnpm-store',
+  '.yarn',
+  '.docker',
+  '.local',
+  '.cargo',
+  '.rustup',
+  '.gradle',
+  '.m2',
+  '.vscode-server',
+  '.cursor-server',
+  'Library',
+  'AppData',
+  'dist',
+  'build',
+  'target',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.tox',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.next',
+  '.turbo',
+]);
+
+const HOME_WALK_MAX_DEPTH = 8;
+
+/**
+ * Walk $HOME (excluding the user-global ~/.claude/ itself) for every nested
+ * `.claude/settings.json` and `.claude/settings.local.json`. Conservative on
+ * descent — never follows symlinks, prunes well-known bloat dirs, depth-limited.
+ * Used by --scope all to find every project under home that may have stale
+ * claude-recall hook paths after an install moves.
+ */
+export function findHomeProjectSettings(home: string): string[] {
+  const results: string[] = [];
+  const userClaudeDir = path.join(home, '.claude');
+
+  function walk(dir: string, depth: number): void {
+    if (depth > HOME_WALK_MAX_DEPTH) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // permission denied, gone, etc. — silently skip
+    }
+
+    for (const entry of entries) {
+      // Don't follow symlinks (loop avoidance, also unlikely to host the
+      // canonical project root we want to scan).
+      if (entry.isSymbolicLink()) continue;
+
+      if (entry.isDirectory()) {
+        if (HOME_WALK_PRUNE.has(entry.name)) continue;
+
+        const child = path.join(dir, entry.name);
+
+        if (entry.name === '.claude') {
+          // Skip the user-global ~/.claude/ — that's covered by --scope user.
+          if (child === userClaudeDir) continue;
+
+          for (const f of pickSiblings(path.join(child, 'settings.json'))) {
+            if (!results.includes(f)) results.push(f);
+          }
+          // Don't descend into .claude/ — settings files live at its root.
+          continue;
+        }
+
+        walk(child, depth + 1);
+      }
+    }
+  }
+
+  walk(home, 0);
+  return results;
+}
+
 export function findSettingsFiles(
   cwd: string,
   home: string,
@@ -180,10 +267,17 @@ export function findSettingsFiles(
     }
   }
 
-  if (scope === 'project' || scope === 'all') {
-    // Walk up looking for the CLOSEST .claude dir containing a settings file
-    // (matches Claude Code's own resolution). We don't scan ancestors beyond
-    // the first match — those belong to other projects.
+  if (scope === 'all') {
+    // For --scope all we walk the entire home tree to catch every project's
+    // .claude/settings.json — important for postinstall, where stale hook paths
+    // in ANY project on the machine break Claude Code in that project.
+    for (const p of findHomeProjectSettings(home)) {
+      if (!results.includes(p)) results.push(p);
+    }
+  } else if (scope === 'project') {
+    // For --scope project we only walk up from cwd looking for the CLOSEST
+    // .claude dir (matches Claude Code's own resolution). We don't scan
+    // ancestors beyond the first match — those belong to other projects.
     let dir = cwd;
     while (dir !== path.dirname(dir)) {
       const claudeDir = path.join(dir, '.claude');

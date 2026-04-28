@@ -4,6 +4,7 @@ import * as os from 'os';
 import {
   classifyHook,
   findSettingsFiles,
+  findHomeProjectSettings,
   scanFile,
   applyFixes,
   runRepair,
@@ -118,6 +119,147 @@ describe('findSettingsFiles', () => {
       expect(results).toEqual([]);
     } finally {
       rmTmp(tmp);
+    }
+  });
+
+  it('--scope all walks the entire home tree (not just cwd-closest project)', () => {
+    const home = mkTmp('repair-home-');
+    try {
+      // Create three projects under home, none of them ancestors of each other,
+      // and none reachable by walking up from the home root.
+      const projA = path.join(home, 'projects', 'alpha');
+      const projB = path.join(home, 'projects', 'beta');
+      const projC = path.join(home, 'work', 'nested', 'gamma');
+      for (const p of [projA, projB, projC]) {
+        const claudeDir = path.join(p, '.claude');
+        fs.mkdirSync(claudeDir, { recursive: true });
+        fs.writeFileSync(path.join(claudeDir, 'settings.json'), '{}');
+      }
+
+      const results = findSettingsFiles('/some/unrelated/cwd', home, 'all');
+      expect(results).toEqual(expect.arrayContaining([
+        path.join(projA, '.claude', 'settings.json'),
+        path.join(projB, '.claude', 'settings.json'),
+        path.join(projC, '.claude', 'settings.json'),
+      ]));
+    } finally {
+      rmTmp(home);
+    }
+  });
+});
+
+describe('findHomeProjectSettings', () => {
+  it('finds nested .claude/settings.json under home', () => {
+    const home = mkTmp('hps-');
+    try {
+      const proj = path.join(home, 'work', 'cool-app');
+      const claudeDir = path.join(proj, '.claude');
+      fs.mkdirSync(claudeDir, { recursive: true });
+      fs.writeFileSync(path.join(claudeDir, 'settings.json'), '{}');
+      fs.writeFileSync(path.join(claudeDir, 'settings.local.json'), '{}');
+      const results = findHomeProjectSettings(home);
+      expect(results).toContain(path.join(claudeDir, 'settings.json'));
+      expect(results).toContain(path.join(claudeDir, 'settings.local.json'));
+    } finally {
+      rmTmp(home);
+    }
+  });
+
+  it('skips the user-global ~/.claude/ itself (caller covers it via --scope user)', () => {
+    const home = mkTmp('hps-user-');
+    try {
+      const userClaude = path.join(home, '.claude');
+      fs.mkdirSync(userClaude);
+      fs.writeFileSync(path.join(userClaude, 'settings.json'), '{}');
+      const results = findHomeProjectSettings(home);
+      expect(results).not.toContain(path.join(userClaude, 'settings.json'));
+    } finally {
+      rmTmp(home);
+    }
+  });
+
+  it('prunes node_modules and other bloat dirs', () => {
+    const home = mkTmp('hps-prune-');
+    try {
+      // A real project (should be found):
+      const realProj = path.join(home, 'work', 'real');
+      fs.mkdirSync(path.join(realProj, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(realProj, '.claude', 'settings.json'), '{}');
+
+      // A .claude/ inside node_modules (should be pruned):
+      const inNodeModules = path.join(home, 'work', 'real', 'node_modules', 'fake-pkg');
+      fs.mkdirSync(path.join(inNodeModules, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(inNodeModules, '.claude', 'settings.json'), '{}');
+
+      // A .claude/ inside .git (should be pruned):
+      const inGit = path.join(home, 'work', 'real', '.git', 'somewhere');
+      fs.mkdirSync(path.join(inGit, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(inGit, '.claude', 'settings.json'), '{}');
+
+      const results = findHomeProjectSettings(home);
+      expect(results).toContain(path.join(realProj, '.claude', 'settings.json'));
+      expect(results).not.toContain(path.join(inNodeModules, '.claude', 'settings.json'));
+      expect(results).not.toContain(path.join(inGit, '.claude', 'settings.json'));
+    } finally {
+      rmTmp(home);
+    }
+  });
+
+  it('does not follow symlinks (loop avoidance)', () => {
+    const home = mkTmp('hps-sym-');
+    try {
+      // Real project at home/work/real
+      const realProj = path.join(home, 'work', 'real');
+      fs.mkdirSync(path.join(realProj, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(realProj, '.claude', 'settings.json'), '{}');
+
+      // Symlink at home/loop pointing back to home — would infinite-loop
+      // a naive walker.
+      try {
+        fs.symlinkSync(home, path.join(home, 'loop'));
+      } catch {
+        // some environments (e.g. some CI runners) disallow symlinks; skip cleanly
+        return;
+      }
+
+      const results = findHomeProjectSettings(home);
+      // Should still return the real project, and should not loop forever.
+      expect(results).toContain(path.join(realProj, '.claude', 'settings.json'));
+    } finally {
+      rmTmp(home);
+    }
+  });
+
+  it('returns [] when home has no projects', () => {
+    const home = mkTmp('hps-empty-');
+    try {
+      expect(findHomeProjectSettings(home)).toEqual([]);
+    } finally {
+      rmTmp(home);
+    }
+  });
+
+  it('survives unreadable directories without throwing', () => {
+    const home = mkTmp('hps-perm-');
+    try {
+      // Create a real project that should still be found
+      const realProj = path.join(home, 'work', 'real');
+      fs.mkdirSync(path.join(realProj, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(realProj, '.claude', 'settings.json'), '{}');
+
+      // A directory we can't read
+      const blocked = path.join(home, 'blocked');
+      fs.mkdirSync(blocked);
+      try {
+        fs.chmodSync(blocked, 0o000);
+        const results = findHomeProjectSettings(home);
+        expect(results).toContain(path.join(realProj, '.claude', 'settings.json'));
+      } finally {
+        // restore so cleanup works
+        fs.chmodSync(blocked, 0o755);
+      }
+    } finally {
+      rmTmp(home);
     }
   });
 });

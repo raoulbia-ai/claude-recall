@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.1] - 2026-04-28
+
+### Fixed
+
+- **`claude-recall repair --scope all` now walks the entire user home for project-level `.claude/settings.json` files**, not just the closest one to cwd. The 0.25.0 postinstall ran `repair --auto --scope user` and only healed `~/.claude/settings.json`; per-project hooks under `~/projects/...` were silently left broken when an install moved (e.g. removing a duplicate global at `~/.nvm/versions/node/vXX/lib/node_modules/claude-recall/` would break every project whose `.claude/settings.json` hardcoded that absolute path). 0.25.1 changes:
+  - New exported `findHomeProjectSettings(home)` walks `$HOME` with a prune list (`node_modules`, `.git`, `.npm`, `.nvm`, `.cache`, `.pnpm-store`, `.yarn`, `dist`, `build`, etc.), depth-limited to 8, and never follows symlinks.
+  - `--scope all` semantics widened to "user-global + every project under `$HOME`". The cwd-walk-closest-project behavior remains under `--scope project`.
+  - `scripts/postinstall.js` now invokes `repair --auto --scope all` (timeout raised to 60s for the home walk). Still non-fatal — `npm install` always succeeds.
+  - 7 new unit tests covering nested project discovery, prune behavior, symlink loop avoidance, unreadable-directory tolerance, and home-walk vs. cwd-walk separation.
+
 ## [0.25.0] - 2026-04-24
 
 ### Added
