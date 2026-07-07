@@ -106,7 +106,7 @@ describe('fuzzy dedup at write time', () => {
     });
 
     const before = storage.searchByContext({ project_id: 'proj-a' })[0];
-    const originalTimestamp = before.timestamp;
+    const originalTimestamp = before.timestamp!;
 
     // Small delay then save near-duplicate
     const laterTimestamp = Date.now() + 1000;
@@ -124,6 +124,6 @@ describe('fuzzy dedup at write time', () => {
     const after = storage.searchByContext({ project_id: 'proj-a' });
     expect(after).toHaveLength(1);
     // Timestamp should have been bumped
-    expect(after[0].timestamp).toBeGreaterThanOrEqual(originalTimestamp);
+    expect(after[0].timestamp!).toBeGreaterThanOrEqual(originalTimestamp);
   });
 });

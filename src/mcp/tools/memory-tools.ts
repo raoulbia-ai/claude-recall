@@ -584,7 +584,7 @@ export class MemoryTools {
     }
   }
 
-  private async handleSaveCheckpoint(input: any, context: MCPContext): Promise<any> {
+  private async handleSaveCheckpoint(input: any, _context: MCPContext): Promise<any> {
     try {
       const { completed, remaining, blockers, notes, projectId } = input;
       if (typeof completed !== 'string' || typeof remaining !== 'string' || typeof blockers !== 'string') {
@@ -603,7 +603,7 @@ export class MemoryTools {
     }
   }
 
-  private async handleLoadCheckpoint(input: any, context: MCPContext): Promise<any> {
+  private async handleLoadCheckpoint(input: any, _context: MCPContext): Promise<any> {
     try {
       const { projectId } = input || {};
       const project = projectId || ConfigService.getInstance().getProjectId();

@@ -73,8 +73,8 @@ export class ActionPatternDetector {
     const preferenceMentions = [
       /I'll use (\w+) for (\w+)/gi,
       /I'm using (\w+) instead of (\w+)/gi,
-      /I'll save (?:the )?(\w+) in ([\w\-\/]+)/gi,
-      /I'll create (?:the )?(\w+) in ([\w\-\/]+)/gi,
+      /I'll save (?:the )?(\w+) in ([\w\-/]+)/gi,
+      /I'll create (?:the )?(\w+) in ([\w\-/]+)/gi,
       /Using (\w+) as (?:the )?(\w+)/gi
     ];
     
@@ -127,7 +127,7 @@ export class ActionPatternDetector {
     }
     
     // Convert repeated patterns to preferences
-    for (const [key, actions] of patternGroups) {
+    for (const actions of patternGroups.values()) {
       if (actions.length >= this.PATTERN_THRESHOLD) {
         const latestAction = actions[actions.length - 1];
         if (latestAction.preference) {
@@ -220,7 +220,7 @@ export class ActionPatternDetector {
           overrideSignals: []
         }
       };
-    } else if (content.match(/^  /m)) {
+    } else if (content.match(/^ {2}/m)) {
       return {
         type: 'pattern_usage',
         pattern: '2_space_indentation',

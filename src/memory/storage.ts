@@ -94,7 +94,7 @@ export class MemoryStorage {
 
       if (!tableExists) {
         // Re-throw the error if the table doesn't exist
-        throw new Error(`Failed to initialize database: ${error}`);
+        throw new Error(`Failed to initialize database: ${error}`, { cause: error });
       }
     }
 
@@ -1035,7 +1035,7 @@ export class MemoryStorage {
       for (const bucket of byProject.values()) {
         // Pre-tokenize once to avoid O(n^2) re-parse.
         const tokenized = bucket.map(r => {
-          let text = '';
+          let text: string;
           try {
             const parsed = JSON.parse(r.value);
             text = this.extractText(parsed);

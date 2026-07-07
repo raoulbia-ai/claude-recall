@@ -162,7 +162,7 @@ export class FailureExtractor {
   /**
    * Infer why failure occurred based on error type
    */
-  private inferWhyFailed(error: Error, context: TaskContext): string {
+  private inferWhyFailed(error: Error, _context: TaskContext): string {
     const message = error.message.toLowerCase();
 
     // File system errors
@@ -211,7 +211,7 @@ export class FailureExtractor {
   /**
    * Suggest counterfactual - what should have been done
    */
-  private suggestAlternative(error: Error, context: TaskContext): string {
+  private suggestAlternative(error: Error, _context: TaskContext): string {
     const message = error.message.toLowerCase();
 
     // File system alternatives
@@ -250,7 +250,7 @@ export class FailureExtractor {
   /**
    * Suggest multiple alternative approaches
    */
-  private suggestAlternatives(error: Error, context: TaskContext): string[] {
+  private suggestAlternatives(error: Error, _context: TaskContext): string[] {
     const message = error.message.toLowerCase();
     const alternatives: string[] = [];
 

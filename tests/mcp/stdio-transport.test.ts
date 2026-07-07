@@ -178,7 +178,7 @@ describe('StdioTransport Resilience', () => {
       await transport.start();
 
       // Set up failing request handler
-      transport.onRequest(async (request) => {
+      transport.onRequest(async (_request) => {
         throw new Error('Handler error');
       });
 
@@ -298,7 +298,7 @@ describe('StdioTransport Resilience', () => {
       mockStdout.write = mockWrite as any;
 
       await transport.start();
-      transport.onNotification(async (notification) => {
+      transport.onNotification(async (_notification) => {
         // Process notification
       });
 

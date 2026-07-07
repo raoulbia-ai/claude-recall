@@ -170,6 +170,26 @@ export function searchExisting(query: string): ScoredMemory[] {
 }
 
 /**
+ * Base data directory — same as the database. The env override keeps tests
+ * (and custom setups) away from the real ~/.claude-recall.
+ */
+export function claudeRecallDir(): string {
+  return process.env.CLAUDE_RECALL_DB_PATH || path.join(os.homedir(), '.claude-recall');
+}
+
+/**
+ * Directory for per-session hook state files (pending failures, debounce
+ * markers). Created on demand.
+ */
+export function hookStateDir(): string {
+  const dir = path.join(claudeRecallDir(), 'hook-state');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/**
  * Extract a safe error message without exposing stack traces or internal paths.
  */
 export function safeErrorMessage(err: unknown): string {
@@ -183,7 +203,7 @@ export function safeErrorMessage(err: unknown): string {
  */
 export function hookLog(hookName: string, message: string): void {
   try {
-    const logDir = path.join(os.homedir(), '.claude-recall', 'hook-logs');
+    const logDir = path.join(claudeRecallDir(), 'hook-logs');
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }

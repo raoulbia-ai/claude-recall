@@ -46,7 +46,10 @@ import {
   PendingFailure,
 } from '../../src/hooks/tool-outcome-watcher';
 
-const STATE_DIR = path.join(os.homedir(), '.claude-recall', 'hook-state');
+// Isolated temp dir — hook state must NEVER land in the developer's real
+// ~/.claude-recall (hookStateDir honors CLAUDE_RECALL_DB_PATH at call time).
+const TEST_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-recall-tow-'));
+const STATE_DIR = path.join(TEST_BASE, 'hook-state');
 
 function statePath(sessionId: string): string {
   return path.join(STATE_DIR, `${sessionId}-failures.json`);
@@ -54,6 +57,12 @@ function statePath(sessionId: string): string {
 
 describe('tool-outcome-watcher', () => {
   const SESSION = 'test-session-tow';
+  let originalDbPath: string | undefined;
+
+  beforeAll(() => {
+    originalDbPath = process.env.CLAUDE_RECALL_DB_PATH;
+    process.env.CLAUDE_RECALL_DB_PATH = TEST_BASE;
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -63,8 +72,12 @@ describe('tool-outcome-watcher', () => {
   });
 
   afterAll(() => {
-    const sp = statePath(SESSION);
-    if (fs.existsSync(sp)) fs.unlinkSync(sp);
+    if (originalDbPath === undefined) {
+      delete process.env.CLAUDE_RECALL_DB_PATH;
+    } else {
+      process.env.CLAUDE_RECALL_DB_PATH = originalDbPath;
+    }
+    fs.rmSync(TEST_BASE, { recursive: true, force: true });
   });
 
   // --- Backward compatibility ---

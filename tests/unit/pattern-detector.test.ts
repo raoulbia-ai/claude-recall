@@ -1,5 +1,4 @@
-import { PatternDetector, DetectedPattern } from '../../src/core/pattern-detector';
-import { PatternService } from '../../src/services/pattern-service';
+import { PatternDetector } from '../../src/core/pattern-detector';
 
 describe('PatternDetector', () => {
   let detector: PatternDetector;

@@ -26,7 +26,7 @@ declare namespace PiTypes {
 
   type AgentToolUpdateCallback<TDetails = unknown> = (update: Partial<AgentToolResult<TDetails>>) => void;
 
-  interface ToolDefinition<TParams = any, TDetails = unknown, TState = any> {
+  interface ToolDefinition<TParams = any, TDetails = unknown, _TState = any> {
     name: string;
     label: string;
     description: string;

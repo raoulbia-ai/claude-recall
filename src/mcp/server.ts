@@ -165,14 +165,12 @@ export class MCPServer {
    * Send prompts/list_changed notification to inform CC that prompts may have new data.
    */
   private sendPromptsChanged(): void {
-    try {
-      this.transport.sendNotification({
-        jsonrpc: '2.0',
-        method: 'notifications/prompts/list_changed',
-      });
-    } catch {
-      // Non-critical — CC will still work without it
-    }
+    // Non-critical — CC will still work without it. sendNotification is
+    // async, so a try/catch here would never see its rejection.
+    this.transport.sendNotification({
+      jsonrpc: '2.0',
+      method: 'notifications/prompts/list_changed',
+    }).catch(() => { /* ignore */ });
   }
 
   private async handleInitialize(request: MCPRequest): Promise<MCPResponse> {
@@ -483,8 +481,8 @@ export class MCPServer {
       }
     };
 
-    process.on('SIGINT', () => { shutdown('SIGINT'); });
-    process.on('SIGTERM', () => { shutdown('SIGTERM'); });
+    process.on('SIGINT', () => { void shutdown('SIGINT'); });
+    process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
   }
 
   /**

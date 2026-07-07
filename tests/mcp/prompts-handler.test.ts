@@ -240,7 +240,7 @@ describe('PromptsHandler', () => {
       const response = await handler.handlePromptsGet(makeRequest('nonexistent-prompt'));
 
       expect(response.error).toBeDefined();
-      expect(response.error.message).toContain('Unknown prompt');
+      expect(response.error!.message).toContain('Unknown prompt');
     });
   });
 });

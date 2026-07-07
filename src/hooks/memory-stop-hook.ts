@@ -12,6 +12,7 @@ import {
   storeMemory,
   searchExisting,
   hookLog,
+  hookStateDir,
   safeErrorMessage,
   readTranscriptTail,
   extractTextFromEntry,
@@ -19,7 +20,6 @@ import {
   extractToolInteractions,
 } from './shared';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
@@ -44,9 +44,7 @@ const STOP_DEBOUNCE_MS = (() => {
 })();
 
 function stopStateFile(sessionId: string): string {
-  const dir = path.join(os.homedir(), '.claude-recall', 'hook-state');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, `memory-stop-${sessionId.replace(/[^a-zA-Z0-9-]/g, '_')}.json`);
+  return path.join(hookStateDir(), `memory-stop-${sessionId.replace(/[^a-zA-Z0-9-]/g, '_')}.json`);
 }
 
 function shouldRunHeavyPipeline(sessionId: string): boolean {
@@ -296,7 +294,7 @@ function scanForCitations(transcriptPath: string): void {
         memoryService.incrementCiteCount(bestKey);
         try {
           OutcomeStorage.getInstance().recordHelpful(bestKey);
-        } catch {}
+        } catch { /* best-effort — ignore */ }
         hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (containment=${bestScore.toFixed(3)})`);
       } else {
         hookLog('memory-stop', `No match found for citation (best=${bestScore.toFixed(3)})`);
@@ -352,7 +350,7 @@ function extractRuleContent(value: any): string {
 /**
  * Scan the last 200 transcript entries for failure signals and store up to 3.
  */
-function detectAndStoreFailures(transcriptPath: string, episodeId?: string): DetectedFailure[] {
+function detectAndStoreFailures(transcriptPath: string, _episodeId?: string): DetectedFailure[] {
   try {
     const entries = readTranscriptTail(transcriptPath, 200);
     if (entries.length === 0) {

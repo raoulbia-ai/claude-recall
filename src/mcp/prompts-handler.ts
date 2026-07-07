@@ -555,8 +555,8 @@ Be conservative - only extract clear, explicit preferences.`),
   /**
    * Get session-review prompt — summarizes session outcomes and lessons
    */
-  private async getSessionReviewPrompt(sessionId?: string): Promise<GetPromptResult> {
-    let sections: string[] = [];
+  private async getSessionReviewPrompt(_sessionId?: string): Promise<GetPromptResult> {
+    const sections: string[] = [];
 
     try {
       const outcomeStorage = OutcomeStorage.getInstance();

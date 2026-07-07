@@ -23,7 +23,7 @@ export class PreferenceExtractor {
     test_location: {
       triggers: ["test", "tests", "test files", "testing", "spec", "specs"],
       locationWords: ["in", "to", "at", "under", "within", "inside"],
-      valuePattern: /(?:in|to|at|under|within|inside)\s+([\w\-\/\.]+)/i
+      valuePattern: /(?:in|to|at|under|within|inside)\s+([\w\-/.]+)/i
     },
     code_style: {
       triggers: ["spaces", "tabs", "indentation", "indent", "formatting", "style"],
@@ -170,8 +170,6 @@ export class PreferenceExtractor {
    * Extract preference from a single sentence
    */
   private extractPreferenceFromSentence(sentence: string): ExtractedPreference | null {
-    const lower = sentence.toLowerCase();
-    
     // Try each preference pattern
     for (const [key, pattern] of Object.entries(this.PREFERENCE_PATTERNS)) {
       const preference = this.extractSpecificPreference(sentence, key, pattern);
@@ -260,7 +258,7 @@ export class PreferenceExtractor {
     for (let i = 0; i < words.length - 1; i++) {
       if (pattern.locationWords.some((locWord: string) => words[i].toLowerCase() === locWord)) {
         const nextWord = words[i + 1];
-        if (nextWord && /^[\w\-\/\.]+$/.test(nextWord)) {
+        if (nextWord && /^[\w\-/.]+$/.test(nextWord)) {
           return nextWord;
         }
       }
@@ -288,7 +286,7 @@ export class PreferenceExtractor {
   private extractFrameworkChoice(sentence: string, pattern: any): string | null {
     const lower = sentence.toLowerCase();
     
-    for (const [category, frameworks] of Object.entries(pattern.frameworks)) {
+    for (const frameworks of Object.values(pattern.frameworks)) {
       for (const framework of frameworks as string[]) {
         if (lower.includes(framework)) {
           return framework;
@@ -395,9 +393,6 @@ export class PreferenceExtractor {
         // Extract matched content
         const matchedText = match[0];
         const category = devopsPattern.category;
-
-        // Determine key based on category
-        let key = category;
         let value = matchedText.trim();
 
         // Extract more specific value if captured group exists
@@ -510,7 +505,7 @@ export class PreferenceExtractor {
     const lower = sentence.toLowerCase();
     const signals: string[] = [];
     
-    for (const [category, signalList] of Object.entries(this.OVERRIDE_SIGNALS)) {
+    for (const signalList of Object.values(this.OVERRIDE_SIGNALS)) {
       for (const signal of signalList) {
         if (lower.includes(signal.toLowerCase())) {
           signals.push(signal);

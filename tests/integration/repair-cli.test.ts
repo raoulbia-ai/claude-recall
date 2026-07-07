@@ -36,7 +36,7 @@ function runCli(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } 
 describe('repair CLI (integration)', () => {
   beforeAll(() => {
     if (!distBuilt) {
-      // eslint-disable-next-line no-console
+       
       console.warn(`[repair-cli.test] skipping — build first with 'npm run build' (missing ${CLI})`);
     }
   });

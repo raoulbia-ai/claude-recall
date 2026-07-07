@@ -305,7 +305,6 @@ describe('rankRulesForToolCall — input handling', () => {
 describe('rankRulesForToolCall — recency', () => {
   it('boosts recently-updated rules over older ones with same overlap', () => {
     const now = Date.now();
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     const rules: Rule[] = [
       rule({
         key: 'old',

@@ -18,8 +18,12 @@
     "docs/"
   ],
   "pi": {
-    "extensions": ["./dist/pi/extension.js"],
-    "skills": ["./skills/*.md"]
+    "extensions": [
+      "./dist/pi/extension.js"
+    ],
+    "skills": [
+      "./skills/*.md"
+    ]
   },
   "directories": {
     "doc": "docs",
@@ -55,7 +59,9 @@
     "mcp:dev": "ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:debug": "NODE_ENV=development DEBUG=claude-recall:* ts-node src/cli/claude-recall-cli.ts mcp start",
     "mcp:test": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}' | npm run mcp:start",
-    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start"
+    "mcp:health": "echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"health/check\",\"params\":{}}' | npm run mcp:start",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint src tests"
   },
   "keywords": [
     "claude-code",
@@ -84,16 +90,19 @@
     "url": "https://github.com/raoulbia-ai/claude-recall/issues"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.1.0",
+    "eslint": "^10.6.0",
     "jest": "^30.0.5",
     "ts-jest": "^29.4.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.63.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.110.0",
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
     "commander": "^12.1.0"
