@@ -192,6 +192,7 @@ export class MemoryStorage {
         this.db.exec(`CREATE TABLE outcome_events (
           id TEXT PRIMARY KEY,
           episode_id TEXT,
+          session_id TEXT,
           event_type TEXT NOT NULL,
           actor TEXT NOT NULL,
           action_summary TEXT,
@@ -202,6 +203,14 @@ export class MemoryStorage {
         )`);
         this.db.exec('CREATE INDEX idx_outcome_events_episode ON outcome_events(episode_id)');
         this.db.exec('CREATE INDEX idx_outcome_events_type ON outcome_events(event_type)');
+      } else {
+        // v0.26.2: session_id column so events can be attributed to the session
+        // that produced them — without it, one session's tool failures leak
+        // into another concurrent session's episode and candidate lessons.
+        const eventCols = this.db.prepare("PRAGMA table_info(outcome_events)").all() as Array<{name: string}>;
+        if (!eventCols.some(c => c.name === 'session_id')) {
+          this.db.exec('ALTER TABLE outcome_events ADD COLUMN session_id TEXT');
+        }
       }
 
       if (!existingOutcomeTables.has('candidate_lessons')) {

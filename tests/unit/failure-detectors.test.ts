@@ -253,6 +253,30 @@ describe('detectTranscriptFailures', () => {
       const cycles = failures.filter(f => f.signal === 'edit-test-cycle');
       expect(cycles).toHaveLength(0);
     });
+
+    it('detects cycles despite interleaved Read/Grep calls (realistic agent flow)', () => {
+      // Agents always Read/Grep between a failing test and the next edit —
+      // read-only tools must not reset the cycle counter
+      const entries = [
+        makeAssistantToolUse('Bash', { command: 'npx jest tests/foo.test.ts' }, 'tc1'),
+        makeUserToolResult('tc1', 'FAIL tests/foo.test.ts\nTests: 1 failed', false),
+        makeAssistantToolUse('Read', { file_path: '/src/foo.ts' }, 'tc1r'),
+        makeUserToolResult('tc1r', 'file contents'),
+        makeAssistantToolUse('Edit', { file_path: '/src/foo.ts', old_string: 'a', new_string: 'b' }, 'tc2'),
+        makeUserToolResult('tc2', 'File edited'),
+        makeAssistantToolUse('Bash', { command: 'npx jest tests/foo.test.ts' }, 'tc3'),
+        makeUserToolResult('tc3', 'FAIL tests/foo.test.ts\nTests: 1 failed', false),
+        makeAssistantToolUse('Grep', { pattern: 'foo' }, 'tc3r'),
+        makeUserToolResult('tc3r', 'matches'),
+        makeAssistantToolUse('Edit', { file_path: '/src/foo.ts', old_string: 'b', new_string: 'c' }, 'tc4'),
+        makeUserToolResult('tc4', 'File edited'),
+        makeAssistantToolUse('Bash', { command: 'npx jest tests/foo.test.ts' }, 'tc5'),
+        makeUserToolResult('tc5', 'FAIL tests/foo.test.ts\nTests: 1 failed', false),
+      ];
+      const failures = detectTranscriptFailures(entries);
+      const cycles = failures.filter(f => f.signal === 'edit-test-cycle');
+      expect(cycles).toHaveLength(1);
+    });
   });
 
   describe('backtracking', () => {
@@ -315,6 +339,36 @@ describe('detectTranscriptFailures', () => {
         makeUserToolResult('tc2', 'content'),
         makeAssistantToolUse('Read', { file_path: '/src/foo.ts' }, 'tc3'),
         makeUserToolResult('tc3', 'content'),
+      ];
+      const failures = detectTranscriptFailures(entries);
+      const retries = failures.filter(f => f.signal === 'retry-loop');
+      expect(retries).toHaveLength(0);
+    });
+
+    it('does not flag repeated test runs (ordinary TDD)', () => {
+      const input = { command: 'npm test' };
+      const entries = [
+        makeAssistantToolUse('Bash', input, 'tc1'),
+        makeUserToolResult('tc1', 'Tests: 2 failed', true),
+        makeAssistantToolUse('Bash', input, 'tc2'),
+        makeUserToolResult('tc2', 'Tests: 1 failed', true),
+        makeAssistantToolUse('Bash', input, 'tc3'),
+        makeUserToolResult('tc3', 'Tests: 3 passed', false),
+      ];
+      const failures = detectTranscriptFailures(entries);
+      const retries = failures.filter(f => f.signal === 'retry-loop');
+      expect(retries).toHaveLength(0);
+    });
+
+    it('does not flag repeated SUCCESSFUL idempotent commands', () => {
+      const input = { command: 'git status' };
+      const entries = [
+        makeAssistantToolUse('Bash', input, 'tc1'),
+        makeUserToolResult('tc1', 'On branch main'),
+        makeAssistantToolUse('Bash', input, 'tc2'),
+        makeUserToolResult('tc2', 'On branch main'),
+        makeAssistantToolUse('Bash', input, 'tc3'),
+        makeUserToolResult('tc3', 'On branch main'),
       ];
       const failures = detectTranscriptFailures(entries);
       const retries = failures.filter(f => f.signal === 'retry-loop');
