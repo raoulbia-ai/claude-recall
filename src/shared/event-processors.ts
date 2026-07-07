@@ -101,27 +101,6 @@ function tryPairFix(toolName: string, toolInput: any, _output: string): boolean 
 
 // --- Tool Outcome Processing ---
 
-/** Error patterns for Edit/Write tools */
-const WRITE_ERROR_PATTERNS = [
-  /permission denied/i,
-  /EACCES/i,
-  /ENOENT/i,
-  /file not found/i,
-  /no such file/i,
-  /read-?only file/i,
-  /conflict/i,
-  /old_string.*not found/i,
-  /not unique in the file/i,
-];
-
-/** Error patterns for MCP/custom tools */
-const TOOL_ERROR_PATTERNS = [
-  /error/i,
-  /failed/i,
-  /exception/i,
-  /timeout/i,
-];
-
 function truncate(s: string, maxLen: number): string {
   return s.length <= maxLen ? s : s.substring(0, maxLen - 3) + '...';
 }
@@ -175,16 +154,14 @@ export function processToolOutcome(
 }
 
 function isToolFailureOutput(toolName: string, output: string): boolean {
+  // Bash embeds a structured exit-code marker in output — reliable signal.
   if (toolName === 'Bash' || toolName === 'bash') {
     return /Exit code (\d+)/.test(output) && !/Exit code 0/.test(output);
   }
-  if (toolName === 'Edit' || toolName === 'Write' || toolName === 'edit' || toolName === 'write') {
-    return WRITE_ERROR_PATTERNS.some(p => p.test(output));
-  }
-  // For other tools, only flag short error outputs (avoid false positives on long results)
-  if (output.length < 500) {
-    return TOOL_ERROR_PATTERNS.some(p => p.test(output));
-  }
+  // Everything else: trust the caller's isError flag only. Content sniffing
+  // successful output stored bogus failures whenever a result merely
+  // MENTIONED words like "error" or "ENOENT" (e.g. "0 errors found", or an
+  // edit to a file containing error-handling code).
   return false;
 }
 

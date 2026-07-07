@@ -34,6 +34,11 @@ export interface DetectedFailure {
 
 const MAX_FAILURES = 3;
 
+// Tools that read but never mutate — transparent to cycle/loop detection.
+const READ_ONLY_TOOLS = new Set([
+  'Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite', 'TodoRead',
+]);
+
 // --- Detector 1: Non-zero exit codes ---
 
 function detectNonZeroExits(
@@ -162,6 +167,11 @@ function detectEditTestCycles(
     } else if (name === 'Edit' || name === 'Write') {
       const file = ix.call.input?.file_path ?? ix.call.input?.path ?? '';
       seq.push({ type: 'edit', failed: false, file, idx: ix.call.entryIndex });
+    } else if (READ_ONLY_TOOLS.has(name)) {
+      // Transparent: reading/searching between an edit and a test run is how
+      // agents always work. Treating these as 'other' reset the cycle counter
+      // on every Read/Grep, so this detector could effectively never fire.
+      continue;
     } else {
       seq.push({ type: 'other', failed: false, idx: ix.call.entryIndex });
     }
@@ -328,8 +338,16 @@ function detectRetryLoops(
     const hashes: { hash: string; ix: ToolInteraction }[] = [];
 
     for (const ix of window) {
-      // Exclude Read calls — normal to read files repeatedly
-      if (ix.call.name === 'Read') continue;
+      // Exclude read-only tools — reading/searching repeatedly is normal
+      if (READ_ONLY_TOOLS.has(ix.call.name)) continue;
+      // Exclude test commands — running `npm test` three times in a window is
+      // ordinary TDD, not a retry loop. A repeated call only signals a loop
+      // when the repeats FAIL, which the check below enforces for everything.
+      if (ix.call.name === 'Bash' && isTestCommand(ix.call.input?.command ?? '')) continue;
+      // Only failed repeats indicate "retrying the same thing expecting a
+      // different result" — repeating a SUCCESSFUL idempotent command (git
+      // status, ls) is routine.
+      if (!ix.result?.isError) continue;
       if (consumed.has(ix.call.entryIndex)) continue;
       const hash = `${ix.call.name}:${JSON.stringify(ix.call.input)}`;
       hashes.push({ hash, ix });

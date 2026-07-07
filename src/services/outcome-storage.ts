@@ -23,6 +23,7 @@ export interface EpisodeData {
 
 export interface OutcomeEventData {
   episode_id?: string;
+  session_id?: string;
   event_type: string;
   actor: string;
   action_summary?: string;
@@ -143,11 +144,11 @@ export class OutcomeStorage {
   createOutcomeEvent(data: OutcomeEventData): string {
     const id = this.generateId();
     this.db.prepare(`
-      INSERT INTO outcome_events (id, episode_id, event_type, actor, action_summary,
+      INSERT INTO outcome_events (id, episode_id, session_id, event_type, actor, action_summary,
         next_state_summary, exit_code, tags_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, data.episode_id || null, data.event_type, data.actor,
+      id, data.episode_id || null, data.session_id || null, data.event_type, data.actor,
       data.action_summary || null, data.next_state_summary,
       data.exit_code ?? null,
       data.tags ? JSON.stringify(data.tags) : null,
@@ -222,9 +223,16 @@ export class OutcomeStorage {
    * Get outcome events filtered by event_type, ordered by most recent.
    * Optionally filter by time window (defaults to last 24 hours).
    */
-  getEventsByType(eventType: string, hoursBack: number = 24): Array<{
+  /**
+   * @param sessionId When provided, only events recorded by that session are
+   *   returned. Without it, a time-window query mixes events from concurrent
+   *   sessions and other projects' sessions within the window — which is how
+   *   session A's tool failures used to end up in session B's episode.
+   */
+  getEventsByType(eventType: string, hoursBack: number = 24, sessionId?: string): Array<{
     id: string;
     episode_id: string | null;
+    session_id: string | null;
     event_type: string;
     actor: string;
     action_summary: string | null;
@@ -234,6 +242,11 @@ export class OutcomeStorage {
     created_at: string;
   }> {
     const cutoff = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+    if (sessionId) {
+      return this.db.prepare(
+        'SELECT * FROM outcome_events WHERE event_type = ? AND created_at > ? AND session_id = ? ORDER BY created_at DESC'
+      ).all(eventType, cutoff, sessionId) as any[];
+    }
     return this.db.prepare(
       'SELECT * FROM outcome_events WHERE event_type = ? AND created_at > ? ORDER BY created_at DESC'
     ).all(eventType, cutoff) as any[];

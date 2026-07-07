@@ -34,28 +34,6 @@ const MAX_PENDING = 5;
 const FIX_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const FIX_JACCARD_THRESHOLD = 0.3;
 
-// Error patterns for Edit/Write tools
-const WRITE_ERROR_PATTERNS = [
-  /permission denied/i,
-  /EACCES/i,
-  /ENOENT/i,
-  /file not found/i,
-  /no such file/i,
-  /is a directory/i,
-  /read-?only file/i,
-  /conflict/i,
-  /old_string.*not found/i,
-  /not unique in the file/i,
-];
-
-// Error patterns for MCP tools
-const MCP_ERROR_PATTERNS = [
-  /error/i,
-  /failed/i,
-  /exception/i,
-  /timeout/i,
-];
-
 export interface PendingFailure {
   command: string;
   memoryKey: string;
@@ -338,39 +316,12 @@ async function handleWriteToolOutcome(input: any): Promise<void> {
   const toolName = input.tool_name;
   const filePath = input.tool_input?.file_path ?? '';
 
-  // Check for error patterns
-  const errorMatch = WRITE_ERROR_PATTERNS.find(p => p.test(output));
-
-  if (errorMatch) {
-    // Dedup check
-    const summary = `${toolName} failed on ${filePath}: ${truncate(firstLine(output), 100)}`;
-    const existing = searchExisting(summary);
-    if (isDuplicate(summary, existing, 0.7)) {
-      hookLog(HOOK_NAME, `Skipped duplicate ${toolName} failure`);
-      return;
-    }
-
-    const failureContent: FailureMemoryContent = {
-      what_failed: `${toolName} failed on ${truncate(filePath, 80)}`,
-      why_failed: truncate(firstLine(output), 200),
-      what_should_do: `Verify file path exists and is writable before using ${toolName}`,
-      context: `${toolName} tool error on ${filePath}`,
-      preventative_checks: [
-        'Check file path exists',
-        'Check file permissions',
-        'Verify old_string is unique (for Edit)',
-      ],
-    };
-
-    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.75);
-    hookLog(HOOK_NAME, `Stored ${toolName} failure: ${truncate(filePath, 60)}`);
-  }
-
-  // Always record outcome event
-  const eventSummary = errorMatch
-    ? `${toolName} error on ${filePath}: ${truncate(firstLine(output), 100)}`
-    : `${toolName} success on ${truncate(filePath, 100)}`;
-  recordOutcomeEvent(toolName, input.tool_input, eventSummary);
+  // No failure sniffing here: this handler runs on the PostToolUse SUCCESS
+  // path (real failures arrive via PostToolUseFailure → handleToolFailure
+  // with a structured error field). Pattern-matching successful output
+  // stored bogus permanent failures whenever the edited file merely
+  // MENTIONED strings like "ENOENT" or "permission denied".
+  recordOutcomeEvent(toolName, input.tool_input, `${toolName} success on ${truncate(filePath || firstLine(output), 100)}`);
 }
 
 // --- MCP tool handler ---
@@ -383,28 +334,10 @@ async function handleMcpToolOutcome(input: any): Promise<void> {
   if (toolName.includes('claude-recall') || toolName.includes('claude_recall')) return;
 
   const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
-  const hasError = MCP_ERROR_PATTERNS.some(p => p.test(outputStr)) && outputStr.length < 500;
 
-  if (hasError) {
-    const summary = `${toolName}: ${truncate(firstLine(outputStr), 100)}`;
-    const existing = searchExisting(summary);
-    if (!isDuplicate(summary, existing, 0.7)) {
-      storeMemory(
-        JSON.stringify({
-          what_failed: `MCP tool ${toolName} returned error`,
-          why_failed: truncate(firstLine(outputStr), 200),
-          what_should_do: 'Check tool input parameters and server availability',
-          context: `MCP tool error from ${toolName}`,
-        }),
-        'failure',
-        undefined,
-        0.7,
-      );
-      hookLog(HOOK_NAME, `Stored MCP failure: ${truncate(toolName, 40)}`);
-    }
-  }
-
-  // Record outcome event for all MCP tool calls
+  // No failure sniffing here either — /error/i against successful MCP output
+  // turned responses like "0 errors found" into stored failure memories.
+  // PostToolUseFailure carries the real signal.
   recordOutcomeEvent(toolName, input.tool_input, truncate(firstLine(outputStr), 200));
 }
 
@@ -476,12 +409,14 @@ export async function handleToolFailure(input: any): Promise<void> {
 
     storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8);
 
-    // Record structured outcome event
+    // Record structured outcome event, attributed to the emitting session so
+    // memory-stop only folds THIS session's failures into its episode
     try {
       const outcomeStorage = OutcomeStorage.getInstance();
       outcomeStorage.createOutcomeEvent({
         event_type: 'tool_failure',
         actor: 'tool',
+        session_id: typeof input.session_id === 'string' ? input.session_id : undefined,
         action_summary: whatFailed,
         next_state_summary: truncate(error, 200),
         tags: extractToolTags(toolName, input.tool_input),
