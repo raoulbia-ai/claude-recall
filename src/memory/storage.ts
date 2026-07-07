@@ -290,8 +290,13 @@ export class MemoryStorage {
     return crypto.createHash('sha256').update(canonical).digest('hex');
   }
 
+  /** Rule-type memories: the only types subject to fuzzy dedup and retro-dedup. */
+  private static readonly RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge'];
+
   /**
-   * Find a same-type memory whose text content is a near-duplicate (Jaccard >= 0.85).
+   * Find a same-type memory whose text content is a near-duplicate (Jaccard >= 0.65).
+   * Only ACTIVE rows are considered — matching a demoted/superseded row would
+   * absorb the new write into a rule that loadActiveRules never returns.
    * Returns the key of the matching memory, or null if none found.
    */
   private findFuzzyDuplicate(memory: Memory): string | null {
@@ -306,7 +311,7 @@ export class MemoryStorage {
     if (memory.project_id) params.push(memory.project_id);
 
     const candidates = this.db.prepare(
-      `SELECT key, value FROM memories WHERE type = ? AND key != ? ${projectFilter}`
+      `SELECT key, value FROM memories WHERE type = ? AND key != ? AND is_active = 1 ${projectFilter}`
     ).all(...params) as Array<{ key: string; value: string }>;
 
     for (const candidate of candidates) {
@@ -369,22 +374,55 @@ export class MemoryStorage {
   save(memory: Memory): void {
     const contentHash = this.computeContentHash(memory.value, memory.type);
 
-    // Write-time dedup: check if identical content already exists under a different key
-    const existing = this.db.prepare(
-      'SELECT key, id FROM memories WHERE content_hash = ? AND key != ?'
-    ).get(contentHash, memory.key) as { key: string; id: number } | undefined;
+    // Write-time dedup: identical content already stored under a different key.
+    // Scoped to the same project (or universal/unscoped) — without the project
+    // filter, project B's write would be silently absorbed into project A's
+    // row, which B's scoped queries never return.
+    const projectClause = memory.project_id
+      ? `AND (project_id = ? OR project_id IS NULL OR project_id = '' OR scope = 'universal')`
+      : `AND (project_id IS NULL OR project_id = '' OR scope = 'universal')`;
+    const hashParams: any[] = [contentHash, memory.key];
+    if (memory.project_id) hashParams.push(memory.project_id);
 
-    if (existing) {
+    const hashMatches = this.db.prepare(
+      `SELECT key, id, is_active, superseded_by FROM memories
+       WHERE content_hash = ? AND key != ? ${projectClause}`
+    ).all(...hashParams) as Array<{ key: string; id: number; is_active: number; superseded_by: string | null }>;
+
+    const activeMatch = hashMatches.find(m => m.is_active === 1);
+    if (activeMatch) {
       // Bump the existing memory's timestamp and access_count to keep it fresh
       this.db.prepare(
         'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
-      ).run(Date.now(), existing.key);
+      ).run(Date.now(), activeMatch.key);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
     }
 
-    // Fuzzy dedup: check if a same-type memory with very similar content exists
-    const fuzzyMatch = this.findFuzzyDuplicate(memory);
+    // Re-teaching an auto-demoted/auto-deduped rule revives it — otherwise the
+    // dedup hit would bump a dead row that loadActiveRules never returns and
+    // the rule would be unrecoverable through normal use. Rows superseded by a
+    // USER override are deliberately not revived (mirrors promoteRule).
+    const autoDemotedMatch = hashMatches.find(
+      m => m.is_active !== 1 && (m.superseded_by === 'auto-demote' || m.superseded_by === 'auto-dedup')
+    );
+    if (autoDemotedMatch) {
+      this.db.prepare(
+        `UPDATE memories SET timestamp = ?, access_count = access_count + 1,
+         is_active = 1, superseded_by = NULL, superseded_at = NULL
+         WHERE key = ?`
+      ).run(Date.now(), autoDemotedMatch.key);
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+      return;
+    }
+
+    // Fuzzy dedup: near-duplicate ACTIVE rule of the same type/project.
+    // Restricted to rule types — tool-use/event rows are history, where two
+    // similar-but-distinct entries are the point, and the O(n) same-type scan
+    // per write would grow with the largest table.
+    const fuzzyMatch = MemoryStorage.RULE_TYPES.includes(memory.type)
+      ? this.findFuzzyDuplicate(memory)
+      : null;
     if (fuzzyMatch) {
       this.db.prepare(
         'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
@@ -393,11 +431,31 @@ export class MemoryStorage {
       return;
     }
 
+    // Upsert instead of INSERT OR REPLACE: OR REPLACE deletes and reinserts,
+    // which resets columns absent from the insert list (load_count, cite_count,
+    // last_accessed) and churns the rowid. A same-key re-save must not destroy
+    // the compliance counters that drive demotion and sync ranking.
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO memories
+      INSERT INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
        preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        type = excluded.type,
+        project_id = excluded.project_id,
+        file_path = excluded.file_path,
+        timestamp = excluded.timestamp,
+        relevance_score = excluded.relevance_score,
+        access_count = excluded.access_count,
+        preference_key = excluded.preference_key,
+        is_active = excluded.is_active,
+        superseded_by = excluded.superseded_by,
+        superseded_at = excluded.superseded_at,
+        confidence_score = excluded.confidence_score,
+        sophistication_level = excluded.sophistication_level,
+        scope = excluded.scope,
+        content_hash = excluded.content_hash
     `);
 
     stmt.run(
@@ -955,10 +1013,9 @@ export class MemoryStorage {
   dedupSimilar(options: { threshold?: number; dryRun?: boolean }): Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> {
     const threshold = options.threshold ?? 0.65;
     const dryRun = options.dryRun ?? false;
-    const RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge'];
     const collapses: Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> = [];
 
-    for (const type of RULE_TYPES) {
+    for (const type of MemoryStorage.RULE_TYPES) {
       const rows = this.db.prepare(
         `SELECT id, key, value, project_id, timestamp, load_count, cite_count
          FROM memories
@@ -1090,11 +1147,15 @@ export class MemoryStorage {
   /**
    * Get all rule-type memories for citation matching (no load_count filter).
    * Used when matching citations against any stored memory, not just loaded ones.
+   *
+   * Must cover every type demoteStaleRules() can demote: a type that is
+   * loaded and demotable but excluded here can never earn citations, making
+   * its auto-demotion a mathematical certainty (this bit 'failure' memories).
    */
   getAllRulesForCitationMatching(): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number}> {
     const rows = this.db.prepare(
       `SELECT id, key, type, value, load_count, cite_count FROM memories
-       WHERE type IN ('preference', 'correction', 'devops', 'project-knowledge')
+       WHERE type IN ('preference', 'correction', 'failure', 'devops', 'project-knowledge')
        ORDER BY load_count DESC`
     ).all() as any[];
     return rows.map(row => ({

@@ -22,6 +22,7 @@ import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
+import { extractHindsightHint } from './llm-classifier';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
@@ -148,7 +149,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
   });
 
   // Generate candidate lessons from high-confidence failures
-  generateCandidateLessons(allFailures, episodeId, projectId);
+  await generateCandidateLessons(allFailures, episodeId, projectId);
 
   // Run promotion cycle
   try {
@@ -382,29 +383,61 @@ function getToolFailureEvents(outcomeStorage: OutcomeStorage): DetectedFailure[]
   }
 }
 
+/** lesson_kind values extractHindsightHint may legitimately return. */
+const VALID_LESSON_KINDS = new Set([
+  'rule', 'preference', 'anti_pattern', 'workflow', 'debug_fix', 'failure_preventer',
+]);
+
 /**
  * Generate candidate lessons from high-confidence failures.
  * Deduplicates against existing lessons and increments evidence count for similar ones.
+ *
+ * The lesson text must be failure-specific. Detectors emit a constant
+ * what_should_do ("Check command syntax..."), so using it verbatim made every
+ * unrelated failure "similar" to every other — evidence counts inflated across
+ * unrelated failures and the promotion engine could only ever promote generic
+ * boilerplate. Prefer an LLM hindsight hint; without one, ground the generic
+ * remedy in what actually failed so similarity matching compares failures,
+ * not the shared remedy string.
  */
-function generateCandidateLessons(
+async function generateCandidateLessons(
   failures: DetectedFailure[],
   episodeId: string,
   projectId: string,
-): void {
+): Promise<void> {
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
     for (const f of failures) {
       if (f.confidence < 0.7) continue;
-      const similar = outcomeStorage.findSimilarLessons(f.content.what_should_do, projectId);
+
+      let lessonText = `${f.content.what_should_do} (failure: ${f.content.what_failed})`;
+      let lessonKind = 'failure_preventer';
+      let appliesWhen = extractTagsFromContext(f.content.context);
+
+      const hint = await extractHindsightHint(
+        `${f.content.what_failed}${f.content.why_failed ? ` — ${f.content.why_failed}` : ''}`,
+        f.content.context || '',
+      );
+      if (hint) {
+        lessonText = hint.hint_text;
+        if (VALID_LESSON_KINDS.has(hint.hint_kind)) {
+          lessonKind = hint.hint_kind;
+        }
+        if (hint.applies_when.length > 0) {
+          appliesWhen = hint.applies_when;
+        }
+      }
+
+      const similar = outcomeStorage.findSimilarLessons(lessonText, projectId);
       if (similar.length > 0) {
         outcomeStorage.incrementEvidenceCount(similar[0].id);
       } else {
         outcomeStorage.createCandidateLesson({
           project_id: projectId,
           episode_id: episodeId,
-          lesson_text: f.content.what_should_do,
-          lesson_kind: 'failure_preventer',
-          applies_when: extractTagsFromContext(f.content.context),
+          lesson_text: lessonText,
+          lesson_kind: lessonKind,
+          applies_when: appliesWhen,
           outcome_type: 'negative',
           reward_band: -1,
           confidence: f.confidence,

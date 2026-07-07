@@ -186,6 +186,100 @@ describe('MemoryStorage', () => {
     }
   });
 
+  describe('learning-loop repairs', () => {
+    it('same-key re-save preserves load_count, cite_count and last_accessed', () => {
+      storage.save({ key: 'counted', value: { rule: 'always use pnpm for installs' }, type: 'preference' });
+      storage.getDatabase()
+        .prepare('UPDATE memories SET load_count = 7, cite_count = 3, last_accessed = 12345 WHERE key = ?')
+        .run('counted');
+
+      // Same key, different content — must UPDATE in place, not delete+reinsert
+      storage.save({ key: 'counted', value: { rule: 'always use pnpm for installs and ci' }, type: 'preference' });
+
+      const row = storage.getDatabase()
+        .prepare('SELECT load_count, cite_count, last_accessed FROM memories WHERE key = ?')
+        .get('counted') as any;
+      expect(row.load_count).toBe(7);
+      expect(row.cite_count).toBe(3);
+      expect(row.last_accessed).toBe(12345);
+      expect(storage.retrieve('counted')?.value.rule).toContain('and ci');
+    });
+
+    it('re-saving identical content revives an auto-demoted rule', () => {
+      storage.save({ key: 'rule-1', value: { rule: 'never push directly to the main branch' }, type: 'devops' });
+      storage.getDatabase()
+        .prepare(`UPDATE memories SET is_active = 0, superseded_by = 'auto-demote', superseded_at = 1 WHERE key = ?`)
+        .run('rule-1');
+
+      // User re-teaches the same rule under a new key → dedup must revive, not
+      // silently bump a dead row
+      storage.save({ key: 'rule-2', value: { rule: 'never push directly to the main branch' }, type: 'devops' });
+
+      const revived = storage.retrieve('rule-1');
+      expect(revived?.is_active).toBe(true);
+      expect(revived?.superseded_by).toBeNull();
+      expect(storage.retrieve('rule-2')).toBeNull(); // absorbed into revived row
+    });
+
+    it('does not revive rules superseded by a user override', () => {
+      storage.save({ key: 'old-pref', value: { rule: 'use tabs for indentation everywhere' }, type: 'preference' });
+      storage.getDatabase()
+        .prepare(`UPDATE memories SET is_active = 0, superseded_by = 'new-pref-key', superseded_at = 1 WHERE key = ?`)
+        .run('old-pref');
+
+      storage.save({ key: 'restated', value: { rule: 'use tabs for indentation everywhere' }, type: 'preference' });
+
+      // User-overridden row stays dead; the restated content gets its own row
+      expect(storage.retrieve('old-pref')?.is_active).toBe(false);
+      expect(storage.retrieve('restated')).not.toBeNull();
+    });
+
+    it('content-hash dedup does not swallow another project\'s memory', () => {
+      storage.save({
+        key: 'proj-a-rule',
+        value: { rule: 'run migrations before every deploy to staging' },
+        type: 'devops',
+        project_id: 'proj-a'
+      });
+
+      // Identical content stored by a DIFFERENT project must get its own row
+      storage.save({
+        key: 'proj-b-rule',
+        value: { rule: 'run migrations before every deploy to staging' },
+        type: 'devops',
+        project_id: 'proj-b'
+      });
+
+      expect(storage.retrieve('proj-a-rule')).not.toBeNull();
+      expect(storage.retrieve('proj-b-rule')).not.toBeNull();
+    });
+
+    it('content-hash dedup still applies within the same project', () => {
+      storage.save({
+        key: 'first-key',
+        value: { rule: 'run migrations before every deploy to staging' },
+        type: 'devops',
+        project_id: 'proj-a'
+      });
+      storage.save({
+        key: 'second-key',
+        value: { rule: 'run migrations before every deploy to staging' },
+        type: 'devops',
+        project_id: 'proj-a'
+      });
+
+      expect(storage.retrieve('second-key')).toBeNull(); // deduped into first
+      expect(storage.retrieve('first-key')).not.toBeNull();
+    });
+
+    it('citation matching covers every demotable type (incl. failure)', () => {
+      storage.save({ key: 'f1', value: { what_failed: 'npm test failed on missing dep' }, type: 'failure' });
+
+      const rules = storage.getAllRulesForCitationMatching();
+      expect(rules.some(r => r.type === 'failure')).toBe(true);
+    });
+  });
+
   describe('clear scoping', () => {
     it('clear with projectId deletes only that project, keeping others and unscoped rows', () => {
       storage.save({ key: 'a', value: { v: 'a' }, type: 'preference', project_id: 'proj-a' });
