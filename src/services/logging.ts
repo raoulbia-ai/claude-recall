@@ -24,7 +24,9 @@ export class LoggingService {
   
   private constructor() {
     const configLevel = this.config.getConfig().logging.level;
-    this.logLevel = LogLevel[configLevel.toUpperCase() as keyof typeof LogLevel] || LogLevel.INFO;
+    // ?? not ||: LogLevel.DEBUG === 0 is falsy, so || silently coerced
+    // CLAUDE_RECALL_LOG_LEVEL=debug into INFO and debug() never wrote
+    this.logLevel = LogLevel[configLevel.toUpperCase() as keyof typeof LogLevel] ?? LogLevel.INFO;
   }
   
   static getInstance(): LoggingService {
@@ -44,10 +46,41 @@ export class LoggingService {
     };
   }
   
+  /**
+   * Size-based rotation honoring logging.maxSize / logging.maxFiles. These
+   * config fields existed since the beginning but nothing implemented them —
+   * with hooks logging on every tool call, info.log grew without bound.
+   * On overflow: log → log.1 → log.2 … up to maxFiles, oldest deleted.
+   */
+  private rotateIfNeeded(logPath: string): void {
+    try {
+      const loggingConfig = this.config.getConfig().logging;
+      const maxBytes = ConfigService.parseByteSize(loggingConfig.maxSize, 10 * 1024 * 1024);
+      const maxFiles = Math.max(1, loggingConfig.maxFiles || 5);
+
+      const stats = fs.statSync(logPath);
+      if (stats.size < maxBytes) return;
+
+      // Shift older rotations up, dropping the oldest
+      for (let i = maxFiles - 1; i >= 1; i--) {
+        const from = `${logPath}.${i}`;
+        if (!fs.existsSync(from)) continue;
+        if (i === maxFiles - 1) {
+          fs.unlinkSync(from);
+        } else {
+          fs.renameSync(from, `${logPath}.${i + 1}`);
+        }
+      }
+      fs.renameSync(logPath, `${logPath}.1`);
+    } catch {
+      // Rotation is best-effort — never let it break logging or the app
+    }
+  }
+
   private writeLog(logName: string, entry: LogEntry): void {
     const logPath = this.config.getLogPath(logName);
     const logDir = path.dirname(logPath);
-    
+
     // Ensure log directory exists
     if (!fs.existsSync(logDir)) {
       try {
@@ -57,12 +90,14 @@ export class LoggingService {
         return;
       }
     }
-    
+
+    this.rotateIfNeeded(logPath);
+
     const logMessage = `[${entry.timestamp}] ${entry.level} [${entry.service}] ${entry.message}`;
-    const fullMessage = entry.metadata 
+    const fullMessage = entry.metadata
       ? `${logMessage}\n  Metadata: ${JSON.stringify(entry.metadata)}\n`
       : `${logMessage}\n`;
-    
+
     try {
       fs.appendFileSync(logPath, fullMessage);
     } catch (error) {
