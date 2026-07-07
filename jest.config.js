@@ -19,14 +19,15 @@ module.exports = {
   ],
   // Honest ratchet: set just below actual coverage so CI fails on regression.
   // Raise these as coverage improves — never lower them. (The previous 70%
-  // referred to a report that silently omitted 20+ untested src files; with
-  // every file counted, real coverage is ~48% statements / ~44% branches.)
+  // referred to a report that silently omitted 20+ untested src files.)
+  // History: 47/43/48/49 at v0.26.0 (~48% real) → raised after the core
+  // coverage push (server/memory/llm-classifier suites; ~58% real).
   coverageThreshold: {
     global: {
-      branches: 43,
-      functions: 49,
-      lines: 48,
-      statements: 47
+      branches: 50,
+      functions: 61,
+      lines: 57,
+      statements: 57
     }
   },
   testTimeout: 30000, // 30 seconds for MCP tests
