@@ -11,6 +11,13 @@ export interface ProjectRegistryEntry {
   registeredAt: string; // ISO timestamp
   version: string;
   lastSeen: string; // ISO timestamp
+  /**
+   * Project ids are directory basenames, so two projects named e.g. "api" at
+   * different paths collide on one registry key (and share one memory scope).
+   * When that happens the latest path wins `path`, and earlier ones are kept
+   * here so the collision is visible instead of silently swallowed.
+   */
+  previousPaths?: string[];
 }
 
 /**
@@ -118,6 +125,23 @@ export class ProjectRegistry {
         registry.projects[projectId].version = version;
         registry.projects[projectId].lastSeen = now;
         this.logger.debug('ProjectRegistry', `Updated existing project: ${projectId}`);
+      } else if (existing) {
+        // Same basename, DIFFERENT path — an id collision, not a new project.
+        // Latest path wins (matches memory scoping, which is also keyed by
+        // basename), but keep the prior paths and say so instead of silently
+        // overwriting the other project's entry.
+        this.logger.warn(
+          'ProjectRegistry',
+          `Project id collision: "${projectId}" already registered at ${existing.path}, now also at ${projectPath}. ` +
+          `Both directories share ONE memory scope (project ids are directory basenames) — rename one directory to isolate them.`
+        );
+        registry.projects[projectId] = {
+          path: projectPath,
+          registeredAt: existing.registeredAt, // preserve original registration
+          version: version,
+          lastSeen: now,
+          previousPaths: [...(existing.previousPaths ?? []), existing.path].slice(-5),
+        };
       } else {
         // New registration
         registry.projects[projectId] = {

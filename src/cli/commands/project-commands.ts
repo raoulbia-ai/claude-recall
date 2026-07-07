@@ -202,6 +202,9 @@ export class ProjectCommands {
       console.log(`  Version:   ${chalk.gray(entry.version)}`);
       console.log(`  Last seen: ${chalk.gray(lastSeenTime)}`);
       console.log(`  Status:    ${isRunning ? chalk.green('✓ Active (MCP running)') : chalk.gray('✗ Inactive')}`);
+      if (entry.previousPaths && entry.previousPaths.length > 0) {
+        console.log(`  ${chalk.yellow('⚠ Id collision:')} also seen at ${chalk.gray(entry.previousPaths.join(', '))} — these directories share one memory scope`);
+      }
       console.log();
     }
 
@@ -236,6 +239,13 @@ export class ProjectCommands {
     console.log(`  Version:      ${chalk.gray(entry.version)}`);
     console.log(`  Registered:   ${chalk.gray(new Date(entry.registeredAt).toLocaleString())}`);
     console.log(`  Last Seen:    ${chalk.gray(new Date(entry.lastSeen).toLocaleString())} (${this.formatRelativeTime(entry.lastSeen)})`);
+    if (entry.previousPaths && entry.previousPaths.length > 0) {
+      console.log(`  ${chalk.yellow('⚠ Id collision:')} this id was also registered at:`);
+      for (const p of entry.previousPaths) {
+        console.log(`      ${chalk.gray(p)}`);
+      }
+      console.log(chalk.yellow('    Project ids are directory basenames — these directories share ONE memory scope. Rename a directory to isolate them.'));
+    }
     console.log();
     console.log(chalk.bold('MCP Server Status:'));
     console.log(`  Running:      ${status.isRunning ? chalk.green('✓ Yes') : chalk.gray('✗ No')}`);

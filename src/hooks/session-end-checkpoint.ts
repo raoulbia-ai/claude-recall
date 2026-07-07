@@ -56,7 +56,17 @@ export async function handleSessionEndCheckpoint(input: any): Promise<void> {
       },
     );
 
+    // Async spawn failures and EPIPE (worker exits before reading stdin)
+    // surface as 'error' events — without handlers they'd be UNCAUGHT
+    // exceptions in the hook process, the one thing a hook must never throw.
+    child.on('error', (err) => {
+      hookLog('session-end-checkpoint', `Worker spawn error: ${err?.message ?? err}`);
+    });
+
     if (child.stdin) {
+      child.stdin.on('error', (err) => {
+        hookLog('session-end-checkpoint', `Worker stdin error: ${err?.message ?? err}`);
+      });
       child.stdin.write(JSON.stringify(input));
       child.stdin.end();
     }
