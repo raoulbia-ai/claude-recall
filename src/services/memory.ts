@@ -841,20 +841,22 @@ export class MemoryService {
 
     const lowerContent = content.toLowerCase();
 
+    // Project indicators FIRST: they are the more specific signal. Checking
+    // universal first meant "always use --no-verify in this project" matched
+    // "always use" and leaked the rule to every project.
+    if (lowerContent.includes('for this project') ||
+        lowerContent.includes('project-specific') ||
+        lowerContent.includes('only here') ||
+        lowerContent.includes('in this project')) {
+      return 'project';
+    }
+
     // Explicit user indicators for universal scope
     if (lowerContent.includes('remember everywhere') ||
         lowerContent.includes('for all projects') ||
         lowerContent.includes('globally') ||
         lowerContent.includes('always use')) {
       return 'universal';
-    }
-
-    // Explicit user indicators for project scope
-    if (lowerContent.includes('for this project') ||
-        lowerContent.includes('project-specific') ||
-        lowerContent.includes('only here') ||
-        lowerContent.includes('in this project')) {
-      return 'project';
     }
 
     // Default: unscoped (null) for backward compatibility

@@ -29,11 +29,15 @@ const SECRET_PATTERNS = [/api_key/i, /token/i, /password/i, /secret/i, /credenti
 
 /**
  * Derive the auto-memory directory path from a cwd.
- * Matches Claude Code's convention: ~/.claude/projects/{cwd with / replaced by -}/memory/
+ * Matches Claude Code's convention: ~/.claude/projects/{sanitized cwd}/memory/
+ * where the sanitizer replaces EVERY non-alphanumeric with '-', not just '/'.
+ * Replacing only slashes wrote to ".../projects/-home-u-my_app.v2/memory"
+ * while Claude Code reads "-home-u-my-app-v2" — the entire sync output was
+ * silently invisible for any project path containing a dot or underscore.
  */
 export function deriveAutoMemoryPath(cwd: string, homedir?: string): string {
   const home = homedir || os.homedir();
-  const sanitized = cwd.replace(/\//g, '-');
+  const sanitized = cwd.replace(/[^a-zA-Z0-9]/g, '-');
   return path.join(home, '.claude', 'projects', sanitized, 'memory');
 }
 
