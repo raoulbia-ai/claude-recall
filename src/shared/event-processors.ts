@@ -80,8 +80,9 @@ function tryPairFix(toolName: string, toolInput: any, output: string): boolean {
     if (!matched && pf.toolName === toolName &&
         jaccardSimilarity(pf.identifier, identifier) >= FIX_SIMILARITY_THRESHOLD) {
       try {
-        MemoryService.getInstance().update(pf.memoryKey, {
-          value: { what_should_do: `Fix: ${truncate(identifier, 200)}` },
+        // Merge, don't replace — preserves the failure's what_failed/why_failed
+        MemoryService.getInstance().mergeIntoValue(pf.memoryKey, {
+          what_should_do: `Fix: ${truncate(identifier, 200)}`,
         });
         logFn('event-processor', `Paired fix: "${truncate(identifier, 60)}" → ${pf.memoryKey}`);
         matched = true;

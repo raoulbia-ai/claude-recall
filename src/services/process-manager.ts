@@ -132,12 +132,22 @@ export class ProcessManager {
 
   /**
    * Remove PID file
+   * @param onlyIfPid If provided, only remove when the file still contains this
+   *                  PID — prevents a shutting-down server from deleting the
+   *                  PID file a replacement server has already written.
    */
-  removePidFile(projectId: string): void {
+  removePidFile(projectId: string, onlyIfPid?: number): void {
     const pidFile = this.getPidFilePath(projectId);
 
     if (fs.existsSync(pidFile)) {
       try {
+        if (onlyIfPid !== undefined) {
+          const currentPid = this.readPidFile(projectId);
+          if (currentPid !== null && currentPid !== onlyIfPid) {
+            this.logger.debug('ProcessManager', `PID file now owned by ${currentPid}, not removing`);
+            return;
+          }
+        }
         fs.unlinkSync(pidFile);
         this.logger.debug('ProcessManager', `Removed PID file: ${pidFile}`);
       } catch (error) {

@@ -728,25 +728,28 @@ class ClaudeRecallCLI {
   /**
    * Export memories to a file
    */
-  async export(outputPath: string, options: { format?: string }): Promise<void> {
+  async export(outputPath: string, options: { format?: string; global?: boolean }): Promise<void> {
     const format = options.format || 'json';
-    
+
     try {
-      // Export all memories from the current project (+ universal). For a
-      // true cross-project dump, the user can run `--project` per project.
+      // Default: current project (+ universal/unscoped). --global dumps every
+      // project — use that before a global `clear --force --global`.
       const projectId = ConfigService.getInstance().getProjectId();
-      const memories = this.memoryService.getAllByProject(projectId);
-      
+      const memories = options.global
+        ? this.memoryService.getAllMemories()
+        : this.memoryService.getAllByProject(projectId);
+
       if (format === 'json') {
         const exportData = {
           version: '0.2.0',
           exportDate: new Date().toISOString(),
+          scope: options.global ? 'all-projects' : projectId,
           count: memories.length,
           memories: memories
         };
-        
+
         fs.writeFileSync(outputPath, JSON.stringify(exportData, null, 2));
-        console.log(`✅ Exported ${memories.length} memories to ${outputPath}`);
+        console.log(`✅ Exported ${memories.length} memories to ${outputPath}${options.global ? ' (all projects)' : ` (project: ${projectId})`}`);
       } else {
         console.error(`❌ Unsupported format: ${format}`);
         process.exit(1);
@@ -803,28 +806,47 @@ class ClaudeRecallCLI {
   }
 
   /**
-   * Clear memories
+   * Clear memories. Project-scoped by default; --global wipes ALL projects.
+   * Always writes a full-DB backup file first so a mistaken clear is recoverable.
    */
-  async clear(options: { type?: string; force?: boolean }): Promise<void> {
+  async clear(options: { type?: string; force?: boolean; global?: boolean }): Promise<void> {
+    const projectId = options.global ? undefined : ConfigService.getInstance().getProjectId();
+
     if (!options.force) {
-      console.log('⚠️  This will permanently delete memories.');
+      if (options.global) {
+        console.log('⚠️  This will permanently delete memories from ALL projects.');
+      } else {
+        console.log(`⚠️  This will permanently delete memories for project "${projectId}".`);
+        console.log('   (Universal/unscoped memories shared across projects are kept.)');
+        console.log('   Use --global to clear every project.');
+      }
       console.log('Use --force to confirm.');
       return;
     }
-    
+
     try {
-      const memoryService = MemoryService.getInstance();
-      
-      // Actually clear the memories
-      const count = memoryService.clear(options.type);
-      
-      if (options.type) {
-        console.log(`✅ Cleared ${count} memories of type: ${options.type}`);
-      } else {
-        console.log(`✅ Cleared ${count} memories`);
+      // Safety net: copy the DB file before deleting anything
+      const dbPath = ConfigService.getInstance().getDatabasePath();
+      let backupPath: string | null = null;
+      if (fs.existsSync(dbPath)) {
+        backupPath = `${dbPath}.backup-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+        fs.copyFileSync(dbPath, backupPath);
       }
-      
-      this.logger.info('CLI', 'Clear completed', { type: options.type, count });
+
+      const memoryService = MemoryService.getInstance();
+      const count = memoryService.clear(options.type, projectId);
+
+      const scopeLabel = options.global ? 'all projects' : `project "${projectId}"`;
+      if (options.type) {
+        console.log(`✅ Cleared ${count} memories of type ${options.type} (${scopeLabel})`);
+      } else {
+        console.log(`✅ Cleared ${count} memories (${scopeLabel})`);
+      }
+      if (backupPath) {
+        console.log(`   Backup written to: ${backupPath}`);
+      }
+
+      this.logger.info('CLI', 'Clear completed', { type: options.type, project: projectId || 'all', count });
     } catch (error) {
       console.error('❌ Clear failed:', error);
       this.logger.error('CLI', 'Clear failed', error);
@@ -1406,10 +1428,24 @@ async function main() {
         process.exit(2);
       }
       try {
+        // Interactive y/N confirmation when attached to a terminal. Without a
+        // TTY (and without --auto), runRepair fails safe and applies nothing.
+        const interactivePrompt = (!options.auto && !options.dryRun && process.stdin.isTTY)
+          ? (question: string): Promise<boolean> => new Promise((resolve) => {
+              const readline = require('node:readline') as typeof import('node:readline');
+              const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+              rl.question(question, (answer: string) => {
+                rl.close();
+                resolve(/^y(es)?$/i.test(answer.trim()));
+              });
+            })
+          : undefined;
+
         const result = await runRepair({
           auto: !!options.auto,
           dryRun: !!options.dryRun,
           scope,
+          prompt: interactivePrompt,
         });
         process.exit(result.exitCode);
       } catch (err) {
@@ -1990,8 +2026,9 @@ async function main() {
   // Export command
   program
     .command('export <output>')
-    .description('Export memories to file')
+    .description('Export memories to file (current project by default)')
     .option('-f, --format <format>', 'Export format (json)', 'json')
+    .option('--global', 'Export memories from ALL projects')
     .action(async (output, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.export(output, options);
@@ -2011,8 +2048,9 @@ async function main() {
   // Clear command
   program
     .command('clear')
-    .description('Clear memories')
+    .description('Clear memories for the current project (use --global for all projects)')
     .option('-t, --type <type>', 'Clear specific memory type')
+    .option('--global', 'Clear memories from ALL projects, not just the current one')
     .option('--force', 'Confirm deletion')
     .action(async (options) => {
       const cli = new ClaudeRecallCLI(program.opts());

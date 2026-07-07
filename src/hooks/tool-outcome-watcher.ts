@@ -310,8 +310,10 @@ async function handleBashSuccess(command: string, sessionId: string): Promise<vo
     if (!matched && jaccardSimilarity(pf.command, command) >= FIX_JACCARD_THRESHOLD) {
       try {
         const memoryService = MemoryService.getInstance();
-        memoryService.update(pf.memoryKey, {
-          value: { what_should_do: `Fix: ${truncate(command, 200)}` },
+        // Merge, don't replace — the failure memory's what_failed/why_failed
+        // fields are the counterfactual context the fix enriches
+        memoryService.mergeIntoValue(pf.memoryKey, {
+          what_should_do: `Fix: ${truncate(command, 200)}`,
         });
         recordOutcomeEvent('Bash', { command }, `Success after previous failure: ${truncate(pf.command, 100)}`, 0);
         hookLog(HOOK_NAME, `Paired fix: "${truncate(command, 60)}" → ${pf.memoryKey}`);

@@ -618,23 +618,30 @@ export class MemoryStorage {
     return result.changes > 0;
   }
 
-  clear(type?: string): number {
-    let stmt;
-    let result;
-    
+  /**
+   * Clear memories. With projectId, only that project's rows are deleted
+   * (universal/unscoped rows are shared across projects and left alone).
+   * Without projectId this deletes across ALL projects.
+   */
+  clear(type?: string, projectId?: string): number {
+    const conditions: string[] = [];
+    const params: any[] = [];
+
     if (type) {
-      // Clear specific type
-      stmt = this.db.prepare('DELETE FROM memories WHERE type = ?');
-      result = stmt.run(type);
-    } else {
-      // Clear all memories
-      stmt = this.db.prepare('DELETE FROM memories');
-      result = stmt.run();
+      conditions.push('type = ?');
+      params.push(type);
     }
-    
+    if (projectId) {
+      conditions.push('project_id = ?');
+      params.push(projectId);
+    }
+
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const result = this.db.prepare(`DELETE FROM memories${where}`).run(...params);
+
     // Force checkpoint to ensure deletion is persisted
     this.db.pragma('wal_checkpoint(TRUNCATE)');
-    
+
     return result.changes;
   }
   
@@ -667,12 +674,26 @@ export class MemoryStorage {
     return { total, byType };
   }
   
+  /** Columns that may be modified via update(). Anything else is ignored. */
+  private static readonly UPDATABLE_COLUMNS = new Set([
+    'value', 'type', 'project_id', 'file_path', 'timestamp', 'relevance_score',
+    'access_count', 'last_accessed', 'preference_key', 'is_active',
+    'superseded_by', 'superseded_at', 'confidence_score', 'sophistication_level', 'scope'
+  ]);
+
   /**
-   * Update a memory record by key
+   * Update a memory record by key.
+   *
+   * NOTE: `value` is replaced wholesale. To merge fields into an existing
+   * JSON value without losing the rest of the record, use mergeValue().
    */
   update(key: string, updates: Partial<Memory>): void {
-    const fields = Object.keys(updates).filter(k => k !== 'key'); // Don't update key
-    const setClause = fields.map(field => `${field} = ?`).join(', ');
+    // Whitelist column names — they are interpolated into the SET clause
+    const fields = Object.keys(updates).filter(k => MemoryStorage.UPDATABLE_COLUMNS.has(k));
+    if (fields.length === 0) {
+      return;
+    }
+
     const values = fields.map(field => {
       const value = (updates as any)[field];
       if (field === 'value') {
@@ -683,9 +704,51 @@ export class MemoryStorage {
         return value;
       }
     });
-    
+
+    // Keep the dedup hash in sync when the content changes
+    if (updates.value !== undefined) {
+      const row = this.db.prepare('SELECT type FROM memories WHERE key = ?').get(key) as { type: string } | undefined;
+      if (row) {
+        const type = (updates.type as string) ?? row.type;
+        fields.push('content_hash');
+        values.push(this.computeContentHash(updates.value, type));
+      }
+    }
+
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
     const stmt = this.db.prepare(`UPDATE memories SET ${setClause} WHERE key = ?`);
     stmt.run(...values, key);
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+  }
+
+  /**
+   * Merge fields into an existing memory's JSON value, preserving fields not
+   * named in `partial` (read-modify-write). Recomputes content_hash so dedup
+   * stays consistent. Returns false if no memory exists under the key.
+   */
+  mergeValue(key: string, partial: Record<string, any>): boolean {
+    const row = this.db.prepare('SELECT value, type FROM memories WHERE key = ?')
+      .get(key) as { value: string; type: string } | undefined;
+    if (!row) {
+      return false;
+    }
+
+    let existingValue: any;
+    try {
+      existingValue = JSON.parse(row.value);
+    } catch {
+      existingValue = { content: row.value };
+    }
+
+    const merged = (existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue))
+      ? { ...existingValue, ...partial }
+      : { content: existingValue, ...partial };
+
+    const contentHash = this.computeContentHash(merged, row.type);
+    this.db.prepare('UPDATE memories SET value = ?, content_hash = ? WHERE key = ?')
+      .run(JSON.stringify(merged), contentHash, key);
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return true;
   }
 
   /**

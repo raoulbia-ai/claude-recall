@@ -325,20 +325,34 @@ export class MemoryService {
   }
 
   /**
-   * Clear memories
+   * Clear memories. With projectId, only that project's rows are deleted;
+   * without it the wipe spans ALL projects.
    */
-  clear(type?: string): number {
+  clear(type?: string, projectId?: string): number {
     try {
-      const count = this.storage.clear(type);
-      
+      const count = this.storage.clear(type, projectId);
+
       this.logger.logMemoryOperation('CLEAR', {
         type: type || 'all',
+        project: projectId || 'all',
         count
       });
-      
+
       return count;
     } catch (error) {
-      this.logger.logServiceError('MemoryService', 'clear', error as Error, { type });
+      this.logger.logServiceError('MemoryService', 'clear', error as Error, { type, projectId });
+      throw error;
+    }
+  }
+
+  /**
+   * Enumerate ALL memories across every project (for global export/backup).
+   */
+  getAllMemories(): Memory[] {
+    try {
+      return this.storage.searchByContext({ includeAllProjects: true });
+    } catch (error) {
+      this.logger.logServiceError('MemoryService', 'getAllMemories', error as Error);
       throw error;
     }
   }
@@ -838,10 +852,19 @@ export class MemoryService {
   }
 
   /**
-   * Update a memory record by key (used for fix pairing in hooks)
+   * Update a memory record by key. Replaces `value` wholesale — for enriching
+   * an existing value without destroying its other fields, use mergeIntoValue().
    */
   update(key: string, updates: Partial<Memory>): void {
     this.storage.update(key, updates);
+  }
+
+  /**
+   * Merge fields into an existing memory's JSON value, preserving the rest of
+   * the record (used for fix pairing in hooks). Returns false if key missing.
+   */
+  mergeIntoValue(key: string, partial: Record<string, any>): boolean {
+    return this.storage.mergeValue(key, partial);
   }
 
   /**

@@ -10,11 +10,14 @@ const mockLoadActiveRules = jest.fn().mockReturnValue({
   preferences: [], corrections: [], failures: [], devops: [], summary: '',
 });
 
+const mockMergeIntoValue = jest.fn().mockReturnValue(true);
+
 jest.mock('../../src/services/memory', () => ({
   MemoryService: {
     getInstance: () => ({
       store: mockStore,
       update: mockUpdate,
+      mergeIntoValue: mockMergeIntoValue,
       search: mockSearch,
       findRelevant: mockFindRelevant,
       loadActiveRules: mockLoadActiveRules,
@@ -144,15 +147,17 @@ describe('event-processors', () => {
       // Then: success with similar command
       processToolOutcome('Bash', { command: 'npm test' }, 'All tests passed', false, 'sess1');
 
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate.mock.calls[0][1].value.what_should_do).toContain('Fix:');
+      // Merge (not wholesale replace) so the failure context survives
+      expect(mockMergeIntoValue).toHaveBeenCalledTimes(1);
+      expect(mockMergeIntoValue.mock.calls[0][1].what_should_do).toContain('Fix:');
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
 
     it('does not pair fix for dissimilar commands', () => {
       processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
       processToolOutcome('Bash', { command: 'git status' }, 'On branch main', false, 'sess1');
 
-      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockMergeIntoValue).not.toHaveBeenCalled();
     });
 
     it('pairs fix for Edit tool on same file', () => {
@@ -161,7 +166,7 @@ describe('event-processors', () => {
 
       processToolOutcome('Edit', { file_path: '/app.ts' }, 'File edited successfully', false, 'sess1');
 
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
+      expect(mockMergeIntoValue).toHaveBeenCalledTimes(1);
     });
 
     it('resets pending failures', () => {
@@ -169,7 +174,7 @@ describe('event-processors', () => {
       resetPendingFailures();
       processToolOutcome('Bash', { command: 'npm test' }, 'All tests passed', false, 'sess1');
 
-      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockMergeIntoValue).not.toHaveBeenCalled();
     });
   });
 

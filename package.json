@@ -27,7 +27,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js || true",
-    "test": "jest --passWithNoTests",
+    "test": "jest",
     "test:watch": "jest --watch",
     "test:unit": "jest tests/unit",
     "test:integration": "jest tests/integration",
@@ -73,7 +73,7 @@
   "author": "Claude Recall Team",
   "license": "ISC",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=20.19.0"
   },
   "repository": {
     "type": "git",

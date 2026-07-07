@@ -360,8 +360,10 @@ export class DatabaseManager {
         const toRemove = scored.slice(keepPerPattern);
 
         if (!dryRun && toRemove.length > 0) {
-          const ids = toRemove.map(r => r.id).join(',');
-          db.exec(`DELETE FROM memories WHERE id IN (${ids})`);
+          // Prepared-statement deletion, matching pruneOldToolUse (audit 2026-04-23)
+          const placeholders = toRemove.map(() => '?').join(',');
+          db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+            .run(...toRemove.map(r => r.id));
         }
 
         totalRemoved += toRemove.length;

@@ -502,7 +502,22 @@ export async function runRepair(options: RepairOptions = {}): Promise<RepairResu
     };
   }
 
-  if (!options.auto && !options.dryRun && options.prompt) {
+  if (!options.auto && !options.dryRun) {
+    // Fail safe: without a way to confirm (non-TTY and no prompt wired),
+    // never mutate settings files. Applying fixes requires explicit consent
+    // (interactive y/N) or an explicit --auto.
+    if (!options.prompt) {
+      log.log(`\n${totalFixable} fix(es) available but not applied: confirmation unavailable in non-interactive mode.`);
+      log.log('Re-run with --auto to apply safe fixes, or --dry-run to preview.\n');
+      return {
+        exitCode: 0,
+        filesScanned: files.length,
+        filesModified: 0,
+        fixesApplied: 0,
+        unfixable: totalUnfixable,
+        reports,
+      };
+    }
     const proceed = await options.prompt(`\nApply ${totalFixable} fix(es)? [y/N] `);
     if (!proceed) {
       log.log('Aborted. No files changed.\n');

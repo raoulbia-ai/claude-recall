@@ -218,9 +218,11 @@ claude-recall monitor                    # Memory search monitoring stats
 ```bash
 claude-recall store "content"                # Store a memory (default type: preference)
 claude-recall store "content" -t correction  # Store with specific type
-claude-recall export backup.json             # Export all memories to JSON
+claude-recall export backup.json             # Export current project's memories to JSON
+claude-recall export backup.json --global    # Export ALL projects' memories
 claude-recall import backup.json             # Import memories from JSON
-claude-recall clear --force                  # Delete all memories (irreversible)
+claude-recall clear --force                  # Delete current project's memories (auto-backup written first)
+claude-recall clear --force --global         # Delete ALL projects' memories
 ```
 
 ### Task Checkpoints
@@ -324,9 +326,11 @@ claude-recall search "query" --json      # Output as JSON
 claude-recall search "query" --project <id>  # Search specific project
 claude-recall store "content"            # Store memory directly
 claude-recall store "content" -t <type>  # Store with type (preference, correction, failure, devops, project-knowledge)
-claude-recall export backup.json         # Export memories to JSON
+claude-recall export backup.json         # Export current project's memories to JSON
+claude-recall export backup.json --global # Export all projects
 claude-recall import backup.json         # Import memories from JSON
-claude-recall clear --force              # Clear all memories
+claude-recall clear --force              # Clear current project (auto-backup written first)
+claude-recall clear --force --global     # Clear all projects
 claude-recall failures                   # View failure memories
 claude-recall failures --limit 20        # Limit results
 claude-recall outcomes                   # Outcome-aware learning status

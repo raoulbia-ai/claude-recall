@@ -487,6 +487,87 @@ describe('runRepair', () => {
     }
   });
 
+  it('fails safe: applies nothing when interactive but no prompt is available', async () => {
+    const tmp = mkTmp();
+    try {
+      const claudeDir = path.join(tmp, '.claude');
+      fs.mkdirSync(claudeDir);
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      const original = JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'command', command: 'node /gone/claude-recall-cli.js hook run memory-stop' }] }],
+        },
+      });
+      fs.writeFileSync(settingsPath, original);
+
+      const { logger, messages } = makeLogger();
+      // Neither auto nor dryRun nor prompt — must not mutate anything
+      const result = await runRepair({
+        scope: 'user', home: tmp, logger,
+        claudeRecallOnPath: resolverYes,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.filesModified).toBe(0);
+      expect(result.fixesApplied).toBe(0);
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(original);
+      expect(messages.join('\n')).toMatch(/--auto|--dry-run/);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
+  it('declining the interactive prompt applies nothing', async () => {
+    const tmp = mkTmp();
+    try {
+      const claudeDir = path.join(tmp, '.claude');
+      fs.mkdirSync(claudeDir);
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      const original = JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'command', command: 'node /gone/claude-recall-cli.js hook run memory-stop' }] }],
+        },
+      });
+      fs.writeFileSync(settingsPath, original);
+
+      const { logger } = makeLogger();
+      const result = await runRepair({
+        scope: 'user', home: tmp, logger,
+        claudeRecallOnPath: resolverYes,
+        prompt: async () => false,
+      });
+      expect(result.filesModified).toBe(0);
+      expect(fs.readFileSync(settingsPath, 'utf8')).toBe(original);
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
+  it('accepting the interactive prompt applies fixes', async () => {
+    const tmp = mkTmp();
+    try {
+      const claudeDir = path.join(tmp, '.claude');
+      fs.mkdirSync(claudeDir);
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'command', command: 'node /gone/claude-recall-cli.js hook run memory-stop' }] }],
+        },
+      }));
+
+      const { logger } = makeLogger();
+      const result = await runRepair({
+        scope: 'user', home: tmp, logger,
+        claudeRecallOnPath: resolverYes,
+        prompt: async () => true,
+      });
+      expect(result.filesModified).toBe(1);
+      const written = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(written.hooks.Stop[0].hooks[0].command).toBe('claude-recall hook run memory-stop');
+    } finally {
+      rmTmp(tmp);
+    }
+  });
+
   it('reports unfixable issues without exiting non-zero (postinstall safety)', async () => {
     const tmp = mkTmp();
     try {

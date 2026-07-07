@@ -97,8 +97,8 @@ export class MCPServer {
           case 'tools/call':
             response = await this.handleToolCall(request);
             break;
-          case 'notifications/initialized':
-            response = await this.handleInitialized(request);
+          case 'ping':
+            response = { jsonrpc: "2.0", id: request.id, result: {} };
             break;
           case 'resources/list':
             response = await this.resourcesHandler.handleResourcesList(request);
@@ -133,6 +133,24 @@ export class MCPServer {
       }
 
       return response;
+    });
+
+    // Notifications have no id and never get a response. Per the MCP spec the
+    // client signals handshake completion with `notifications/initialized`.
+    this.transport.onNotification(async (notification) => {
+      if (notification.method === 'notifications/initialized') {
+        this.isInitialized = true;
+        this.logger.info('MCPServer', 'MCP server initialized successfully');
+      }
+    });
+
+    // stdin EOF means Claude Code exited. A stdio server has exactly one
+    // client, so shut down instead of lingering as an orphaned process.
+    this.transport.onClose(() => {
+      this.logger.info('MCPServer', 'Client disconnected (stdin closed), shutting down');
+      this.stop()
+        .catch(error => this.logger.logServiceError('MCPServer', 'stop', error as Error))
+        .finally(() => process.exit(0));
     });
   }
 
@@ -183,21 +201,9 @@ export class MCPServer {
         },
         serverInfo: {
           name: "claude-recall",
-          version: "0.2.0"
+          version: this.getVersion()
         }
       }
-    };
-  }
-
-  private async handleInitialized(request: MCPRequest): Promise<MCPResponse> {
-    this.isInitialized = true;
-    this.logger.info('MCPServer', 'MCP server initialized successfully');
-    
-    // Note: initialized is a notification, no response required
-    return {
-      jsonrpc: "2.0",
-      id: request.id,
-      result: null
     };
   }
 
@@ -381,9 +387,17 @@ export class MCPServer {
           // Always auto-cleanup stale processes (no longer requires env var)
           this.logger.warn('MCPServer', `Stopping existing MCP server (PID: ${existingPid}) before starting...`);
           this.processManager.killProcess(existingPid, false);
+          // Wait until it has actually exited — its graceful stop (session
+          // persist + WAL checkpoint + DB close) can take more than a second
+          const deadline = Date.now() + 5000;
+          while (this.processManager.isProcessRunning(existingPid) && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          if (this.processManager.isProcessRunning(existingPid)) {
+            this.logger.warn('MCPServer', `Old server (PID: ${existingPid}) did not exit in time, force killing`);
+            this.processManager.killProcess(existingPid, true);
+          }
           this.processManager.removePidFile(projectId);
-          // Give it a moment to shut down
-          await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
           // Clean up stale PID file
           this.logger.info('MCPServer', 'Removing stale PID file...');
@@ -409,7 +423,15 @@ export class MCPServer {
     }
   }
 
+  private isStopping = false;
+
   async stop(): Promise<void> {
+    // Idempotent: stop() can be reached from stdin close, SIGINT and SIGTERM
+    if (this.isStopping) {
+      return;
+    }
+    this.isStopping = true;
+
     try {
       this.logger.info('MCPServer', 'Stopping MCP server...');
 
@@ -428,9 +450,10 @@ export class MCPServer {
       await this.transport.stop();
       this.memoryService.close();
 
-      // Remove PID file on clean shutdown
+      // Remove PID file on clean shutdown — but only if it still belongs to
+      // this process. A replacement server may already have written its own.
       const projectId = this.config.getProjectId();
-      this.processManager.removePidFile(projectId);
+      this.processManager.removePidFile(projectId, process.pid);
 
       this.logger.info('MCPServer', 'MCP server stopped');
     } catch (error) {
@@ -441,17 +464,19 @@ export class MCPServer {
 
   // Graceful shutdown handling
   setupSignalHandlers(): void {
-    process.on('SIGINT', async () => {
-      this.logger.info('MCPServer', 'Received SIGINT, shutting down gracefully...');
-      await this.stop();
-      process.exit(0);
-    });
+    const shutdown = async (signal: string) => {
+      this.logger.info('MCPServer', `Received ${signal}, shutting down gracefully...`);
+      try {
+        await this.stop();
+      } catch (error) {
+        this.logger.logServiceError('MCPServer', 'stop', error as Error);
+      } finally {
+        process.exit(0);
+      }
+    };
 
-    process.on('SIGTERM', async () => {
-      this.logger.info('MCPServer', 'Received SIGTERM, shutting down gracefully...');
-      await this.stop();
-      process.exit(0);
-    });
+    process.on('SIGINT', () => { shutdown('SIGINT'); });
+    process.on('SIGTERM', () => { shutdown('SIGTERM'); });
   }
 
   /**
