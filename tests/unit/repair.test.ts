@@ -104,7 +104,8 @@ describe('findSettingsFiles', () => {
       fs.writeFileSync(path.join(claudeDir, 'settings.json'), '{}');
       fs.writeFileSync(path.join(claudeDir, 'settings.local.json'), '{}');
 
-      const results = findSettingsFiles(deep, os.homedir(), 'project');
+      // tmp as the home boundary — the walk must stay inside the sandbox
+      const results = findSettingsFiles(deep, tmp, 'project');
       expect(results).toContain(path.join(claudeDir, 'settings.json'));
       expect(results).toContain(path.join(claudeDir, 'settings.local.json'));
     } finally {

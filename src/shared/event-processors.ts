@@ -15,7 +15,7 @@ import {
   jaccardSimilarity,
   safeErrorMessage,
 } from '../hooks/shared';
-import { extractSessionLearningsWithLLM, extractCheckpointWithLLM, SessionLearning } from '../hooks/llm-classifier';
+import { extractSessionLearningsWithLLM, extractCheckpointWithLLM } from '../hooks/llm-classifier';
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { FailureMemoryContent } from '../services/failure-extractor';
@@ -66,7 +66,7 @@ function getToolIdentifier(toolName: string, toolInput: any): string {
  * Check if a successful tool result matches a recent failure and pair the fix.
  * Returns true if a fix was paired.
  */
-function tryPairFix(toolName: string, toolInput: any, output: string): boolean {
+function tryPairFix(toolName: string, toolInput: any, _output: string): boolean {
   if (pendingFailures.length === 0) return false;
 
   const now = Date.now();
@@ -192,7 +192,7 @@ function storeToolFailure(
   toolName: string,
   toolInput: any,
   output: string,
-  sessionId: string,
+  _sessionId: string,
 ): void {
   const filePath = toolInput?.file_path ?? '';
   const command = toolInput?.command ?? '';
@@ -273,7 +273,7 @@ const REASK_PATTERNS = [
  * Process user input text — detect corrections, preferences, and reask signals.
  * Returns a summary message if something was captured, or null.
  */
-export async function processUserInput(text: string, sessionId: string): Promise<string | null> {
+export async function processUserInput(text: string, _sessionId: string): Promise<string | null> {
   if (text.length < 20 || text.length > 2000) return null;
   if (text.startsWith('```') || text.startsWith('{')) return null;
 

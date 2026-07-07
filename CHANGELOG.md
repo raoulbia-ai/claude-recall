@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.0] - 2026-07-07
+
+Four-phase repair campaign from a full-codebase review (PRs #16–#19). Highlights below; full details in each PR.
+
+### Fixed
+
+- **Zombie MCP servers eliminated at the root cause.** stdin EOF (Claude Code exiting) previously triggered a reconnect loop on a stream that can never reconnect, orphaning one server per session — the failure the PID-file subsystem was built to paper over. The server now shuts down gracefully and exits on client disconnect. Also: MCP notifications are actually dispatched now (`notifications/initialized` was silently dropped forever), `ping` is answered, `serverInfo.version` reports the real version, and PID-file takeover is race-hardened (ownership-checked removal, poll-for-death instead of a fixed sleep).
+- **Fix pairing no longer destroys failure memories.** Pairing a successful command with a prior failure replaced the memory's entire JSON value, wiping `what_failed`/`why_failed`/`preventative_checks` (observed 73× on live data). New `mergeIntoValue()` does read-modify-write and keeps `content_hash` in sync. `update()` now whitelists column names and no-ops on empty updates.
+- **The learning loop can retain what it learns.** `failure` memories were excluded from citation matching while remaining demotable — with auto-demote enabled their demotion was a mathematical certainty. Dedup no longer absorbs re-taught rules into demoted rows (identical re-teaching now *revives* an auto-demoted rule; user-overridden rules stay dead), no longer swallows one project's memory into another's, and same-key re-saves preserve `load_count`/`cite_count` (`ON CONFLICT` upsert instead of `INSERT OR REPLACE`).
+- **Candidate lessons are failure-specific.** Detectors emit constant `what_should_do` boilerplate; identical constants matched as "similar lessons" across unrelated failures, so only generic advice ever got promoted. Lessons now come from `extractHindsightHint` (LLM) with a grounded fallback.
+- **Destructive CLI operations are safe.** Bare `repair` now really prompts before mutating settings files (the y/N gate could never fire) and fails safe when non-interactive; `clear` is project-scoped by default (`--global` for all projects) and writes an automatic full-DB backup first; `export --global` exists so the documented backup→clear flow can no longer lose other projects' memories; `import`/`export` docs corrected.
+- **Security regressions from the 2026-04-24 audit closed.** The Pi extension still shipped the pre-audit "follow the rule" directive (prompt-injection vector) — both surfaces now share one audited constant. The last string-interpolated SQL delete converted to a prepared statement.
+- **MCP `prompts/get` responses are spec-conformant** (`role: 'user'`, typed text content — was `system` + bare strings, which conformant clients reject). Server-reachable status output (schema migration, memory-usage warning, compaction) moved to stderr; stdout is the JSON-RPC channel.
+- **Hook LLM calls can no longer stall the session.** The Anthropic client in hook contexts had SDK defaults (10-minute timeout, 2 retries) and the `UserPromptSubmit` hook had no timeout. Now 5s / no retries (`CLAUDE_RECALL_LLM_TIMEOUT_MS`) with `timeout: 8` on the hook.
+
+### Added
+
+- **Compaction actually runs.** The documented 10MB threshold, 10k memory cap, and retention limits had zero callers. Now enforced on MCP server boot (non-fatal) plus a manual `claude-recall compact [--dry-run]`. Its latent bugs were fixed first: per-project hash dedup preferring the active row with counters merged, and corrections retention targeting the type production actually writes. `CLAUDE_RECALL_COMPACT_THRESHOLD` accepts `10MB`-style values.
+- **CI.** `ci.yml` runs type-check (src + tests), ESLint, and the test suite with a coverage ratchet on Node 20/22 for every PR — previously no tests ran in CI at all. Dependabot configured (weekly, grouped).
+- **ESLint** (flat config, typescript-eslint) with type-aware promise rules — its first run caught three real floating-promise bugs in the MCP server. **Test code is type-checked** for the first time via `tsconfig.test.json`.
+- New env vars: `CLAUDE_RECALL_LLM_TIMEOUT_MS` (hook LLM timeout, default 5000) and `CLAUDE_RECALL_STOP_DEBOUNCE_MS` (heavy Stop-pipeline debounce, default 300000, `0` disables).
+
+### Changed
+
+- **Per-tool-call hook overhead roughly halved.** `hook run` accepts multiple hook names in one process; the PostToolUse, PostToolUseFailure, and Stop hook pairs share a single node invocation each. The heavy Stop pipeline (episode insert, session extraction, promotion cycle, prune) is debounced per session (default 5 min); the cheap citation scan still runs every turn.
+- **Sessions and rate limiting are real.** One stable session per server process (previously every tool call generated a fresh random session — a synchronous full `sessions.json` write per call and a rate limiter that could never trigger). Session files are per-project; persistence is debounced; stale-session cleanup runs periodically.
+- **Coverage reporting is honest.** A jest `roots` bug hid 21 of 53 source files from the report (claimed 71% statements; real 48%). All files count now; thresholds are a raise-only ratchet enforced in CI.
+- Tests are fully isolated from the real `~/.claude-recall` (hook state, session files, and logs honor `CLAUDE_RECALL_DB_PATH`; suites run in temp sandboxes).
+- `@anthropic-ai/sdk` 0.39 → 0.110.
+- **Node support floor is now 20.19** (`engines` corrected from `>=16`; chalk 5 is ESM-only and better-sqlite3 12 requires Node 20+ — older Nodes already crashed at import).
+
+### Removed
+
+- ~1,100 lines of dead code: `MemoryCaptureMiddleware` (triply unreachable), `PatternStore` + `core/patterns.ts`, the `migrate` command group, the transport's broken reconnect machinery and `Content-Length` framing branch, unused tool-validation and session-analysis code.
+
 ## [0.25.1] - 2026-04-28
 
 ### Fixed

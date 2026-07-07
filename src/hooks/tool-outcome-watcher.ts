@@ -15,10 +15,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { FailureMemoryContent } from '../services/failure-extractor';
 import {
   hookLog,
+  hookStateDir,
   safeErrorMessage,
   storeMemory,
   searchExisting,
@@ -65,7 +65,7 @@ export interface PendingFailure {
 // --- State management (Bash fix pairing only) ---
 
 function getStateDir(): string {
-  return path.join(os.homedir(), '.claude-recall', 'hook-state');
+  return hookStateDir();
 }
 
 function getStatePath(sessionId: string): string {
@@ -337,7 +337,6 @@ async function handleWriteToolOutcome(input: any): Promise<void> {
   const output = input.tool_output ?? '';
   const toolName = input.tool_name;
   const filePath = input.tool_input?.file_path ?? '';
-  const sessionId = input.session_id ?? 'unknown';
 
   // Check for error patterns
   const errorMatch = WRITE_ERROR_PATTERNS.find(p => p.test(output));
@@ -379,7 +378,6 @@ async function handleWriteToolOutcome(input: any): Promise<void> {
 async function handleMcpToolOutcome(input: any): Promise<void> {
   const output = input.tool_output ?? '';
   const toolName = input.tool_name;
-  const sessionId = input.session_id ?? 'unknown';
 
   // Skip Claude Recall's own tools to avoid self-referential loops
   if (toolName.includes('claude-recall') || toolName.includes('claude_recall')) return;

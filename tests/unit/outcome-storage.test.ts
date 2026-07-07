@@ -1,4 +1,3 @@
-import { MemoryStorage } from '../../src/memory/storage';
 import { MemoryService } from '../../src/services/memory';
 import { OutcomeStorage } from '../../src/services/outcome-storage';
 
@@ -40,14 +39,14 @@ describe('OutcomeStorage', () => {
   afterEach(() => {
     try {
       MemoryService.getInstance().close();
-    } catch {}
+    } catch { /* best-effort cleanup — ignore */ }
     (MemoryService as any).instance = undefined;
     OutcomeStorage.resetInstance();
   });
 
   describe('table creation via migration', () => {
     it('should create all 4 outcome tables', () => {
-      const outcomeStorage = OutcomeStorage.getInstance();
+      OutcomeStorage.getInstance();
       const db = MemoryService.getInstance().getDatabase();
 
       const tables = db.prepare(

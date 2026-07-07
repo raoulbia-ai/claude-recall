@@ -37,7 +37,7 @@ describe('Memory Stop Episodes', () => {
   afterEach(() => {
     try {
       MemoryService.getInstance().close();
-    } catch {}
+    } catch { /* best-effort cleanup — ignore */ }
     (MemoryService as any).instance = undefined;
     OutcomeStorage.resetInstance();
   });

@@ -10,12 +10,10 @@ import * as os from 'os';
 import { PatternService } from '../services/pattern-service';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
-import { FailureExtractor } from '../services/failure-extractor';
 import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
-import { OutcomeStorage } from '../services/outcome-storage';
 import { runRepair } from './commands/repair';
 
 const program = new Command();
@@ -1112,7 +1110,8 @@ async function main() {
   }
 
   // Install skills + minimal enforcement hook
-  function installSkillsAndHook(force: boolean = false): void {
+  // TODO: honor force — currently `repair --reinstall-hooks` behaves identically to `setup --install`
+  function installSkillsAndHook(_force: boolean = false): void {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 

@@ -95,12 +95,12 @@ import piExtension from '../../src/pi/extension';
 
 // Mock Pi's ExtensionAPI
 function createMockPiApi() {
-  const tools: Array<{ name: string; execute: Function }> = [];
-  const handlers: Record<string, Function> = {};
+  const tools: Array<{ name: string; execute: (...args: any[]) => any }> = [];
+  const handlers: Record<string, (...args: any[]) => any> = {};
 
   const api = {
     registerTool: jest.fn((tool: any) => tools.push(tool)),
-    on: jest.fn((event: string, handler: Function) => { handlers[event] = handler; }),
+    on: jest.fn((event: string, handler: (...args: any[]) => any) => { handlers[event] = handler; }),
     registerCommand: jest.fn(),
     sendMessage: jest.fn(),
     // Expose for testing

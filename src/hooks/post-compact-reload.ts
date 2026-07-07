@@ -43,7 +43,7 @@ function formatRules(rules: ActiveRules): string {
   return sections.join('\n\n');
 }
 
-export async function handlePostCompactReload(input: any): Promise<void> {
+export async function handlePostCompactReload(_input: any): Promise<void> {
   try {
     const projectId = ConfigService.getInstance().getProjectId();
     const rules = MemoryService.getInstance().loadActiveRules(projectId);

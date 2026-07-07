@@ -1,4 +1,4 @@
-import { detectTranscriptFailures, DetectedFailure } from '../../src/hooks/failure-detectors';
+import { detectTranscriptFailures } from '../../src/hooks/failure-detectors';
 import {
   extractToolCalls,
   extractToolResults,

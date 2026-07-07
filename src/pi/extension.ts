@@ -31,20 +31,6 @@ function truncateStr(s: string, max: number): string {
   return s.length <= max ? s : s.substring(0, max - 3) + '...';
 }
 
-/** Check if tool output indicates a failure (mirrors event-processors logic). */
-function isFailureOutput(toolName: string, output: string): boolean {
-  if (toolName === 'bash' || toolName === 'Bash') {
-    return /Exit code (\d+)/.test(output) && !/Exit code 0/.test(output);
-  }
-  if (['edit', 'write', 'Edit', 'Write'].includes(toolName)) {
-    return /permission denied|EACCES|ENOENT|file not found|old_string.*not found|not unique in the file/i.test(output);
-  }
-  if (output.length < 500) {
-    return /error|failed|exception|timeout/i.test(output);
-  }
-  return false;
-}
-
 /** Format a memory value for display. */
 function extractVal(value: any): string {
   if (typeof value === 'string') return value;
@@ -109,7 +95,7 @@ function formatRules(rules: ActiveRules): string {
 
 export default function(pi: PiTypes.ExtensionAPI) {
   let projectId: string = '';
-  let sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const collectedToolResults: ConversationEntry[] = [];
   let rulesLoaded = false;
   const collectedUserTexts: string[] = [];
@@ -341,13 +327,11 @@ export default function(pi: PiTypes.ExtensionAPI) {
     description: 'Load all stored rules (preferences, corrections, failures, devops). Call at the start of every task.',
     promptSnippet: 'Load stored rules and preferences from memory',
     parameters: {},
-    async execute(_id, _params, _signal, _onUpdate, ctx) {
+    async execute(_id, _params, _signal, _onUpdate, _ctx) {
       try {
         const ms = MemoryService.getInstance();
         const rules = ms.loadActiveRules(projectId || undefined);
         const body = formatRules(rules);
-        const totalRules = rules.preferences.length + rules.corrections.length +
-          rules.failures.length + rules.devops.length;
 
         // Track retrievals
         try {

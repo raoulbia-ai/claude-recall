@@ -126,7 +126,7 @@ export class PromotionEngine {
     // Not retrieved in 90 days with low strength
     if (stats.last_retrieved_at) {
       const daysSinceRetrieved = (Date.now() - new Date(stats.last_retrieved_at).getTime()) / (1000 * 60 * 60 * 24);
-      let strength = 0;
+      let strength: number;
       try { strength = MemoryRetrieval.computeStrength(memory); } catch { strength = 0; }
       if (daysSinceRetrieved > 90 && strength < 0.2) {
         return true;
@@ -139,7 +139,6 @@ export class PromotionEngine {
   private demotionSweep(projectId: string): number {
     let archived = 0;
     try {
-      const outcomeStorage = OutcomeStorage.getInstance();
       const db = MemoryService.getInstance().getDatabase();
 
       // Get memories with stats that might need demotion

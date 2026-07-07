@@ -66,9 +66,9 @@ describe('store_memory override supersession', () => {
     // We swap in our in-memory storage to avoid touching the real DB.
     const { MemoryService } = require('../../src/services/memory');
     const service = MemoryService.getInstance();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const originalStorage = (service as any).storage;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (service as any).storage = storage;
 
     try {
@@ -96,7 +96,7 @@ describe('store_memory override supersession', () => {
       const fresh = storage.retrieve('new_devops');
       expect(fresh?.is_active).toBe(true);
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (service as any).storage = originalStorage;
     }
   });
@@ -104,16 +104,16 @@ describe('store_memory override supersession', () => {
   it('supersedeByPreferenceKey is a no-op when no prior active rules exist', () => {
     const { MemoryService } = require('../../src/services/memory');
     const service = MemoryService.getInstance();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const originalStorage = (service as any).storage;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (service as any).storage = storage;
 
     try {
       const result = service.supersedeByPreferenceKey('nonexistent', 'new_key', { projectId: 'proj-a' });
       expect(result).toEqual([]);
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (service as any).storage = originalStorage;
     }
   });
@@ -121,9 +121,9 @@ describe('store_memory override supersession', () => {
   it('MemoryService.store persists preference_key so future overrides find the rule', () => {
     const { MemoryService } = require('../../src/services/memory');
     const service = MemoryService.getInstance();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const originalStorage = (service as any).storage;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     (service as any).storage = storage;
 
     try {
@@ -138,7 +138,7 @@ describe('store_memory override supersession', () => {
       const found = storage.getActiveByPreferenceKeyAnyType('build_cmd', 'proj-a');
       expect(found.map(m => m.key)).toEqual(['rule_1']);
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (service as any).storage = originalStorage;
     }
   });

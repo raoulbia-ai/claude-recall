@@ -95,8 +95,8 @@ export class DatabaseManager {
     
     let backupPath: string | undefined;
     let removedCount = 0;
-    let deduplicatedCount = 0;
-    
+    let deduplicatedCount: number;
+
     try {
       // Create backup if not dry run
       if (!dryRun) {

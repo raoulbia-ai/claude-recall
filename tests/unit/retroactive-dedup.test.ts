@@ -94,11 +94,11 @@ describe('MemoryStorage.dedupSimilar', () => {
   });
 
   it('respects the similarity threshold', () => {
-    const a = insert({
+    insert({
       key: 'a', type: 'devops', timestamp: 1,
       content: 'Before running integration tests make sure to run npm run build so the compiled output is fresh',
     });
-    const b = insert({
+    insert({
       key: 'b', type: 'devops', timestamp: 2,
       content: 'Always run npm run build before running tests because TypeScript output needs to be current',
     });

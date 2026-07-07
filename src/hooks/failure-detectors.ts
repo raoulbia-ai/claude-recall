@@ -343,7 +343,7 @@ function detectRetryLoops(
       counts.set(hash, list);
     }
 
-    for (const [hash, ixList] of counts) {
+    for (const ixList of counts.values()) {
       if (ixList.length < 3) continue;
       // All already consumed?
       if (ixList.every((ix) => consumed.has(ix.call.entryIndex))) continue;
