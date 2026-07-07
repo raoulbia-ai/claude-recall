@@ -34,7 +34,7 @@ Rules:
 - extract should be a clean, imperative statement of the rule/fact (e.g. "Use tabs for indentation")
 - If the text is a question, greeting, or code block, classify as "none"`;
 
-const BATCH_SYSTEM_PROMPT = `You are a memory classifier for a developer tool. You will receive multiple texts separated by "---ITEM---" markers. Classify each into one of these types:
+const BATCH_SYSTEM_PROMPT = `You are a memory classifier for a developer tool. You will receive a JSON array of texts. Classify each into one of these types:
 
 - correction: User correcting a mistake ("no, use X not Y", "wrong, it should be...")
 - preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation. NOT observations, complaints, questions, debugging statements, or one-off instructions like "fix this" or "tell me about X"
@@ -354,7 +354,11 @@ export async function classifyBatchWithLLM(
   if (!client) return null;
 
   try {
-    const joined = texts.join('\n---ITEM---\n');
+    // JSON array, not delimiter-joined text: a user message that happened to
+    // contain the old "---ITEM---" marker desynced item counts and silently
+    // dropped the entire batch to the regex fallback. JSON boundaries can't
+    // be forged by content.
+    const joined = JSON.stringify(texts);
 
     const response = await client.messages.create({
       model: MODEL,

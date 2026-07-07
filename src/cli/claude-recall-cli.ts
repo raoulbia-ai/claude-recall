@@ -14,7 +14,12 @@ import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
-import { runRepair } from './commands/repair';
+import { runRepair, resolveOnPath } from './commands/repair';
+
+// v14 = add PreToolUse rule-injector + Post resolver for JITRI.
+// Bump when the hook block template changes — setup skips the settings
+// rewrite when the installed hooksVersion already matches.
+const HOOKS_VERSION = '14.0.0';
 import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 
 const program = new Command();
@@ -1140,8 +1145,7 @@ async function main() {
   }
 
   // Install skills + minimal enforcement hook
-  // TODO: honor force — currently `repair --reinstall-hooks` behaves identically to `setup --install`
-  function installSkillsAndHook(_force: boolean = false): void {
+  function installSkillsAndHook(force: boolean = false): void {
     const cwd = process.cwd();
     const projectName = path.basename(cwd);
 
@@ -1219,6 +1223,19 @@ async function main() {
         settings = {};
       }
 
+      // Idempotent re-run: hook block already at the current version → leave
+      // settings.json untouched (no rewrite, no backup churn) but still
+      // refresh skills below. `force` (repair --reinstall-hooks) rewrites
+      // unconditionally — the recovery path for a corrupted or hand-edited
+      // block. Previously force was accepted and ignored, so the two
+      // commands behaved identically.
+      if (!force && (settings as any).hooksVersion === HOOKS_VERSION) {
+        console.log(`✅ Hooks already at v${HOOKS_VERSION} — settings.json untouched (use \`repair --reinstall-hooks\` to force a rewrite)`);
+        installSkills(claudeDir, packageSkillsDir);
+        console.log('\n✅ Setup complete!\n');
+        return;
+      }
+
       const existingHooks = (settings as any).hooks;
       const hasExistingHooks = existingHooks
         && typeof existingHooks === 'object'
@@ -1234,12 +1251,19 @@ async function main() {
       }
     }
 
-    // Resolve the CLI script path so hooks use the local install instead of npx.
-    // This avoids registry lookups on every hook invocation.
+    // Prefer the portable `claude-recall` form when the binary is on PATH —
+    // absolute dist paths break on every nvm switch or prefix move, the exact
+    // failure class `repair` exists to fix (repair already treats the PATH
+    // form as canonical). Absolute path only as fallback.
+    const onPath = resolveOnPath('claude-recall');
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
-    const hookCmd = `node ${cliScript} hook run`;
+    const hookCmd = onPath ? 'claude-recall hook run' : `node ${cliScript} hook run`;
+    if (!onPath) {
+      console.log('⚠️  claude-recall not on PATH — hooks will use an absolute path (breaks if the install moves).');
+      console.log('   `npm install -g claude-recall` gives move-proof hooks; `claude-recall repair` can convert later.');
+    }
 
-    settings.hooksVersion = '14.0.0';  // v14 = add PreToolUse rule-injector + Post resolver for JITRI
+    settings.hooksVersion = HOOKS_VERSION;
     settings.hooks = {
       SubagentStart: [
         {
@@ -1380,7 +1404,15 @@ async function main() {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
     console.log('✅ Configured search enforcement hook');
 
-    // === INSTALL: Copy skills directory ===
+    installSkills(claudeDir, packageSkillsDir);
+
+    console.log('\n✅ Setup complete!\n');
+    console.log('ℹ️  Uses Skills (guidance) + hooks (auto-capture with LLM classification).');
+    console.log('Restart Claude Code to activate.\n');
+  }
+
+  // === INSTALL: Copy skills directory (idempotent overwrite) ===
+  function installSkills(claudeDir: string, packageSkillsDir: string): void {
     if (fs.existsSync(packageSkillsDir)) {
       const skillsDir = path.join(claudeDir, 'skills');
       copyDirRecursive(packageSkillsDir, skillsDir);
@@ -1388,10 +1420,6 @@ async function main() {
     } else {
       console.log(`⚠️  Skills not found at: ${packageSkillsDir}`);
     }
-
-    console.log('\n✅ Setup complete!\n');
-    console.log('ℹ️  Uses Skills (guidance) + hooks (auto-capture with LLM classification).');
-    console.log('Restart Claude Code to activate.\n');
   }
 
   // Setup command - shows activation instructions or installs skills

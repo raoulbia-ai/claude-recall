@@ -55,11 +55,13 @@ function makeFakeChild() {
   const stdin = {
     write: jest.fn(),
     end: jest.fn(),
+    on: jest.fn(),
   };
   return {
     stdin,
     pid: 99999,
     unref: jest.fn(),
+    on: jest.fn(),
   };
 }
 

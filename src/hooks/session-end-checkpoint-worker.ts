@@ -24,7 +24,20 @@ import { ConfigService } from '../services/config';
 
 const TRANSCRIPT_TAIL_SIZE = 30;
 
+// Hard deadline for the whole worker. It's a DETACHED process nothing
+// supervises — without this, a hung network connection left an orphan node
+// process (holding a DB handle) alive for as long as the LLM call dangled,
+// one per session exit. The in-process LLM timeout usually fires first; this
+// is the backstop. unref() so the timer never keeps a finished worker alive.
+const WORKER_DEADLINE_MS = 30_000;
+
 export async function handleSessionEndCheckpointWorker(input: any): Promise<void> {
+  const deadline = setTimeout(() => {
+    hookLog('session-end-checkpoint-worker', `Deadline (${WORKER_DEADLINE_MS}ms) exceeded — exiting`);
+    process.exit(0);
+  }, WORKER_DEADLINE_MS);
+  deadline.unref();
+
   // Wire event-processor logs through hookLog so extractCheckpoint diagnostics
   // (LLM null, quality gate filter, save failure) end up in
   // ~/.claude-recall/hook-logs/session-end-checkpoint-worker.log instead of
