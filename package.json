@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.26.0",
+  "version": "0.26.1",
   "description": "Persistent memory for Claude Code and Pi with native Skills integration, automatic capture, failure learning, and project scoping",
   "main": "dist/index.js",
   "bin": {
@@ -77,7 +77,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "author": "Claude Recall Team",
-  "license": "ISC",
+  "license": "MIT",
   "engines": {
     "node": ">=20.19.0"
   },

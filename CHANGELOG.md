@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.1] - 2026-07-07
+
+### Fixed
+
+- **License metadata corrected to MIT.** `package.json` still carried the `npm init` default (`ISC`) while the repository's `LICENSE` file has always been MIT — so the npm registry displayed a license that contradicted the license text shipped in the tarball. The intended license is MIT; the metadata now matches.
+
 ## [0.26.0] - 2026-07-07
 
 Four-phase repair campaign from a full-codebase review (PRs #16–#19). Highlights below; full details in each PR.
