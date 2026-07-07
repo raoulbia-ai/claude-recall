@@ -109,13 +109,21 @@ describe('Claude Code MCP Integration', () => {
     });
 
     it('should store multiple memories and load via rules', async () => {
-      // Unique timestamp prevents collision across test runs.
+      // Genuinely distinct content per memory. Near-identical strings (e.g.
+      // differing only by a trailing index) are correctly collapsed by
+      // fuzzy dedup, so the test must use distinct rules to verify that three
+      // separate memories are stored and loaded.
       const timestamp = Date.now();
-      for (let i = 0; i < 3; i++) {
+      const contents = [
+        `integration-fixture rule alpha: always run the linter before committing (${timestamp})`,
+        `integration-fixture rule beta: prefer composition over inheritance in services (${timestamp})`,
+        `integration-fixture rule gamma: never log secrets to stdout in the transport (${timestamp})`,
+      ];
+      for (let i = 0; i < contents.length; i++) {
         await client.request('tools/call', {
           name: 'store_memory',
           arguments: {
-            content: `integration-fixture preference ${timestamp}-${i}`,
+            content: contents[i],
             metadata: { type: 'preference', index: i, testRun: timestamp }
           }
         });
