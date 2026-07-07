@@ -18,8 +18,8 @@ coverage/
 .env
 .env.local
 .env.*.local
-settings/
-config/
+/settings/
+/config/
 
 # Logs
 logs/
