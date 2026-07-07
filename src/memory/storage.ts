@@ -330,15 +330,27 @@ export class MemoryStorage {
     return null;
   }
 
+  // Bookkeeping fields the MCP store handler injects into every memory value.
+  // They carry no semantic meaning, but now that sessionId is stable per
+  // process (v0.26.0) a constant sessionId token would appear in every memory
+  // and inflate fuzzy-dedup similarity across unrelated memories, collapsing
+  // genuinely distinct rules. Exclude them from the similarity text.
+  private static readonly DEDUP_IGNORE_KEYS = new Set(['sessionid', 'session_id', 'timestamp']);
+
   private extractText(value: any): string {
     if (typeof value === 'string') return value;
     if (value && typeof value === 'object') {
-      // Collect all leaf string values, ignoring JSON keys
+      // Collect all leaf string values, ignoring JSON keys except a small
+      // denylist of bookkeeping fields that are not semantic content.
       const leaves: string[] = [];
       const collect = (obj: any) => {
         if (typeof obj === 'string') { leaves.push(obj); return; }
+        if (Array.isArray(obj)) { for (const v of obj) collect(v); return; }
         if (obj && typeof obj === 'object') {
-          for (const v of Object.values(obj)) collect(v);
+          for (const [k, v] of Object.entries(obj)) {
+            if (MemoryStorage.DEDUP_IGNORE_KEYS.has(k.toLowerCase())) continue;
+            collect(v);
+          }
         }
       };
       collect(value);
