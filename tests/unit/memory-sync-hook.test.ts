@@ -73,6 +73,15 @@ describe('memory-sync-hook', () => {
       );
     });
 
+    it('should sanitize dots and underscores like Claude Code does', () => {
+      // CC's sanitizer replaces every non-alphanumeric — a path with dots or
+      // underscores must land where CC actually reads
+      const result = deriveAutoMemoryPath('/home/user/my_app.v2');
+      expect(result).toBe(
+        path.join(tmpDir, '.claude', 'projects', '-home-user-my-app-v2', 'memory')
+      );
+    });
+
     it('should handle root path', () => {
       const result = deriveAutoMemoryPath('/');
       expect(result).toBe(

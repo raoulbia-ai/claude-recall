@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { ProjectRegistry } from '../../services/project-registry';
 import { ConfigService } from '../../services/config';
 import { ProcessManager } from '../../services/process-manager';
+import { parsePositiveInt } from '../parse-utils';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -249,7 +250,7 @@ export class ProjectCommands {
    * Clean stale registry entries
    */
   async cleanRegistry(options: { dryRun?: boolean; days?: string }): Promise<void> {
-    const daysOld = parseInt(options.days || '30', 10);
+    const daysOld = parsePositiveInt(options.days, 'days', 30);
 
     console.log(chalk.cyan('\n🧹 Cleaning Registry\n'));
 

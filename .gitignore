@@ -102,3 +102,4 @@ claude-flow/
 
 # Per-machine settings (use `claude-recall setup` to regenerate)
 .claude/settings.json
+__pycache__/

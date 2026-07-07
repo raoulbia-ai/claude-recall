@@ -123,7 +123,7 @@ export class MemoryStorage {
       // Add scope if missing (v0.7.2+)
       if (!columnNames.includes('scope')) {
         console.error('📋 Migrating database schema: Adding scope column...');
-        this.db.exec("ALTER TABLE memories ADD COLUMN scope TEXT CHECK(scope IN ('universal', 'project', NULL))");
+        this.db.exec("ALTER TABLE memories ADD COLUMN scope TEXT CHECK(scope IS NULL OR scope IN ('universal', 'project'))");
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_scope_project ON memories(scope, project_id)');
         console.error('✅ Added scope column');
       }
@@ -192,6 +192,7 @@ export class MemoryStorage {
         this.db.exec(`CREATE TABLE outcome_events (
           id TEXT PRIMARY KEY,
           episode_id TEXT,
+          session_id TEXT,
           event_type TEXT NOT NULL,
           actor TEXT NOT NULL,
           action_summary TEXT,
@@ -202,6 +203,14 @@ export class MemoryStorage {
         )`);
         this.db.exec('CREATE INDEX idx_outcome_events_episode ON outcome_events(episode_id)');
         this.db.exec('CREATE INDEX idx_outcome_events_type ON outcome_events(event_type)');
+      } else {
+        // v0.26.2: session_id column so events can be attributed to the session
+        // that produced them — without it, one session's tool failures leak
+        // into another concurrent session's episode and candidate lessons.
+        const eventCols = this.db.prepare("PRAGMA table_info(outcome_events)").all() as Array<{name: string}>;
+        if (!eventCols.some(c => c.name === 'session_id')) {
+          this.db.exec('ALTER TABLE outcome_events ADD COLUMN session_id TEXT');
+        }
       }
 
       if (!existingOutcomeTables.has('candidate_lessons')) {
@@ -845,17 +854,22 @@ export class MemoryStorage {
   getByPreferenceKey(preferenceKey: string, projectId?: string): Memory[] {
     let query = 'SELECT * FROM memories WHERE preference_key = ? AND type = ?';
     const params: any[] = [preferenceKey, 'preference'];
-    
+
     if (projectId) {
-      query += ' AND project_id = ?';
+      // NULL-inclusive, matching getActiveByPreferenceKeyAnyType and what
+      // loadActiveRules returns. With a strict project_id filter, an override
+      // stored in a project failed to supersede the same preference_key
+      // stored unscoped/universal — leaving two active conflicting
+      // preferences both visible to loadActiveRules.
+      query += ' AND (project_id = ? OR project_id IS NULL)';
       params.push(projectId);
     }
-    
+
     query += ' ORDER BY timestamp DESC';
-    
+
     const stmt = this.db.prepare(query);
     const rows = stmt.all(...params) as any[];
-    
+
     return rows.map(row => this.rowToMemory(row));
   }
 

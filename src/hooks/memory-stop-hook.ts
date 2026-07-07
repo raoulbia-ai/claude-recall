@@ -187,8 +187,10 @@ export async function handleMemoryStop(input: any): Promise<void> {
   // Scan transcript for failure signals (non-zero exits, test cycles, backtracking, etc.)
   const failures = detectAndStoreFailures(transcriptPath, episodeId);
 
-  // Incorporate structured tool_failure events captured by PostToolUseFailure hook
-  const toolFailures = getToolFailureEvents(outcomeStorage);
+  // Incorporate structured tool_failure events captured by PostToolUseFailure
+  // hook — scoped to THIS session so concurrent sessions (or another
+  // project's session within the hour) don't contaminate this episode
+  const toolFailures = getToolFailureEvents(outcomeStorage, input?.session_id);
   const allFailures = [...failures, ...toolFailures];
 
   outcomeStorage.updateEpisode(episodeId, {
@@ -412,9 +414,11 @@ function detectAndStoreFailures(transcriptPath: string, _episodeId?: string): De
  * Convert structured tool_failure outcome events into DetectedFailure format
  * so they feed into the candidate lessons pipeline.
  */
-function getToolFailureEvents(outcomeStorage: OutcomeStorage): DetectedFailure[] {
+function getToolFailureEvents(outcomeStorage: OutcomeStorage, sessionId?: string): DetectedFailure[] {
   try {
-    const events = outcomeStorage.getEventsByType('tool_failure', 1); // last 1 hour
+    // Session-scoped when the Stop payload carries a session_id (it always
+    // does in practice); an undefined id falls back to the raw time window.
+    const events = outcomeStorage.getEventsByType('tool_failure', 1, sessionId); // last 1 hour
     return events.slice(0, 5).map(e => ({
       signal: 'tool_failure' as const,
       confidence: 0.8,

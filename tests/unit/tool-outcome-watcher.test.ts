@@ -196,53 +196,34 @@ describe('tool-outcome-watcher', () => {
   // --- Edit/Write tool tests ---
 
   describe('Edit/Write outcomes', () => {
-    it('stores failure on permission denied', async () => {
+    // PostToolUse is the SUCCESS path — real failures arrive via
+    // PostToolUseFailure (handleToolFailure, tested below). Successful output
+    // that merely MENTIONS error-like strings must never store a failure.
+    it('does not store failure when successful output mentions "permission denied"', async () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Edit',
-        tool_input: { file_path: '/etc/hosts', old_string: 'foo', new_string: 'bar' },
-        tool_output: 'Error: permission denied for /etc/hosts',
+        tool_input: { file_path: '/home/user/auth.ts', old_string: 'foo', new_string: 'bar' },
+        tool_output: 'Edited auth.ts: throw new Error("permission denied") added to guard clause',
         session_id: SESSION,
       });
 
-      expect(mockStore).toHaveBeenCalledTimes(1);
-      const call = mockStore.mock.calls[0][0];
-      expect(call.type).toBe('failure');
+      expect(mockStore).not.toHaveBeenCalled();
+      expect(mockCreateOutcomeEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('stores failure on old_string not found', async () => {
-      await handleToolOutcomeWatcher({
-        tool_name: 'Edit',
-        tool_input: { file_path: '/home/user/app.ts', old_string: 'foo', new_string: 'bar' },
-        tool_output: 'The edit will FAIL if old_string is not found in the file',
-        session_id: SESSION,
-      });
-
-      expect(mockStore).toHaveBeenCalledTimes(1);
-    });
-
-    it('stores failure on not unique in the file', async () => {
-      await handleToolOutcomeWatcher({
-        tool_name: 'Edit',
-        tool_input: { file_path: '/home/user/app.ts', old_string: 'const', new_string: 'let' },
-        tool_output: 'The edit will FAIL if old_string is not unique in the file',
-        session_id: SESSION,
-      });
-
-      expect(mockStore).toHaveBeenCalledTimes(1);
-    });
-
-    it('stores failure on Write ENOENT', async () => {
+    it('does not store failure when edited file content mentions ENOENT', async () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Write',
-        tool_input: { file_path: '/nonexistent/dir/file.ts' },
-        tool_output: 'ENOENT: no such file or directory',
+        tool_input: { file_path: '/home/user/fs-utils.ts' },
+        tool_output: 'Wrote fs-utils.ts containing ENOENT handling: no such file or directory branch',
         session_id: SESSION,
       });
 
-      expect(mockStore).toHaveBeenCalledTimes(1);
+      expect(mockStore).not.toHaveBeenCalled();
+      expect(mockCreateOutcomeEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('records outcome event even on success', async () => {
+    it('records outcome event on success', async () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Edit',
         tool_input: { file_path: '/home/user/app.ts' },
@@ -259,30 +240,40 @@ describe('tool-outcome-watcher', () => {
       );
     });
 
-    it('skips duplicate Edit/Write failures', async () => {
-      mockSearch.mockReturnValueOnce([
-        { value: 'Edit failed on /etc/hosts: Error: permission denied for /etc/hosts', score: 0.9 },
-      ]);
-
-      await handleToolOutcomeWatcher({
+    it('Edit/Write failures are captured via the PostToolUseFailure path', async () => {
+      await handleToolFailure({
         tool_name: 'Edit',
-        tool_input: { file_path: '/etc/hosts' },
-        tool_output: 'Error: permission denied for /etc/hosts',
+        tool_input: { file_path: '/etc/hosts', old_string: 'foo', new_string: 'bar' },
+        error: 'permission denied for /etc/hosts',
         session_id: SESSION,
       });
 
-      expect(mockStore).not.toHaveBeenCalled();
+      expect(mockStore).toHaveBeenCalledTimes(1);
+      const call = mockStore.mock.calls[0][0];
+      expect(call.type).toBe('failure');
     });
   });
 
   // --- MCP tool tests ---
 
   describe('MCP tool outcomes', () => {
-    it('stores failure on MCP tool error', async () => {
+    it('does not store failure when MCP output merely matches /error/i (e.g. "0 errors found")', async () => {
       await handleToolOutcomeWatcher({
+        tool_name: 'mcp__linter__check',
+        tool_input: { path: 'src/' },
+        tool_output: '0 errors found',
+        session_id: SESSION,
+      });
+
+      expect(mockStore).not.toHaveBeenCalled();
+      expect(mockCreateOutcomeEvent).toHaveBeenCalledTimes(1);
+    });
+
+    it('MCP failures are captured via the PostToolUseFailure path', async () => {
+      await handleToolFailure({
         tool_name: 'mcp__github__create_issue',
         tool_input: { title: 'test' },
-        tool_output: 'Error: authentication failed',
+        error: 'authentication failed',
         session_id: SESSION,
       });
 

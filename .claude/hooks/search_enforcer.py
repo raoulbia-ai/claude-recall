@@ -36,8 +36,13 @@ PASSTHROUGH_TOOLS = [
     'AskUserQuestion',                        # User interaction
 ]
 
-# Read-only bash commands that don't need memory search
-READ_ONLY_BASH = [
+# Bash command prefixes exempt from the load-rules gate. NOT all read-only:
+# alongside inspection commands, routine dev-workflow commands (git commit,
+# npm test, ...) are deliberately exempt — the gate exists to get rules loaded
+# before Claude starts shaping code, and blocking mid-workflow git/npm calls
+# adds friction without a safety benefit. This is an advisory nudge, not a
+# security boundary.
+EXEMPT_BASH_PREFIXES = [
     'ls', 'cat', 'head', 'tail', 'less', 'more', 'file', 'stat', 'wc',
     'find', 'locate', 'which', 'whereis', 'type', 'pwd', 'whoami',
     'git status', 'git log', 'git diff', 'git show', 'git branch',
@@ -67,7 +72,7 @@ def load_state(session_id: str) -> dict:
     if state_file.exists():
         try:
             return json.load(open(state_file))
-        except:
+        except Exception:
             pass
     return {'lastSearchAt': None, 'searchQuery': None}
 
@@ -76,7 +81,7 @@ def save_state(session_id: str, state: dict):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     try:
         json.dump(state, open(get_state_file(session_id), 'w'), indent=2)
-    except:
+    except Exception:
         pass
 
 
@@ -84,18 +89,26 @@ def is_search_tool(tool_name: str) -> bool:
     return any(s in tool_name for s in SEARCH_TOOLS)
 
 
-def is_read_only_bash(command: str) -> bool:
+def _has_command_prefix(cmd: str, prefix: str) -> bool:
+    """Word-boundary prefix match: 'cat foo' matches 'cat', but
+    'catastrophic-script.sh' and 'envsubst' do not match 'cat'/'env'."""
+    if not cmd.startswith(prefix):
+        return False
+    rest = cmd[len(prefix):]
+    return rest == '' or rest[0] in ' \t;|&'
+
+
+def is_exempt_bash(command: str) -> bool:
     if not command:
         return False
     cmd = command.strip().lower()
-    # Check direct match or pipe starting with read-only
-    for ro in READ_ONLY_BASH:
-        if cmd.startswith(ro):
-            return True
+    # Check direct match, or the first segment of a pipeline
+    candidates = [cmd]
     if '|' in cmd:
-        first = cmd.split('|')[0].strip()
-        for ro in READ_ONLY_BASH:
-            if first.startswith(ro):
+        candidates.append(cmd.split('|')[0].strip())
+    for candidate in candidates:
+        for prefix in EXEMPT_BASH_PREFIXES:
+            if _has_command_prefix(candidate, prefix):
                 return True
     return False
 
@@ -106,7 +119,7 @@ def main():
 
     try:
         data = json.load(sys.stdin)
-    except:
+    except Exception:
         sys.exit(0)
 
     tool_name = data.get('tool_name', '')
@@ -139,14 +152,20 @@ def main():
     if not last_search:
         if tool_name not in ENFORCE_TOOLS:
             sys.exit(0)
-        # Mutation tool on first call — fall through to blocking logic below.
+        # Exempt bash passes even before rules are loaded — previously this
+        # exemption only existed on the post-load branch, so the very first
+        # `git status`/`ls` of a session was hard-blocked up to MAX_BLOCKS
+        # times, contradicting the "read-only exploration passes freely" rule.
+        if tool_name == 'Bash' and is_exempt_bash(tool_input.get('command', '')):
+            sys.exit(0)
+        # Other mutation tool on first call — fall through to blocking logic below.
     else:
         # Rules loaded at least once — only enforce on mutation tools
         if tool_name not in ENFORCE_TOOLS:
             sys.exit(0)
 
-        # Skip read-only bash
-        if tool_name == 'Bash' and is_read_only_bash(tool_input.get('command', '')):
+        # Skip exempt bash
+        if tool_name == 'Bash' and is_exempt_bash(tool_input.get('command', '')):
             sys.exit(0)
 
     if last_search:

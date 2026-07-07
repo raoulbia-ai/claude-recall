@@ -95,17 +95,26 @@ export class MemoryRetrieval {
     }
 
     // Default: relevance sorting
+    // Batch-fetch usage stats and evidence counts for ALL candidates up
+    // front — the previous per-memory lookups ran 2 extra queries per
+    // candidate over an unbounded set before slicing to the top 5.
+    const statsMap = this.getMemoryStatsBatch(candidates.map(c => c.key));
+    const evidenceMap = this.getEvidenceCountBatch(candidates.map(c => c.key));
+
     // Score and prioritize by memory type
     const scored = candidates
       .map(memory => ({
         ...memory,
-        score: this.calculateRelevance(memory, context)
+        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null, evidenceMap.get(memory.key) ?? 0)
       }))
       .sort((a, b) => {
-        // First priority: memory type (project-knowledge > preference > tool-use)
-        const typeOrder: Record<string, number> = { 'project-knowledge': 3, 'preference': 2, 'tool-use': 1 };
-        const aTypeScore = typeOrder[a.type] || 0;
-        const bTypeScore = typeOrder[b.type] || 0;
+        // First priority: memory type. Every RULE type must outrank
+        // tool-use — the previous map listed only project-knowledge and
+        // preference, so a perfectly keyword-matched correction or failure
+        // (default 0) sorted BELOW tool-use history noise and the top-5
+        // window could be entirely tool-use.
+        const aTypeScore = MemoryRetrieval.TYPE_PRIORITY[a.type] ?? 0;
+        const bTypeScore = MemoryRetrieval.TYPE_PRIORITY[b.type] ?? 0;
 
         if (aTypeScore !== bTypeScore) {
           return bTypeScore - aTypeScore;
@@ -118,8 +127,23 @@ export class MemoryRetrieval {
     // Return top 5 most relevant memories
     return scored.slice(0, 5);
   }
-  
-  private calculateRelevance(memory: Memory, context: Context): number {
+
+  private static readonly TYPE_PRIORITY: Record<string, number> = {
+    'correction': 6,
+    'project-knowledge': 5,
+    'preference': 4,
+    'devops': 3,
+    'failure': 2,
+    'tool-use': 1,
+    // unknown/imported types: 0
+  };
+
+  private calculateRelevance(
+    memory: Memory,
+    context: Context,
+    stats: { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null } | null,
+    evidenceCount: number,
+  ): number {
     let score = memory.relevance_score || 1.0;
     
     // Boost for keyword matches in memory value
@@ -169,13 +193,11 @@ export class MemoryRetrieval {
     score *= 1 + strength * 2.0;  // Up to 3x boost for max-strength memories
 
     // Evidence boost: promoted lessons seen multiple times
-    const evidenceCount = this.getEvidenceCount(memory);
     if (evidenceCount > 1) {
       score *= 1 + Math.min(evidenceCount, 5) * 0.15;  // up to 1.75x
     }
 
     // Helpfulness prior: retrieved + confirmed helpful
-    const stats = this.getMemoryStats(memory.key);
     if (stats && stats.times_retrieved > 0) {
       const helpRatio = stats.times_helpful / stats.times_retrieved;
       score *= 0.8 + helpRatio * 0.4;  // 0.8x to 1.2x
@@ -252,36 +274,59 @@ export class MemoryRetrieval {
     return Math.min(signalScore * timeDecay, 1.0);
   }
 
-  private getMemoryStats(key: string): { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null } | null {
+  /** Batch lookup — one query per 500 keys instead of one per memory. */
+  private getMemoryStatsBatch(keys: string[]): Map<string, { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null }> {
+    const map = new Map<string, { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null }>();
+    if (keys.length === 0) return map;
     try {
-      const row = this.storage.getDatabase().prepare(
-        'SELECT times_retrieved, times_helpful, last_confirmed_at FROM memory_stats WHERE memory_key = ?'
-      ).get(key) as any;
-      return row || null;
+      // Chunk to stay under SQLite's bound-variable limit
+      for (let i = 0; i < keys.length; i += 500) {
+        const chunk = keys.slice(i, i + 500);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = this.storage.getDatabase().prepare(
+          `SELECT memory_key, times_retrieved, times_helpful, last_confirmed_at FROM memory_stats WHERE memory_key IN (${placeholders})`
+        ).all(...chunk) as any[];
+        for (const row of rows) {
+          map.set(row.memory_key, row);
+        }
+      }
     } catch {
-      return null;
+      // Outcome tables may not exist yet — stats are an optional boost
     }
+    return map;
   }
 
-  private getEvidenceCount(memory: Memory): number {
+  /** Batch lookup — one query per 500 keys instead of one per memory. */
+  private getEvidenceCountBatch(keys: string[]): Map<string, number> {
+    const map = new Map<string, number>();
+    if (keys.length === 0) return map;
     try {
-      const row = this.storage.getDatabase().prepare(
-        "SELECT evidence_count FROM candidate_lessons WHERE promoted_memory_key = ? AND status = 'promoted' LIMIT 1"
-      ).get(memory.key) as any;
-      return row?.evidence_count || 0;
+      for (let i = 0; i < keys.length; i += 500) {
+        const chunk = keys.slice(i, i + 500);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = this.storage.getDatabase().prepare(
+          `SELECT promoted_memory_key, evidence_count FROM candidate_lessons WHERE promoted_memory_key IN (${placeholders}) AND status = 'promoted'`
+        ).all(...chunk) as any[];
+        for (const row of rows) {
+          map.set(row.promoted_memory_key, row.evidence_count || 0);
+        }
+      }
     } catch {
-      return 0;
+      // Outcome tables may not exist yet — evidence is an optional boost
     }
+    return map;
   }
 
   searchByKeyword(keyword: string): ScoredMemory[] {
     const results = this.storage.search(keyword);
     const context: Context = { timestamp: Date.now() };
-    
+    const statsMap = this.getMemoryStatsBatch(results.map(r => r.key));
+    const evidenceMap = this.getEvidenceCountBatch(results.map(r => r.key));
+
     return results
       .map(memory => ({
         ...memory,
-        score: this.calculateRelevance(memory, context)
+        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null, evidenceMap.get(memory.key) ?? 0)
       }))
       .sort((a, b) => b.score - a.score);
   }

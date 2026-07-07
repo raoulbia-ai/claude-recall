@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS memories (
   superseded_at INTEGER,
   confidence_score REAL,
   sophistication_level INTEGER DEFAULT 1,
-  scope TEXT CHECK(scope IN ('universal', 'project', NULL)),
+  scope TEXT CHECK(scope IS NULL OR scope IN ('universal', 'project')),
   content_hash TEXT
 );
 

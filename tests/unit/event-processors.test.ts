@@ -100,10 +100,20 @@ describe('event-processors', () => {
       expect(mockStore.mock.calls[0][0].type).toBe('failure');
     });
 
-    it('stores failure for Edit with permission denied', () => {
+    it('does not sniff failures from successful Edit output (isError=false)', () => {
+      // Successful output that mentions "permission denied" (e.g. the edited
+      // file contains error-handling code) must NOT become a failure memory —
+      // the isError flag is the only trusted signal for non-Bash tools.
       processToolOutcome('Edit', { file_path: '/etc/hosts' }, 'permission denied', false, 'sess1');
 
+      expect(mockStore).not.toHaveBeenCalled();
+    });
+
+    it('stores failure for Edit when isError is true', () => {
+      processToolOutcome('Edit', { file_path: '/etc/hosts' }, 'permission denied', true, 'sess1');
+
       expect(mockStore).toHaveBeenCalledTimes(1);
+      expect(mockStore.mock.calls[0][0].type).toBe('failure');
     });
 
     it('stores failure when isError is true', () => {
@@ -161,7 +171,9 @@ describe('event-processors', () => {
     });
 
     it('pairs fix for Edit tool on same file', () => {
-      processToolOutcome('Edit', { file_path: '/app.ts' }, 'old_string not found', false, 'sess1');
+      // Failure signaled via isError (the trusted flag), then a success on
+      // the same file pairs the fix
+      processToolOutcome('Edit', { file_path: '/app.ts' }, 'old_string not found', true, 'sess1');
       expect(mockStore).toHaveBeenCalledTimes(1);
 
       processToolOutcome('Edit', { file_path: '/app.ts' }, 'File edited successfully', false, 'sess1');

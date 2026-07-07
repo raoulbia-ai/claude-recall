@@ -29,7 +29,7 @@ Your preferences, project structure, workflows, corrections, and coding style ar
 
 | Component | Version                 | Notes                       |
 | --------- | ----------------------- | --------------------------- |
-| Node.js   | **20+**                 | required for better-sqlite3 |
+| Node.js   | **20.19+**              | required for better-sqlite3 (Node 20+) and chalk 5 (ESM `require()` needs ≥20.19) |
 | OS        | macOS / Linux / Windows | WSL supported               |
 
 ### Install for Claude Code
@@ -137,7 +137,7 @@ claude-recall search "preference"
 
 ## How It Works
 
-Claude Recall provides four memory tools backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The tools are exposed differently depending on the agent:
+Claude Recall provides six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`, `save_checkpoint`, `load_checkpoint`) backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The tools are exposed differently depending on the agent:
 
 - **Claude Code** — MCP server with four tools and seven prompts, plus file-system hooks for automatic capture
 - **Pi** — native extension with registered tools and event handlers, plus a skill file for behavioral guidance
@@ -367,7 +367,7 @@ claude-recall mcp status                 # Current project's server status
 claude-recall mcp ps                     # List all running servers
 claude-recall mcp stop                   # Stop server
 claude-recall mcp stop --force           # Force stop
-claude-recall mcp restart                # Restart server
+claude-recall mcp restart                # Stop server + print start instructions (a stdio server can't self-respawn; Claude Code restarts it on next session)
 claude-recall mcp cleanup                # Remove stale PID files
 claude-recall mcp cleanup --all          # Stop all servers
 

@@ -12,25 +12,34 @@ export interface ClassifyResult {
   extract: string;
 }
 
+// NOTE on confidence calibration: consumers (correction-detector, memory-stop,
+// event-processors) gate corrections/preferences/devops at >= 0.75. Any
+// pattern below that threshold can never store anything — don't add one.
+// (The previous list carried eight 0.7-confidence patterns that were silently
+// dead for exactly this reason; the weak ones — "actually", "I like",
+// "I want", "I use" — were deleted rather than promoted because they match
+// ordinary conversation far too often.)
 const CORRECTION_PATTERNS = [
   { regex: /^no[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /^wrong[,.]?\s+(.+)/i, confidence: 0.8 },
-  { regex: /^actually[,.]?\s+(.+)/i, confidence: 0.7 },
-  { regex: /\bnever\s+(.+)/i, confidence: 0.7 },
+  { regex: /\bnever\s+(.+)/i, confidence: 0.75 },
   { regex: /\bdon'?t\s+ever\s+(.+)/i, confidence: 0.8 },
-  { regex: /\bstop\s+(doing|using|adding)\s+(.+)/i, confidence: 0.7 },
+  { regex: /\bstop\s+(doing|using|adding)\s+(.+)/i, confidence: 0.75 },
 ];
 
 const PREFERENCE_PATTERNS = [
   { regex: /\bremember\s+(?:that|this|to)\s+(.+)/i, confidence: 0.8 },
   { regex: /\bfrom\s+now\s+on[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\bgoing\s+forward[,.]?\s+(.+)/i, confidence: 0.8 },
-  { regex: /\balways\s+(.+)/i, confidence: 0.7 },
-  { regex: /\bI\s+prefer\s+(.+)/i, confidence: 0.7 },
-  { regex: /\bI\s+like\s+(.+)/i, confidence: 0.7 },
-  { regex: /\bI\s+want\s+(.+)/i, confidence: 0.7 },
-  { regex: /\bI\s+use\s+(.+)/i, confidence: 0.7 },
+  { regex: /\balways\s+(.+)/i, confidence: 0.75 },
+  { regex: /\bI\s+prefer\s+(.+)/i, confidence: 0.75 },
 ];
+
+// Questions are never rules ("do you remember that config file we used?" must
+// not become a stored preference), and "no ..." pleasantries are not
+// corrections ("no worries, that looks good").
+const INTERROGATIVE_START = /^(do|does|did|can|could|would|should|shall|is|are|was|were|will|have|has|what|why|how|when|where|who|which)\b/i;
+const PLEASANTRY_NO = /^no\s+(worries|problem|problems|prob|thanks|thank|rush|need|biggie|sweat|pressure)\b/i;
 
 // Failure, devops, and project-knowledge patterns removed — single-keyword
 // matches ("error", "git", "build") are too broad for regex. These types
@@ -51,6 +60,13 @@ export function readStdin(): any {
  * Returns the highest-confidence match, prioritizing corrections > preferences.
  */
 export function classifyContentRegex(text: string): ClassifyResult | null {
+  const trimmed = text.trim();
+
+  // Interrogatives and pleasantries are conversation, not rules
+  if (trimmed.endsWith('?') || INTERROGATIVE_START.test(trimmed) || PLEASANTRY_NO.test(trimmed)) {
+    return null;
+  }
+
   // Priority order: correction > preference > failure > devops > project-knowledge
   for (const p of CORRECTION_PATTERNS) {
     const m = text.match(p.regex);
