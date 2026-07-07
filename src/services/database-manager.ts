@@ -102,7 +102,7 @@ export class DatabaseManager {
       if (!dryRun) {
         backupPath = await this.createBackup();
         this.logger.info('DatabaseManager', `Created backup at ${backupPath}`);
-        console.log(`🔄 Created backup at ${backupPath}`);
+        console.error(`🔄 Created backup at ${backupPath}`);
       }
       
       const db = new Database(dbPath, { readonly: dryRun });
@@ -126,7 +126,7 @@ export class DatabaseManager {
       // 4. Run VACUUM to reclaim space (only if not dry run)
       if (!dryRun) {
         this.logger.info('DatabaseManager', 'Running VACUUM to reclaim space...');
-        console.log('🗜️  Compacting database...');
+        console.error('🗜️  Compacting database...');
         db.exec('VACUUM');
       }
       
@@ -156,7 +156,7 @@ export class DatabaseManager {
       });
       
       if (!dryRun && savedBytes > 0) {
-        console.log(`✅ Database compacted, saved ${savedMB}MB`);
+        console.error(`✅ Database compacted, saved ${savedMB}MB`);
       }
       
       return result;
@@ -222,57 +222,55 @@ export class DatabaseManager {
     try {
       let totalRemoved = 0;
 
-      // Content-hash based dedup (primary path)
+      // Content-hash dedup, scoped per project: two projects may legitimately
+      // hold identical content (e.g. task checkpoints), so grouping must never
+      // collapse across project_id. Winner selection prefers ACTIVE rows —
+      // keeping min(id) unconditionally could delete the active row and leave
+      // a superseded one, silently dropping the rule from loadActiveRules.
+      // Counters merge into the winner so demotion/sync signals survive.
+      // (No legacy content_hash IS NULL fallback: the migration backfills
+      // every row, and `key` is UNIQUE so a (type,key,value) group can never
+      // exceed one row anyway.)
       const hashDuplicates = db.prepare(`
-        SELECT content_hash, COUNT(*) as count, GROUP_CONCAT(id) as ids
+        SELECT content_hash, COALESCE(project_id, '') as pid, GROUP_CONCAT(id) as ids
         FROM memories
         WHERE content_hash IS NOT NULL
-        GROUP BY content_hash
+        GROUP BY content_hash, COALESCE(project_id, '')
         HAVING COUNT(*) > 1
       `).all() as any[];
+
+      const rowStmt = db.prepare(
+        'SELECT id, is_active, load_count, cite_count, access_count FROM memories WHERE id = ?'
+      );
 
       for (const dup of hashDuplicates) {
-        const ids = dup.ids.split(',').map((id: string) => parseInt(id));
-        const keepId = Math.min(...ids); // Keep the oldest
-        const removeIds = ids.filter((id: number) => id !== keepId);
+        const ids: number[] = dup.ids.split(',').map((id: string) => parseInt(id, 10));
+        const rows = ids.map(id => rowStmt.get(id) as any).filter(Boolean);
+        // Prefer active rows as winner; among equals keep the oldest id
+        rows.sort((a, b) => ((b.is_active ?? 0) - (a.is_active ?? 0)) || (a.id - b.id));
+        const winner = rows[0];
+        const losers = rows.slice(1);
 
-        if (!dryRun) {
-          const stmt = db.prepare('DELETE FROM memories WHERE id = ?');
-          for (const id of removeIds) {
-            stmt.run(id);
+        if (!dryRun && losers.length > 0) {
+          const loadSum = losers.reduce((s, r) => s + (r.load_count || 0), 0);
+          const citeSum = losers.reduce((s, r) => s + (r.cite_count || 0), 0);
+          const accessSum = losers.reduce((s, r) => s + (r.access_count || 0), 0);
+          db.prepare(
+            'UPDATE memories SET load_count = load_count + ?, cite_count = cite_count + ?, access_count = access_count + ? WHERE id = ?'
+          ).run(loadSum, citeSum, accessSum, winner.id);
+          const del = db.prepare('DELETE FROM memories WHERE id = ?');
+          for (const r of losers) {
+            del.run(r.id);
           }
         }
 
-        totalRemoved += removeIds.length;
-      }
-
-      // Fallback for pre-migration rows where content_hash IS NULL
-      const legacyDuplicates = db.prepare(`
-        SELECT type, key, value, COUNT(*) as count, GROUP_CONCAT(id) as ids
-        FROM memories
-        WHERE content_hash IS NULL
-        GROUP BY type, key, value
-        HAVING COUNT(*) > 1
-      `).all() as any[];
-
-      for (const dup of legacyDuplicates) {
-        const ids = dup.ids.split(',').map((id: string) => parseInt(id));
-        const keepId = Math.min(...ids);
-        const removeIds = ids.filter((id: number) => id !== keepId);
-
-        if (!dryRun) {
-          const stmt = db.prepare('DELETE FROM memories WHERE id = ?');
-          for (const id of removeIds) {
-            stmt.run(id);
-          }
-        }
-
-        totalRemoved += removeIds.length;
+        totalRemoved += losers.length;
       }
 
       this.logger.info('DatabaseManager', `Deduplicated ${totalRemoved} memories`);
       if (totalRemoved > 0 && !dryRun) {
-        console.log(`🔄 Deduplicated ${totalRemoved} identical memories`);
+        // stderr — this can run inside the MCP server, stdout is JSON-RPC
+        console.error(`🔄 Deduplicated ${totalRemoved} identical memories`);
       }
       return totalRemoved;
 
@@ -316,7 +314,7 @@ export class DatabaseManager {
 
       this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories (kept ${keepCount} strongest)`);
       if (toRemove.length > 0 && !dryRun) {
-        console.log(`🔄 Pruned ${toRemove.length} weak tool-use memories`);
+        console.error(`🔄 Pruned ${toRemove.length} weak tool-use memories`);
       }
       return toRemove.length;
 
@@ -327,53 +325,48 @@ export class DatabaseManager {
   }
   
   /**
-   * Prune old corrections
+   * Prune corrections beyond the retention cap, keeping the strongest.
+   *
+   * Targets type = 'correction' — what production actually writes. The
+   * previous implementation targeted 'correction-pattern' with a
+   * preference_key requirement; only the dead PatternStore path ever wrote
+   * that type (and never with preference_key), so the documented "last N
+   * corrections" retention had never fired.
    */
-  private pruneOldCorrections(db: Database.Database, keepPerPattern: number, dryRun: boolean): number {
-    if (keepPerPattern < 0) return 0; // Keep all
+  private pruneOldCorrections(db: Database.Database, keepCount: number, dryRun: boolean): number {
+    if (keepCount < 0) return 0; // Keep all
 
     try {
-      const patterns = db.prepare(`
-        SELECT DISTINCT preference_key
+      const rows = db.prepare(`
+        SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
         FROM memories
-        WHERE type = 'correction-pattern'
-        AND preference_key IS NOT NULL
+        WHERE type = 'correction'
       `).all() as any[];
 
-      let totalRemoved = 0;
-
-      for (const pattern of patterns) {
-        const rows = db.prepare(`
-          SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
-          FROM memories
-          WHERE type = 'correction-pattern'
-          AND preference_key = ?
-        `).all(pattern.preference_key) as any[];
-
-        if (rows.length <= keepPerPattern) continue;
-
-        const scored = rows.map(r => ({
-          id: r.id,
-          strength: MemoryRetrieval.computeStrength(r as Memory),
-        })).sort((a, b) => b.strength - a.strength);
-
-        const toRemove = scored.slice(keepPerPattern);
-
-        if (!dryRun && toRemove.length > 0) {
-          // Prepared-statement deletion, matching pruneOldToolUse (audit 2026-04-23)
-          const placeholders = toRemove.map(() => '?').join(',');
-          db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
-            .run(...toRemove.map(r => r.id));
-        }
-
-        totalRemoved += toRemove.length;
+      if (rows.length <= keepCount) {
+        return 0;
       }
 
-      this.logger.info('DatabaseManager', `Pruned ${totalRemoved} weak corrections`);
-      if (totalRemoved > 0 && !dryRun) {
-        console.log(`🔄 Pruned ${totalRemoved} weak correction memories`);
+      const scored = rows.map(r => ({
+        id: r.id,
+        strength: MemoryRetrieval.computeStrength(r as Memory),
+      })).sort((a, b) => b.strength - a.strength);
+
+      const toRemove = scored.slice(keepCount);
+
+      if (!dryRun && toRemove.length > 0) {
+        // Prepared-statement deletion, matching pruneOldToolUse (audit 2026-04-23)
+        const placeholders = toRemove.map(() => '?').join(',');
+        db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
+          .run(...toRemove.map(r => r.id));
       }
-      return totalRemoved;
+
+      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} weak corrections (kept ${keepCount} strongest)`);
+      if (toRemove.length > 0 && !dryRun) {
+        // stderr — this can run inside the MCP server, stdout is JSON-RPC
+        console.error(`🔄 Pruned ${toRemove.length} weak correction memories`);
+      }
+      return toRemove.length;
 
     } catch (error) {
       this.logger.error('DatabaseManager', 'Error pruning corrections', error);

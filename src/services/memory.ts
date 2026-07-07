@@ -86,7 +86,16 @@ export class MemoryService {
     }
     return MemoryService.instance;
   }
-  
+
+  /**
+   * Direct storage access for MCP handlers that need raw queries
+   * (resources/prompts). Prefer the service methods where one exists.
+   */
+  getStorage(): MemoryStorage {
+    return this.storage;
+  }
+
+
   /**
    * Store a memory with proper context and logging
    */
@@ -110,7 +119,8 @@ export class MemoryService {
       
       if (stats.total >= maxMemories * 0.8) {
         const percent = ((stats.total / maxMemories) * 100).toFixed(0);
-        console.log(`⚠️  Memory usage at ${percent}% (${stats.total}/${maxMemories})`);
+        // stderr — this runs inside the MCP server where stdout is JSON-RPC
+        console.error(`⚠️  Memory usage at ${percent}% (${stats.total}/${maxMemories})`);
       }
       
       // Detect scope (v0.8.0)

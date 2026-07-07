@@ -18,6 +18,9 @@ import {
   isUserEntry,
   extractToolInteractions,
 } from './shared';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
@@ -27,6 +30,43 @@ import { OutcomeStorage } from '../services/outcome-storage';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
 const MAX_STORE = 3;
+
+/**
+ * Debounce state for the heavy pipeline. Claude Code fires Stop after EVERY
+ * assistant turn, not at session end — without a debounce the full pipeline
+ * (episode insert, up to two Haiku calls, failure scan, promotion cycle,
+ * prune) runs per turn. Citations are still scanned every turn (cheap, and
+ * they keep cite_count — the anti-demotion signal — fresh).
+ */
+const STOP_DEBOUNCE_MS = (() => {
+  const raw = parseInt(process.env.CLAUDE_RECALL_STOP_DEBOUNCE_MS || '300000', 10); // 5 min
+  return Number.isFinite(raw) && raw >= 0 ? raw : 300000;
+})();
+
+function stopStateFile(sessionId: string): string {
+  const dir = path.join(os.homedir(), '.claude-recall', 'hook-state');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `memory-stop-${sessionId.replace(/[^a-zA-Z0-9-]/g, '_')}.json`);
+}
+
+function shouldRunHeavyPipeline(sessionId: string): boolean {
+  if (STOP_DEBOUNCE_MS === 0) return true; // debounce disabled
+  const file = stopStateFile(sessionId);
+  try {
+    const state = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (typeof state.lastHeavyRun === 'number' && Date.now() - state.lastHeavyRun < STOP_DEBOUNCE_MS) {
+      return false;
+    }
+  } catch {
+    // Missing/corrupt state file → treat as never run
+  }
+  try {
+    fs.writeFileSync(file, JSON.stringify({ lastHeavyRun: Date.now() }));
+  } catch {
+    // Non-fatal: worst case the pipeline runs again next turn
+  }
+  return true;
+}
 
 export async function handleMemoryStop(input: any): Promise<void> {
   const transcriptPath: string = input?.transcript_path ?? '';
@@ -42,14 +82,15 @@ export async function handleMemoryStop(input: any): Promise<void> {
     return;
   }
 
-  // Create an episode for this session
+  // Debounced: run only the cheap citation scan on most turns
+  const sessionId: string = input?.session_id || 'default';
+  if (!shouldRunHeavyPipeline(sessionId)) {
+    scanForCitations(transcriptPath);
+    return;
+  }
+
   const outcomeStorage = OutcomeStorage.getInstance();
   const projectId = ConfigService.getInstance().getProjectId();
-  const episodeId = outcomeStorage.createEpisode({
-    project_id: projectId,
-    session_id: input?.session_id,
-    source: 'memory-stop',
-  });
 
   // Extract user-only texts, filter, then batch-classify in one API call
   const textsWithIndex: { text: string; idx: number }[] = [];
@@ -63,10 +104,20 @@ export async function handleMemoryStop(input: any): Promise<void> {
 
   if (textsWithIndex.length === 0) {
     hookLog('memory-stop', 'No classifiable text in transcript entries');
-    // Still scan for citations — assistant messages may contain them
+    // Still scan for citations — assistant messages may contain them.
+    // No episode was created yet, so this early return leaves no dangling row.
     scanForCitations(transcriptPath);
     return;
   }
+
+  // Create an episode for this session — AFTER the early returns so the
+  // frequent no-classifiable-text path doesn't leave permanently
+  // outcome-less episode rows.
+  const episodeId = outcomeStorage.createEpisode({
+    project_id: projectId,
+    session_id: input?.session_id,
+    source: 'memory-stop',
+  });
 
   const results = await classifyBatch(textsWithIndex.map((t) => t.text));
   let stored = 0;

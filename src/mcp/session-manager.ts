@@ -3,23 +3,12 @@ import * as path from 'path';
 import * as os from 'os';
 import { LoggingService } from '../services/logging';
 
-export interface ConversationTurn {
-  timestamp: number;
-  tool: string;
-  input: any;
-  output: any;
-  hasPreferenceSignals?: boolean;
-}
-
 export interface SessionData {
   id: string;
   startTime: number;
   lastActivity: number;
   toolCalls: number;
   memories: string[];
-  conversationHistory?: ConversationTurn[];
-  lastAnalyzedTurn?: number;
-  preferenceSignalCount?: number;
   metadata?: Record<string, any>;
 }
 
@@ -28,17 +17,41 @@ export class SessionManager {
   private sessionFile: string;
   private logger: LoggingService;
   private persistInterval: NodeJS.Timeout | null = null;
-  
-  constructor(logger: LoggingService) {
+  private dirty = false;
+
+  /**
+   * @param scope Optional suffix for the session file (typically the project
+   *              id). Without it, concurrently running servers from different
+   *              projects share one sessions.json and clobber each other
+   *              last-writer-wins.
+   */
+  constructor(logger: LoggingService, scope?: string) {
     this.logger = logger;
-    this.sessionFile = path.join(os.homedir(), '.claude-recall', 'sessions.json');
+    const fileName = scope
+      ? `sessions-${scope.replace(/[^a-zA-Z0-9-]/g, '_')}.json`
+      : 'sessions.json';
+    // Same data directory as the database; the env override keeps tests and
+    // custom setups away from the real ~/.claude-recall.
+    const baseDir = process.env.CLAUDE_RECALL_DB_PATH || path.join(os.homedir(), '.claude-recall');
+    this.sessionFile = path.join(baseDir, fileName);
     this.ensureDirectoryExists();
     this.loadSessions();
-    
-    // Persist sessions periodically
+
+    // Persist (only when dirty) and evict stale sessions periodically.
+    // Mutations mark dirty instead of writing synchronously — the previous
+    // write-on-every-mutation did a full pretty-printed file write per tool
+    // call. unref() so this timer never keeps a disconnected server alive.
     this.persistInterval = setInterval(() => {
-      this.persistSessions();
+      this.cleanupOldSessions();
+      if (this.dirty) {
+        this.persistSessions();
+      }
     }, 30000); // Every 30 seconds
+    this.persistInterval.unref();
+  }
+
+  private schedulePersist(): void {
+    this.dirty = true;
   }
   
   private ensureDirectoryExists(): void {
@@ -54,170 +67,50 @@ export class SessionManager {
       startTime: Date.now(),
       lastActivity: Date.now(),
       toolCalls: 0,
-      memories: [],
-      conversationHistory: [],
-      lastAnalyzedTurn: 0,
-      preferenceSignalCount: 0
+      memories: []
     };
 
     this.sessions.set(id, session);
-    this.persistSessions();
+    this.schedulePersist();
 
     this.logger.info('SessionManager', 'Session created', { sessionId: id });
 
     return session;
   }
-  
+
   getSession(id: string): SessionData | undefined {
     return this.sessions.get(id);
   }
-  
+
   updateSession(id: string, update: Partial<SessionData>): void {
     const session = this.sessions.get(id);
     if (session) {
       Object.assign(session, update, { lastActivity: Date.now() });
-      this.persistSessions();
-      
+      this.schedulePersist();
+
       this.logger.debug('SessionManager', 'Session updated', { sessionId: id, update });
     }
   }
-  
+
   incrementToolCalls(id: string): void {
     const session = this.sessions.get(id);
     if (session) {
       session.toolCalls++;
       session.lastActivity = Date.now();
-      this.persistSessions();
+      this.schedulePersist();
     }
   }
-  
+
   addMemory(id: string, memoryId: string): void {
     const session = this.sessions.get(id);
     if (session) {
       session.memories.push(memoryId);
       session.lastActivity = Date.now();
-      this.persistSessions();
+      this.schedulePersist();
     }
   }
 
-  /**
-   * Add a conversation turn to session history
-   * Phase 2: Track conversations for automatic preference analysis
-   */
-  addConversationTurn(
-    id: string,
-    tool: string,
-    input: any,
-    output: any,
-    hasPreferenceSignals?: boolean
-  ): void {
-    const session = this.sessions.get(id);
-    if (session) {
-      if (!session.conversationHistory) {
-        session.conversationHistory = [];
-      }
 
-      session.conversationHistory.push({
-        timestamp: Date.now(),
-        tool,
-        input,
-        output,
-        hasPreferenceSignals
-      });
-
-      if (hasPreferenceSignals) {
-        session.preferenceSignalCount = (session.preferenceSignalCount || 0) + 1;
-      }
-
-      session.lastActivity = Date.now();
-
-      // Keep only last 50 turns to avoid memory bloat
-      if (session.conversationHistory.length > 50) {
-        session.conversationHistory = session.conversationHistory.slice(-50);
-      }
-
-      this.persistSessions();
-
-      this.logger.debug('SessionManager', 'Conversation turn added', {
-        sessionId: id,
-        tool,
-        hasPreferenceSignals,
-        totalTurns: session.conversationHistory.length
-      });
-    }
-  }
-
-  /**
-   * Get conversation history for a session
-   */
-  getConversationHistory(id: string): ConversationTurn[] {
-    const session = this.sessions.get(id);
-    return session?.conversationHistory || [];
-  }
-
-  /**
-   * Get conversation history as formatted text for analysis
-   */
-  getConversationText(id: string, sinceTurn?: number): string {
-    const session = this.sessions.get(id);
-    if (!session?.conversationHistory) {
-      return '';
-    }
-
-    const startIndex = sinceTurn || 0;
-    const turns = session.conversationHistory.slice(startIndex);
-
-    return turns.map((turn, index) => {
-      const turnNumber = startIndex + index + 1;
-      return `Turn ${turnNumber}:\nTool: ${turn.tool}\nInput: ${JSON.stringify(turn.input, null, 2)}\nOutput: ${JSON.stringify(turn.output, null, 2)}`;
-    }).join('\n\n---\n\n');
-  }
-
-  /**
-   * Mark that analysis has been performed up to a certain turn
-   */
-  markAnalyzed(id: string, turnNumber: number): void {
-    const session = this.sessions.get(id);
-    if (session) {
-      session.lastAnalyzedTurn = turnNumber;
-      this.persistSessions();
-    }
-  }
-
-  /**
-   * Check if session should be analyzed for preferences
-   * Criteria:
-   * - At least 5 unanalyzed turns
-   * - OR at least 3 turns with preference signals
-   */
-  shouldAnalyzeSession(id: string): boolean {
-    const session = this.sessions.get(id);
-    if (!session?.conversationHistory) {
-      return false;
-    }
-
-    const lastAnalyzed = session.lastAnalyzedTurn || 0;
-    const currentTurn = session.conversationHistory.length;
-    const unanalyzedTurns = currentTurn - lastAnalyzed;
-
-    // Check unanalyzed turns threshold
-    if (unanalyzedTurns >= 5) {
-      return true;
-    }
-
-    // Check preference signal count in unanalyzed turns
-    const unanalyzedTurnsWithSignals = session.conversationHistory
-      .slice(lastAnalyzed)
-      .filter(turn => turn.hasPreferenceSignals)
-      .length;
-
-    if (unanalyzedTurnsWithSignals >= 3) {
-      return true;
-    }
-
-    return false;
-  }
-  
   private loadSessions(): void {
     try {
       if (fs.existsSync(this.sessionFile)) {
@@ -248,6 +141,7 @@ export class SessionManager {
       );
       
       fs.writeFileSync(this.sessionFile, data);
+      this.dirty = false;
       this.logger.debug('SessionManager', `Persisted ${this.sessions.size} sessions to disk`);
     } catch (error) {
       this.logger.error('SessionManager', 'Failed to persist sessions', error);
@@ -269,7 +163,7 @@ export class SessionManager {
     
     if (removed > 0) {
       this.logger.info('SessionManager', `Cleaned up ${removed} old sessions`);
-      this.persistSessions();
+      this.schedulePersist();
     }
   }
   

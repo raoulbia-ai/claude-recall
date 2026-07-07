@@ -15,9 +15,12 @@ export interface MCPPrompt {
   }>;
 }
 
+// MCP spec: PromptMessage.role allows only 'user' | 'assistant' (no 'system'),
+// and content must be a typed object, not a bare string. Spec-conformant
+// clients reject anything else.
 export interface PromptMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'user' | 'assistant';
+  content: { type: 'text'; text: string };
 }
 
 export interface GetPromptResult {
@@ -38,7 +41,12 @@ export class PromptsHandler {
   constructor() {
     this.logger = LoggingService.getInstance();
     this.memoryService = MemoryService.getInstance();
-    this.memoryStorage = (this.memoryService as any).storage;
+    this.memoryStorage = this.memoryService.getStorage();
+  }
+
+  /** Build a spec-conformant text message. */
+  private textMessage(text: string): PromptMessage {
+    return { role: 'user', content: { type: 'text', text } };
   }
 
   /**
@@ -207,14 +215,11 @@ export class PromptsHandler {
     return {
       description: 'User coding preferences automatically injected',
       messages: [
-        {
-          role: 'system',
-          content: `# User Coding Preferences
+        this.textMessage(`# User Coding Preferences
 
 ${preferencesText}
 
-Apply these preferences when generating code or making suggestions.`
-        }
+Apply these preferences when generating code or making suggestions.`)
       ]
     };
   }
@@ -240,14 +245,11 @@ Apply these preferences when generating code or making suggestions.`
         ? `Project knowledge about ${topic}`
         : 'All project knowledge',
       messages: [
-        {
-          role: 'system',
-          content: `# Project Knowledge
+        this.textMessage(`# Project Knowledge
 
 ${contextText}
 
-Use this information when working with the project.`
-        }
+Use this information when working with the project.`)
       ]
     };
   }
@@ -269,14 +271,11 @@ Use this information when working with the project.`
     return {
       description: 'Recent correction patterns to avoid mistakes',
       messages: [
-        {
-          role: 'system',
-          content: `# Correction Patterns
+        this.textMessage(`# Correction Patterns
 
 ${correctionsText}
 
-Avoid these patterns when generating code.`
-        }
+Avoid these patterns when generating code.`)
       ]
     };
   }
@@ -301,14 +300,11 @@ Avoid these patterns when generating code.`
     return {
       description: `Full context for: ${task}`,
       messages: [
-        {
-          role: 'system',
-          content: `# Relevant Context
+        this.textMessage(`# Relevant Context
 
 ${contextText}
 
-Use this context when working on: ${task}`
-        }
+Use this context when working on: ${task}`)
       ]
     };
   }
@@ -326,9 +322,7 @@ Use this context when working on: ${task}`
     return {
       description: 'Analyze conversation for preference extraction',
       messages: [
-        {
-          role: 'system',
-          content: `You are analyzing a conversation to extract user coding preferences.
+        this.textMessage(`You are analyzing a conversation to extract user coding preferences.
 
 Extract any preferences about:
 - Programming languages and frameworks
@@ -349,12 +343,8 @@ Return a JSON array with format:
   }
 ]
 
-Be conservative - only extract clear, explicit preferences.`
-        },
-        {
-          role: 'user',
-          content: `Analyze this conversation for preferences:\n\n${conversation}`
-        }
+Be conservative - only extract clear, explicit preferences.`),
+        this.textMessage(`Analyze this conversation for preferences:\n\n${conversation}`)
       ]
     };
   }
@@ -555,12 +545,9 @@ Be conservative - only extract clear, explicit preferences.`
     return {
       description: topic ? `Active rules about ${topic}` : `All active rules (${totalRules} total)`,
       messages: [
-        {
-          role: 'system',
-          content: body
-            ? `# Active Rules\n\nApply these rules when working on this project.\n\n${body}`
-            : 'No active rules found. This may be a new project.'
-        }
+        this.textMessage(body
+          ? `# Active Rules\n\nApply these rules when working on this project.\n\n${body}`
+          : 'No active rules found. This may be a new project.')
       ]
     };
   }
@@ -607,12 +594,9 @@ Be conservative - only extract clear, explicit preferences.`
     return {
       description: 'Session outcome review and lessons learned',
       messages: [
-        {
-          role: 'system',
-          content: sections.length > 0
-            ? `# Session Review\n\n${sections.join('\n\n')}`
-            : '# Session Review\n\nNo outcome data available yet.'
-        }
+        this.textMessage(sections.length > 0
+          ? `# Session Review\n\n${sections.join('\n\n')}`
+          : '# Session Review\n\nNo outcome data available yet.')
       ]
     };
   }
@@ -624,10 +608,7 @@ Be conservative - only extract clear, explicit preferences.`
     return {
       description: 'Error',
       messages: [
-        {
-          role: 'system',
-          content: `Error: ${message}`
-        }
+        this.textMessage(`Error: ${message}`)
       ]
     };
   }

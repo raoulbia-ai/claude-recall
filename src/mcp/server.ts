@@ -4,7 +4,6 @@ import { MemoryService } from '../services/memory';
 import { LoggingService } from '../services/logging';
 import { SessionManager } from './session-manager';
 import { RateLimiter } from './rate-limiter';
-import { MemoryCaptureMiddleware } from './memory-capture-middleware';
 import { ResourcesHandler } from './resources-handler';
 import { PromptsHandler } from './prompts-handler';
 import { ProcessManager } from '../services/process-manager';
@@ -53,31 +52,32 @@ export class MCPServer {
   private tools: Map<string, MCPTool> = new Map();
   private memoryService: MemoryService;
   private logger: LoggingService;
-  private sessions: Map<string, MCPContext> = new Map();
   private sessionManager: SessionManager;
   private rateLimiter: RateLimiter;
-  private memoryCaptureMiddleware: MemoryCaptureMiddleware;
   private resourcesHandler: ResourcesHandler;
   private promptsHandler: PromptsHandler;
   private processManager: ProcessManager;
   private config: ConfigService;
-  private isInitialized = false;
+  // One stdio server serves exactly one client — all tool calls without an
+  // explicit sessionId belong to this per-process session.
+  private readonly processSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   constructor() {
     this.transport = new StdioTransport();
     this.memoryService = MemoryService.getInstance();
     this.logger = LoggingService.getInstance();
-    this.sessionManager = new SessionManager(this.logger);
+    this.config = ConfigService.getInstance();
+    // Scope the session file per project so concurrent servers don't clobber
+    // each other's sessions.json (last-writer-wins).
+    this.sessionManager = new SessionManager(this.logger, this.config.getProjectId());
     this.rateLimiter = new RateLimiter(this.logger, {
       windowMs: 60000,      // 1 minute
       maxRequests: 100,     // 100 requests per minute
       skipSuccessfulRequests: false
     });
-    this.memoryCaptureMiddleware = new MemoryCaptureMiddleware();
     this.resourcesHandler = new ResourcesHandler();
     this.promptsHandler = new PromptsHandler();
     this.processManager = ProcessManager.getInstance();
-    this.config = ConfigService.getInstance();
 
     this.setupRequestHandlers();
     this.registerTools();
@@ -125,13 +125,6 @@ export class MCPServer {
         );
       }
 
-      // Process for automatic memory capture (non-blocking)
-      if (this.isInitialized && request.method === 'tools/call') {
-        const sessionId = request.params?.arguments?.sessionId || this.generateSessionId();
-        this.memoryCaptureMiddleware.processForMemoryCapture(request, response, sessionId)
-          .catch(err => this.logger.error('MCPServer', 'Memory capture failed', err));
-      }
-
       return response;
     });
 
@@ -139,7 +132,6 @@ export class MCPServer {
     // client signals handshake completion with `notifications/initialized`.
     this.transport.onNotification(async (notification) => {
       if (notification.method === 'notifications/initialized') {
-        this.isInitialized = true;
         this.logger.info('MCPServer', 'MCP server initialized successfully');
       }
     });
@@ -239,16 +231,22 @@ export class MCPServer {
 
     const startTime = Date.now();
 
-    try {
-      // Create or get session context
-      const sessionId = toolArgs?.sessionId || this.generateSessionId();
+    // Stable session identity: a stdio server has exactly one client for its
+    // whole lifetime, so all calls belong to one session unless the client
+    // explicitly passes sessionId (no registered tool schema declares it, so
+    // in practice this is always the per-process id). The previous fallback
+    // generated a FRESH random id per call — a new session and a full
+    // sessions.json write for every tool call, and a rate limiter that saw
+    // one request per "session" and therefore could never trigger.
+    const sessionId = toolArgs?.sessionId || this.processSessionId;
 
+    try {
       // Get or create session
       let session = this.sessionManager.getSession(sessionId);
       if (!session) {
         session = this.sessionManager.createSession(sessionId);
       }
-      
+
       // Check rate limit
       const withinLimit = await this.rateLimiter.checkLimit(sessionId);
       if (!withinLimit) {
@@ -307,11 +305,10 @@ export class MCPServer {
       };
     } catch (error) {
       this.logger.logServiceError('MCPServer', `tool:${name}`, error as Error, toolArgs);
-      
-      // Record failed request for rate limiting
-      const sessionId = toolArgs?.sessionId || this.generateSessionId();
+
+      // Record failed request for rate limiting (same session as the attempt)
       this.rateLimiter.recordRequest(sessionId, false);
-      
+
       // Claude-flow pattern: Enhanced error response
       return {
         jsonrpc: "2.0",
@@ -327,7 +324,7 @@ export class MCPServer {
           metadata: {
             toolName: name,
             duration: Date.now() - startTime,
-            sessionId: this.generateSessionId(),
+            sessionId,
             error: {
               message: (error as Error).message
               // Stack trace intentionally omitted from the wire response —
@@ -356,10 +353,6 @@ export class MCPServer {
         ...(data && { data })
       }
     };
-  }
-
-  private generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   async start(): Promise<void> {
@@ -417,6 +410,24 @@ export class MCPServer {
       if (demoted.length > 0) {
         this.logger.info('MCPServer', `Auto-demoted ${demoted.length} stale rules on boot`);
       }
+
+      // Auto-compaction: enforce the documented size/count thresholds and
+      // retention limits. Non-fatal — a failed compaction (e.g. VACUUM busy)
+      // must never prevent the server from starting.
+      try {
+        const { DatabaseManager } = await import('../services/database-manager');
+        const dbManager = DatabaseManager.getInstance();
+        if (await dbManager.shouldCompact()) {
+          const result = await dbManager.compact();
+          this.logger.info('MCPServer', 'Auto-compaction completed on boot', {
+            removed: result.removedCount,
+            deduplicated: result.deduplicatedCount,
+            savedBytes: result.beforeSize - result.afterSize,
+          });
+        }
+      } catch (error) {
+        this.logger.logServiceError('MCPServer', 'autoCompact', error as Error);
+      }
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);
       throw error;
@@ -443,9 +454,6 @@ export class MCPServer {
 
       // Shutdown rate limiter
       this.rateLimiter.shutdown();
-
-      // Clean up memory capture middleware
-      this.memoryCaptureMiddleware.cleanupSessions();
 
       await this.transport.stop();
       this.memoryService.close();
