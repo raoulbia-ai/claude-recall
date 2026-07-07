@@ -195,21 +195,27 @@ export class MCPCommands {
     }
 
     const signal = options.force ? 'SIGKILL' : 'SIGTERM';
-    console.log(`Sending ${signal} to PID ${chalk.yellow(status.pid)}...`);
+    const pid = status.pid!;
+    console.log(`Sending ${signal} to PID ${chalk.yellow(pid)}...`);
 
     try {
-      this.processManager.killProcess(status.pid!, options.force || false);
-      this.processManager.removePidFile(projectId);
+      this.processManager.killProcess(pid, options.force || false);
 
-      // Give it a moment to shut down
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Verify death against the SAVED pid, polling up to 5s. The previous
+      // code removed the PID file first and then "verified" by re-reading it,
+      // so isRunning was always false and "stopped successfully" printed even
+      // if the process ignored SIGTERM.
+      const deadline = Date.now() + 5000;
+      while (this.processManager.isProcessRunning(pid) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
 
-      // Verify it stopped
-      const newStatus = this.processManager.getServerStatus(projectId);
-      if (!newStatus.isRunning) {
+      if (!this.processManager.isProcessRunning(pid)) {
+        this.processManager.removePidFile(projectId);
         console.log(chalk.green('✓ Server stopped successfully'));
       } else {
-        console.log(chalk.yellow('⚠ Server may still be running. Try --force flag.'));
+        // Keep the PID file — the server is still alive and tracked
+        console.log(chalk.yellow(`⚠ PID ${pid} is still running after ${signal}. Try --force flag.`));
       }
     } catch (error) {
       console.log(chalk.red(`✗ Failed to stop server: ${error}`));

@@ -15,6 +15,7 @@ import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
 import { runRepair } from './commands/repair';
+import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 
 const program = new Command();
 
@@ -224,7 +225,7 @@ class ClaudeRecallCLI {
     failures.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
     // Limit results
-    const limit = options.limit || 10;
+    const limit = parsePositiveInt(options.limit, 'limit', 10);
     const displayFailures = failures.slice(0, limit);
 
     console.log('\n❌ Failure Memories (Counterfactual Learning)\n');
@@ -236,9 +237,18 @@ class ClaudeRecallCLI {
     }
 
     displayFailures.forEach((failure, index) => {
-      const value = typeof failure.value === 'string'
-        ? JSON.parse(failure.value)
-        : failure.value;
+      // One malformed row must not crash the whole listing — fall back to the
+      // raw string as content
+      let value: any;
+      if (typeof failure.value === 'string') {
+        try {
+          value = JSON.parse(failure.value);
+        } catch {
+          value = { content: failure.value };
+        }
+      } else {
+        value = failure.value;
+      }
 
       const content = value.content || value;
 
@@ -399,10 +409,22 @@ class ClaudeRecallCLI {
     if (needsInstall) {
       console.log(`\n📦 Upgrading ${current} → ${latest}...\n`);
 
-      // Run npm install -g, streaming output so the user sees progress / errors live
+      // Run npm install -g, streaming output so the user sees progress / errors live.
+      // shell: true on Windows — npm is npm.cmd there and a bare spawnSync ENOENTs.
       const install = spawnSync('npm', ['install', '-g', 'claude-recall@latest'], {
         stdio: 'inherit',
+        shell: process.platform === 'win32',
       });
+
+      if (install.error && (install.error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // spawn failed before npm ever ran — the EACCES advice below would be
+        // misleading here (previous behavior: status === null !== 0 fell
+        // through to the "sudo npm install" remediation for a missing npm)
+        console.error('\n❌ npm not found on PATH.');
+        console.error('\nInstall Node.js (which includes npm) ≥ 20.19, or fix your PATH, then re-run:');
+        console.error('  claude-recall upgrade');
+        process.exit(1);
+      }
 
       if (install.status !== 0) {
         // npm prints its own error — add the practical remediation on top
@@ -554,7 +576,7 @@ class ClaudeRecallCLI {
    * Show outcome-aware learning status: episodes, outcome events, candidate lessons, memory stats
    */
   showOutcomes(options: { limit?: number; section?: string }): void {
-    const limit = options.limit || 10;
+    const limit = parsePositiveInt(options.limit, 'limit', 10);
     const section = options.section;
     const db = this.memoryService.getDatabase();
 
@@ -664,7 +686,7 @@ class ClaudeRecallCLI {
    * Search memories by query
    */
   search(query: string, options: { limit?: number; json?: boolean; project?: string; global?: boolean }): void {
-    const limit = options.limit || 10;
+    const limit = parsePositiveInt(options.limit, 'limit', 10);
 
     // Determine search scope
     let results;
@@ -763,38 +785,46 @@ class ClaudeRecallCLI {
   /**
    * Import memories from a file
    */
-  async import(inputPath: string): Promise<void> {
+  async import(inputPath: string, options: { project?: string } = {}): Promise<void> {
     try {
       if (!fs.existsSync(inputPath)) {
         console.error(`❌ File not found: ${inputPath}`);
         process.exit(1);
       }
-      
+
       const content = fs.readFileSync(inputPath, 'utf-8');
       const data = JSON.parse(content);
-      
+
       if (!data.memories || !Array.isArray(data.memories)) {
         console.error('❌ Invalid import file format');
         process.exit(1);
       }
-      
+
       let imported = 0;
       for (const memory of data.memories) {
         try {
+          // Preserve each memory's original scoping. Exported rows carry
+          // project_id/scope as columns (not inside context) — the previous
+          // `context: memory.context || {}` dropped them, silently rescoping
+          // every imported memory to the CURRENT project. --project overrides.
           this.memoryService.store({
             key: memory.key || `imported_${Date.now()}_${Math.random()}`,
             value: memory.value,
             type: memory.type || 'imported',
-            context: memory.context || {}
+            context: {
+              ...(memory.context || {}),
+              projectId: options.project ?? memory.project_id ?? memory.context?.projectId,
+              scope: memory.scope ?? memory.context?.scope ?? null,
+            }
           });
           imported++;
         } catch (error) {
           console.warn(`⚠️  Failed to import memory: ${error}`);
         }
       }
-      
-      console.log(`✅ Imported ${imported}/${data.memories.length} memories`);
-      this.logger.info('CLI', 'Import completed', { imported, total: data.memories.length });
+
+      console.log(`✅ Imported ${imported}/${data.memories.length} memories${options.project ? ` (rescoped to project: ${options.project})` : ' (original project scoping preserved)'}`);
+      this.logger.info('CLI', 'Import completed', { imported, total: data.memories.length, project: options.project });
     } catch (error) {
       console.error('❌ Import failed:', error);
       this.logger.error('CLI', 'Import failed', error);
@@ -1014,7 +1044,7 @@ class ClaudeRecallCLI {
   async store(content: string, options: { type?: string; confidence?: number; metadata?: string }): Promise<void> {
     try {
       const type = options.type || 'preference';
-      const confidence = options.confidence || 0.8;
+      const confidence = parseUnitFloat(options.confidence, 'confidence', 0.8);
 
       // Parse metadata if provided
       let metadata = {};
@@ -1890,7 +1920,7 @@ async function main() {
     .action((query, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.search(query, {
-        limit: parseInt(options.limit),
+        limit: parsePositiveInt(options.limit, 'limit', 10),
         json: options.json,
         project: options.project,
         global: options.global
@@ -1922,7 +1952,7 @@ async function main() {
     .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.showFailures({
-        limit: parseInt(options.limit),
+        limit: parsePositiveInt(options.limit, 'limit', 10),
         project: options.project
       });
       process.exit(0);
@@ -1937,7 +1967,7 @@ async function main() {
     .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.showOutcomes({
-        limit: parseInt(options.limit),
+        limit: parsePositiveInt(options.limit, 'limit', 10),
         section: options.section
       });
       process.exit(0);
@@ -1958,8 +1988,8 @@ async function main() {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.demoteRules({
         dryRun: options.dryRun,
-        minLoads: parseInt(options.minLoads),
-        minAgeDays: parseInt(options.minAgeDays),
+        minLoads: parsePositiveInt(options.minLoads, 'min-loads', 20),
+        minAgeDays: parsePositiveInt(options.minAgeDays, 'min-age-days', 7),
       });
       process.exit(0);
     });
@@ -1982,7 +2012,7 @@ async function main() {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.dedupSimilarRules({
         dryRun: options.dryRun,
-        threshold: parseFloat(options.threshold),
+        threshold: parseUnitFloat(options.threshold, 'threshold', 0.65),
       });
       process.exit(0);
     });
@@ -2028,10 +2058,11 @@ async function main() {
   // Import command
   program
     .command('import <input>')
-    .description('Import memories from file')
-    .action(async (input) => {
+    .description('Import memories from file (original project scoping preserved)')
+    .option('--project <id>', 'Rescope all imported memories to this project ID')
+    .action(async (input, options) => {
       const cli = new ClaudeRecallCLI(program.opts());
-      await cli.import(input);
+      await cli.import(input, options);
       process.exit(0);
     });
 
@@ -2139,7 +2170,7 @@ async function main() {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.store(content, {
         type: options.type,
-        confidence: parseFloat(options.confidence),
+        confidence: parseUnitFloat(options.confidence, 'confidence', 0.8),
         metadata: options.metadata
       });
       process.exit(0);
