@@ -1300,7 +1300,11 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: `${hookCmd} correction-detector`
+              command: `${hookCmd} correction-detector`,
+              // Blocks prompt submission — must stay tight. The in-process
+              // LLM call is capped at 5s (llm-classifier getClient), this
+              // covers process startup on top.
+              timeout: 8
             }
           ]
         }

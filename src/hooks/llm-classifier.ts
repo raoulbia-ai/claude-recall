@@ -58,6 +58,12 @@ Rules:
 
 /**
  * Lazy-init the Anthropic client. Returns null if SDK or API key unavailable.
+ *
+ * Hook context: these calls run inside Claude Code hooks, some of them
+ * synchronously blocking the user's prompt (UserPromptSubmit). The SDK's
+ * defaults (10-minute timeout, 2 retries) would stall the session on a slow
+ * or hung connection, so we cap the timeout and disable retries — a missed
+ * classification degrades to the regex fallback, which is the right trade.
  */
 function getClient(): any | null {
   if (clientInstance !== undefined) return clientInstance;
@@ -70,7 +76,11 @@ function getClient(): any | null {
   try {
     // Dynamic require to avoid hard failure when SDK not installed
     const Anthropic = require('@anthropic-ai/sdk');
-    clientInstance = new Anthropic();
+    const timeoutMs = parseInt(process.env.CLAUDE_RECALL_LLM_TIMEOUT_MS || '5000', 10);
+    clientInstance = new Anthropic({
+      timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      maxRetries: 0,
+    });
     return clientInstance;
   } catch {
     clientInstance = null;
@@ -124,9 +134,9 @@ export async function classifyWithLLM(text: string): Promise<ClassifyResult | nu
 }
 
 /**
- * Classify multiple texts in a single Haiku API call.
- * Returns an array of results (null for unclassifiable items).
- * Falls back to null array on total failure (caller should use regex).
+ * Extract a failure-specific hindsight lesson from a failure description.
+ * Returns null on any failure (no API key, network error, parse error) —
+ * callers fall back to grounding the detector's generic remedy text.
  */
 export async function extractHindsightHint(
   failureDescription: string,
