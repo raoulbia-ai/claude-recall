@@ -185,4 +185,91 @@ describe('MemoryStorage', () => {
       }
     }
   });
+
+  describe('clear scoping', () => {
+    it('clear with projectId deletes only that project, keeping others and unscoped rows', () => {
+      storage.save({ key: 'a', value: { v: 'a' }, type: 'preference', project_id: 'proj-a' });
+      storage.save({ key: 'b', value: { v: 'b' }, type: 'preference', project_id: 'proj-b' });
+      storage.save({ key: 'u', value: { v: 'u' }, type: 'preference' }); // unscoped/universal
+
+      const deleted = storage.clear(undefined, 'proj-a');
+
+      expect(deleted).toBe(1);
+      expect(storage.retrieve('a')).toBeNull();
+      expect(storage.retrieve('b')).not.toBeNull();
+      expect(storage.retrieve('u')).not.toBeNull();
+    });
+
+    it('clear without projectId deletes everything', () => {
+      storage.save({ key: 'a', value: { v: 'a' }, type: 'preference', project_id: 'proj-a' });
+      storage.save({ key: 'b', value: { v: 'b' }, type: 'preference', project_id: 'proj-b' });
+
+      const deleted = storage.clear();
+
+      expect(deleted).toBe(2);
+      expect(storage.getStats().total).toBe(0);
+    });
+  });
+
+  describe('update and mergeValue', () => {
+    it('mergeValue should preserve existing value fields (fix pairing)', () => {
+      storage.save({
+        key: 'failure-1',
+        value: {
+          what_failed: 'npm test',
+          why_failed: 'missing dependency',
+          preventative_checks: ['run npm install first']
+        },
+        type: 'failure'
+      });
+
+      const merged = storage.mergeValue('failure-1', { what_should_do: 'Fix: npm install && npm test' });
+
+      expect(merged).toBe(true);
+      const retrieved = storage.retrieve('failure-1');
+      expect(retrieved?.value.what_should_do).toBe('Fix: npm install && npm test');
+      // The original counterfactual context must survive the merge
+      expect(retrieved?.value.what_failed).toBe('npm test');
+      expect(retrieved?.value.why_failed).toBe('missing dependency');
+      expect(retrieved?.value.preventative_checks).toEqual(['run npm install first']);
+    });
+
+    it('mergeValue should return false for a missing key', () => {
+      expect(storage.mergeValue('does-not-exist', { what_should_do: 'x' })).toBe(false);
+    });
+
+    it('mergeValue should recompute content_hash', () => {
+      storage.save({ key: 'hash-test', value: { a: 1 }, type: 'failure' });
+      const before = storage.retrieve('hash-test')?.content_hash;
+
+      storage.mergeValue('hash-test', { b: 2 });
+
+      const after = storage.retrieve('hash-test');
+      expect(after?.content_hash).toBeDefined();
+      expect(after?.content_hash).not.toBe(before);
+      expect(after?.value).toEqual({ a: 1, b: 2 });
+    });
+
+    it('update should recompute content_hash when value changes', () => {
+      storage.save({ key: 'upd-hash', value: { a: 1 }, type: 'failure' });
+      const before = storage.retrieve('upd-hash')?.content_hash;
+
+      storage.update('upd-hash', { value: { a: 2 } });
+
+      const after = storage.retrieve('upd-hash');
+      expect(after?.value).toEqual({ a: 2 });
+      expect(after?.content_hash).not.toBe(before);
+    });
+
+    it('update should ignore unknown/unsafe field names and empty updates', () => {
+      storage.save({ key: 'safe-upd', value: { a: 1 }, type: 'preference' });
+
+      // Unknown columns must not reach the SET clause
+      expect(() => storage.update('safe-upd', { 'evil = 1; --': 'x' } as any)).not.toThrow();
+      expect(() => storage.update('safe-upd', {} as any)).not.toThrow();
+
+      const retrieved = storage.retrieve('safe-upd');
+      expect(retrieved?.value).toEqual({ a: 1 });
+    });
+  });
 });

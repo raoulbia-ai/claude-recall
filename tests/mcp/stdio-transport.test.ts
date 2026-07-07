@@ -199,8 +199,8 @@ describe('StdioTransport Resilience', () => {
     });
   });
 
-  describe('Content-Length Handling', () => {
-    it('should handle Content-Length headers', async () => {
+  describe('Newline-Delimited Framing', () => {
+    it('should handle newline-delimited JSON messages', async () => {
       const responses: any[] = [];
       const mockWrite = jest.fn((chunk) => {
         const data = chunk.toString();
@@ -218,44 +218,6 @@ describe('StdioTransport Resilience', () => {
         result: { method: request.method }
       }));
 
-      const message = JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "test"
-      });
-
-      // Send with Content-Length header
-      mockStdin.push(`Content-Length: ${message.length}\n`);
-      mockStdin.push('\n');
-      mockStdin.push(message + '\n'); // Add newline for readline to process
-
-      // Wait for processing - increase timeout for reliability
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      expect(responses).toHaveLength(1);
-      expect(responses[0].result).toBeDefined();
-      expect(responses[0].result.method).toBe('test');
-    });
-
-    it('should handle messages without Content-Length', async () => {
-      const responses: any[] = [];
-      const mockWrite = jest.fn((chunk) => {
-        const data = chunk.toString();
-        if (data.trim()) {
-          responses.push(JSON.parse(data));
-        }
-        return true;
-      });
-      mockStdout.write = mockWrite as any;
-
-      await transport.start();
-      transport.onRequest(async (request) => ({
-        jsonrpc: "2.0",
-        id: request.id,
-        result: { method: request.method }
-      }));
-
-      // Send without Content-Length header
       mockStdin.push(JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
@@ -268,6 +230,35 @@ describe('StdioTransport Resilience', () => {
       expect(responses).toHaveLength(1);
       expect(responses[0].result).toBeDefined();
       expect(responses[0].result.method).toBe('direct');
+    });
+  });
+
+  describe('Client Disconnect', () => {
+    it('should invoke the close handler when stdin ends', async () => {
+      const onClose = jest.fn();
+
+      await transport.start();
+      transport.onClose(onClose);
+
+      // Simulate Claude Code exiting: stdin EOF
+      mockStdin.push(null);
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not invoke the close handler on explicit stop()', async () => {
+      const onClose = jest.fn();
+
+      await transport.start();
+      transport.onClose(onClose);
+
+      await transport.stop();
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(onClose).not.toHaveBeenCalled();
     });
   });
 

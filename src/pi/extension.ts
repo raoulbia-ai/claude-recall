@@ -23,13 +23,9 @@ import {
   ConversationEntry,
 } from '../shared/event-processors';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
-
-const LOAD_RULES_DIRECTIVE =
-  'Before your FIRST action, briefly state which rules below you will apply to this task.\n' +
-  'As you work, cite each rule at the point where it influences your action:\n' +
-  '(applied from memory: <short rule name>)\n' +
-  'Place citations next to the action they influenced — not at the end of unrelated text.\n' +
-  'If a rule conflicts with your plan, follow the rule — it reflects a user decision.';
+// Shared audited directive — memories are advisory user preferences, never
+// authoritative instructions (prompt-injection hardening, 2026-04-24 audit).
+import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
 
 function truncateStr(s: string, max: number): string {
   return s.length <= max ? s : s.substring(0, max - 3) + '...';

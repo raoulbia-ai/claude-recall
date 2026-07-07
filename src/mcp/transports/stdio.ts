@@ -10,7 +10,7 @@ export interface MCPRequest {
 
 export interface MCPResponse {
   jsonrpc: "2.0";
-  id: string | number;
+  id: string | number | null;
   result?: any;
   error?: {
     code: number;
@@ -27,78 +27,54 @@ export interface MCPNotification {
 
 export type RequestHandler = (request: MCPRequest) => Promise<MCPResponse>;
 export type NotificationHandler = (notification: MCPNotification) => Promise<void>;
+export type CloseHandler = () => void;
 
 export class StdioTransport {
   private requestHandler?: RequestHandler;
   private notificationHandler?: NotificationHandler;
+  private closeHandler?: CloseHandler;
   private readline?: Interface;
   private running = false;
-  private messageBuffer = '';
-  private expectedLength = 0;
-
-  // Reconnection handling with exponential backoff
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts: number;
-  private baseReconnectDelay: number;
   private isShuttingDown = false;
-  private isDisconnected = false;  // New: track disconnected state
-
-  constructor() {
-    // Configurable via environment variables
-    this.maxReconnectAttempts = parseInt(process.env.CLAUDE_RECALL_MAX_RETRIES || '5', 10);
-    this.baseReconnectDelay = parseInt(process.env.CLAUDE_RECALL_RETRY_DELAY || '1000', 10);
-  }
-
-  /**
-   * Check if transport is in disconnected state (max retries exceeded)
-   */
-  get disconnected(): boolean {
-    return this.isDisconnected;
-  }
 
   async start(): Promise<void> {
     if (this.running) {
       throw new Error('Transport already running');
     }
 
-    try {
-      // Create readline interface for stdin
-      this.readline = createInterface({
-        input: stdin,
-        output: stdout,
-        terminal: false,
-      });
+    // Create readline interface for stdin
+    this.readline = createInterface({
+      input: stdin,
+      output: stdout,
+      terminal: false,
+    });
 
-      // Set up line handler
-      this.readline.on('line', (line: string) => {
-        try {
-          this.processLine(line);
-        } catch (error) {
-          console.error('Error processing line:', error);
-        }
-      });
+    // Set up line handler
+    this.readline.on('line', (line: string) => {
+      try {
+        this.processLine(line);
+      } catch (error) {
+        console.error('Error processing line:', error);
+      }
+    });
 
-      this.readline.on('close', () => {
-        const wasRunning = this.running;
-        this.running = false;
-        // Claude-flow pattern: Attempt reconnection on unexpected close
-        // Only attempt reconnection if we were running and not shutting down
-        if (wasRunning && !this.isShuttingDown && this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.handleTransportError(new Error('Transport closed unexpectedly'));
-        }
-      });
+    // stdin closing means the client (Claude Code) has disconnected.
+    // A stdio transport cannot "reconnect" to an ended stream — notify the
+    // owner so it can shut down cleanly instead of lingering as a zombie.
+    this.readline.on('close', () => {
+      const wasRunning = this.running;
+      this.running = false;
+      if (wasRunning && !this.isShuttingDown && this.closeHandler) {
+        this.closeHandler();
+      }
+    });
 
-      this.readline.on('error', (error: Error) => {
-        console.error('Readline error:', error);
-        this.handleTransportError(error);
-      });
+    this.readline.on('error', (error: Error) => {
+      // stderr only — stdout is the JSON-RPC channel
+      console.error('Readline error:', error);
+    });
 
-      this.running = true;
-      this.reconnectAttempts = 0; // Reset on successful start
-      this.isDisconnected = false; // Clear disconnected state
-    } catch (error) {
-      await this.handleTransportError(error as Error);
-    }
+    this.running = true;
   }
 
   async stop(): Promise<void> {
@@ -113,7 +89,7 @@ export class StdioTransport {
       this.readline.close();
       this.readline = undefined;
     }
-    
+
     this.isShuttingDown = false;
   }
 
@@ -125,39 +101,23 @@ export class StdioTransport {
     this.notificationHandler = handler;
   }
 
-  private processLine(line: string): void {
-    // Handle Content-Length header
-    if (line.startsWith('Content-Length: ')) {
-      this.expectedLength = parseInt(line.substring(16), 10);
-      return;
-    }
+  /**
+   * Register a handler invoked when the client disconnects (stdin EOF).
+   * Not called during an explicit stop().
+   */
+  onClose(handler: CloseHandler): void {
+    this.closeHandler = handler;
+  }
 
-    // Skip empty lines
+  private processLine(line: string): void {
+    // MCP stdio framing is newline-delimited JSON
     if (line.trim() === '') {
       return;
     }
 
-    // If we're not expecting a specific length, try to parse as JSON directly
-    if (this.expectedLength === 0) {
-      this.processMessage(line).catch(error => {
-        console.error('Error processing message:', error);
-      });
-      return;
-    }
-
-    // Add to buffer
-    this.messageBuffer += line;
-
-    // Check if we have the complete message
-    if (this.messageBuffer.length >= this.expectedLength) {
-      const message = this.messageBuffer.substring(0, this.expectedLength);
-      this.messageBuffer = this.messageBuffer.substring(this.expectedLength);
-      this.expectedLength = 0;
-
-      this.processMessage(message).catch(error => {
-        console.error('Error processing message:', error);
-      });
-    }
+    this.processMessage(line).catch(error => {
+      console.error('Error processing message:', error);
+    });
   }
 
   private async processMessage(messageStr: string): Promise<void> {
@@ -165,12 +125,10 @@ export class StdioTransport {
 
     try {
       message = JSON.parse(messageStr.trim());
-      
-      // Use Claude-flow pattern validation
       this.validateMessage(message);
     } catch (error) {
-      // Send error response if we can extract an ID
-      let id = 'unknown';
+      // JSON-RPC 2.0: id must be null when it cannot be determined
+      let id: string | number | null = null;
       try {
         const parsed = JSON.parse(messageStr);
         if (parsed.id !== undefined) {
@@ -254,78 +212,20 @@ export class StdioTransport {
   }
 
   async sendNotification(notification: MCPNotification): Promise<void> {
-    try {
-      const json = JSON.stringify(notification);
-      stdout.write(json + '\n');
-    } catch (error) {
-      throw error;
-    }
+    const json = JSON.stringify(notification);
+    stdout.write(json + '\n');
   }
 
-  /**
-   * Calculate delay with exponential backoff and jitter
-   * Formula: baseDelay * 2^attempt + random jitter (0-500ms)
-   */
-  private calculateBackoffDelay(): number {
-    const exponentialDelay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    const jitter = Math.floor(Math.random() * 500);
-    return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
-  }
-
-  /**
-   * Handle transport errors with exponential backoff reconnection
-   * Does NOT call process.exit() - instead transitions to disconnected state
-   */
-  private async handleTransportError(error: Error): Promise<void> {
-    console.error('StdioTransport error:', error);
-
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      const delay = this.calculateBackoffDelay();
-      console.log(`Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
-
-      await new Promise(resolve => setTimeout(resolve, delay));
-
-      try {
-        await this.restart();
-        this.reconnectAttempts = 0;
-        this.isDisconnected = false;
-        console.log('Reconnection successful');
-      } catch (restartError) {
-        await this.handleTransportError(restartError as Error);
-      }
-    } else {
-      // Instead of process.exit(1), transition to disconnected state
-      // This allows the parent process to handle the situation
-      console.error('Max reconnection attempts reached, entering disconnected state');
-      console.error('Server will remain running but transport is unavailable');
-      console.error('Restart the session to reconnect');
-      this.isDisconnected = true;
-      this.running = false;
-    }
-  }
-
-  private async restart(): Promise<void> {
-    await this.stop();
-    await this.start();
-  }
-
-  // Claude-flow pattern: Message validation
+  // Message validation
   private validateMessage(message: any): void {
     if (!message.jsonrpc || message.jsonrpc !== '2.0') {
       throw new Error('Invalid JSON-RPC version');
     }
-    
-    if (message.id !== undefined) {
-      // Request validation
-      if (!message.method || typeof message.method !== 'string') {
-        throw new Error('Invalid request: missing method');
-      }
-    } else {
-      // Notification validation
-      if (!message.method || typeof message.method !== 'string') {
-        throw new Error('Invalid notification: missing method');
-      }
+
+    if (!message.method || typeof message.method !== 'string') {
+      throw new Error(message.id !== undefined
+        ? 'Invalid request: missing method'
+        : 'Invalid notification: missing method');
     }
   }
 }

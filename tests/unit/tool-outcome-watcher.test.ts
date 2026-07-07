@@ -5,6 +5,7 @@ import * as os from 'os';
 // Mock MemoryService before importing the module under test
 const mockStore = jest.fn();
 const mockUpdate = jest.fn();
+const mockMergeIntoValue = jest.fn().mockReturnValue(true);
 const mockSearch = jest.fn().mockReturnValue([]);
 
 jest.mock('../../src/services/memory', () => ({
@@ -12,6 +13,7 @@ jest.mock('../../src/services/memory', () => ({
     getInstance: () => ({
       store: mockStore,
       update: mockUpdate,
+      mergeIntoValue: mockMergeIntoValue,
       search: mockSearch,
     }),
   },
@@ -140,10 +142,13 @@ describe('tool-outcome-watcher', () => {
         session_id: SESSION,
       });
 
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpdate).toHaveBeenCalledWith('hook_failure_123', {
-        value: { what_should_do: expect.stringContaining('Fix:') },
+      // Merge (not wholesale replace) — the failure's what_failed/why_failed
+      // context must survive fix pairing
+      expect(mockMergeIntoValue).toHaveBeenCalledTimes(1);
+      expect(mockMergeIntoValue).toHaveBeenCalledWith('hook_failure_123', {
+        what_should_do: expect.stringContaining('Fix:'),
       });
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
 
     it('creates outcome event on Bash failure', async () => {

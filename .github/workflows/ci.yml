@@ -1,0 +1,49 @@
+# Type-check + test gate, run on every PR (including from forks) and on
+# pushes to main. Before this workflow existed the only CI was the tarball
+# lint (publish-check.yml) — the test suite never ran on PRs at all.
+#
+# Security model mirrors publish-check.yml:
+#   - Triggered by `pull_request` (NOT `pull_request_target`): fork PRs run
+#     sandboxed with a read-only GITHUB_TOKEN and no secrets.
+#   - Explicit `permissions: contents: read` (least privilege).
+#   - First-party `actions/*` actions only.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Type-check & test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Support floor is Node 20.19: chalk@5 is ESM-only (require(esm)
+        # needs >=20.19) and better-sqlite3@12 requires 20.x/22.x+.
+        node: ['20', '22']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
