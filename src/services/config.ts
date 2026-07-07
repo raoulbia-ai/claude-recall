@@ -70,7 +70,22 @@ export class ConfigService {
     }
     return ConfigService.instance;
   }
-  
+
+  /**
+   * Parse a byte-size value that may carry a KB/MB/GB suffix ("10MB", "512kb")
+   * or be plain bytes ("10485760"). Falls back on anything unparseable.
+   */
+  static parseByteSize(raw: string | undefined, fallback: number): number {
+    if (!raw) return fallback;
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(kb|mb|gb)?\s*$/i.exec(raw);
+    if (!match) return fallback;
+    const multipliers: Record<string, number> = { kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
+    const multiplier = multipliers[(match[2] || '').toLowerCase()] ?? 1;
+    const bytes = Math.round(parseFloat(match[1]) * multiplier);
+    return bytes > 0 ? bytes : fallback;
+  }
+
+
   private loadConfig(): ClaudeRecallConfig {
     // Default configuration
     const defaultConfig: ClaudeRecallConfig = {
@@ -79,7 +94,9 @@ export class ConfigService {
         name: process.env.CLAUDE_RECALL_DB_NAME || 'claude-recall.db',
         compaction: {
           autoCompact: process.env.CLAUDE_RECALL_AUTO_COMPACT !== 'false',
-          compactThreshold: parseInt(process.env.CLAUDE_RECALL_COMPACT_THRESHOLD || '10485760'), // 10MB
+          // Accepts plain bytes or a KB/MB/GB suffix ("10MB"). Plain parseInt
+          // turned "10MB" into 10 *bytes*, triggering compaction on every boot.
+          compactThreshold: ConfigService.parseByteSize(process.env.CLAUDE_RECALL_COMPACT_THRESHOLD, 10 * 1024 * 1024),
           maxMemories: parseInt(process.env.CLAUDE_RECALL_MAX_MEMORIES || '10000'),
           retention: {
             toolUse: parseInt(process.env.CLAUDE_RECALL_RETAIN_TOOL_USE || '1000'),

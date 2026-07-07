@@ -10,13 +10,17 @@ jest.mock('../../src/services/logging');
 describe('SessionManager', () => {
   let sessionManager: SessionManager;
   let mockLogger: jest.Mocked<LoggingService>;
-  const testSessionFile = path.join(os.homedir(), '.claude-recall', 'sessions.json');
+  // Isolated temp dir — must NEVER touch the real ~/.claude-recall, which may
+  // belong to a live claude-recall install on the developer's machine.
+  let testDir: string;
+  let testSessionFile: string;
+  let originalDbPath: string | undefined;
 
   beforeEach(() => {
-    // Clear any existing session file
-    if (fs.existsSync(testSessionFile)) {
-      fs.unlinkSync(testSessionFile);
-    }
+    originalDbPath = process.env.CLAUDE_RECALL_DB_PATH;
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-recall-sessions-'));
+    process.env.CLAUDE_RECALL_DB_PATH = testDir;
+    testSessionFile = path.join(testDir, 'sessions.json');
 
     mockLogger = {
       info: jest.fn(),
@@ -31,10 +35,12 @@ describe('SessionManager', () => {
 
   afterEach(() => {
     sessionManager.shutdown();
-    // Clean up session file
-    if (fs.existsSync(testSessionFile)) {
-      fs.unlinkSync(testSessionFile);
+    if (originalDbPath === undefined) {
+      delete process.env.CLAUDE_RECALL_DB_PATH;
+    } else {
+      process.env.CLAUDE_RECALL_DB_PATH = originalDbPath;
     }
+    fs.rmSync(testDir, { recursive: true, force: true });
   });
 
   describe('createSession', () => {
@@ -56,13 +62,16 @@ describe('SessionManager', () => {
       );
     });
 
-    it('should persist session to disk', () => {
+    it('should persist session to disk (on shutdown flush)', () => {
       const sessionId = 'test-session-123';
       sessionManager.createSession(sessionId);
 
+      // Persistence is debounced (30s interval) — shutdown forces the flush
+      sessionManager.shutdown();
+
       // Check file exists
       expect(fs.existsSync(testSessionFile)).toBe(true);
-      
+
       // Verify content
       const data = JSON.parse(fs.readFileSync(testSessionFile, 'utf-8'));
       expect(data).toHaveLength(1);

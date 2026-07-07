@@ -13,7 +13,7 @@ jest.mock('../../src/services/memory', () => ({
     getInstance: () => ({
       loadActiveRules: mockLoadActiveRules,
       search: mockSearch,
-      storage: { searchByContext: mockSearchByContext },
+      getStorage: () => ({ searchByContext: mockSearchByContext }),
     }),
   },
 }));
@@ -124,7 +124,7 @@ describe('PromptsHandler', () => {
 
       const response = await handler.handlePromptsGet(makeRequest('load-rules'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('# Active Rules');
       expect(content).toContain('## Preferences');
       expect(content).toContain('Use TypeScript');
@@ -137,14 +137,15 @@ describe('PromptsHandler', () => {
     it('returns empty message for no rules', async () => {
       const response = await handler.handlePromptsGet(makeRequest('load-rules'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('No active rules found');
     });
 
-    it('returns system role message', async () => {
+    it('returns spec-conformant user role message', async () => {
       const response = await handler.handlePromptsGet(makeRequest('load-rules'));
 
-      expect(response.result.messages[0].role).toBe('system');
+      expect(response.result.messages[0].role).toBe('user');
+      expect(response.result.messages[0].content.type).toBe('text');
     });
 
     it('filters by topic when provided', async () => {
@@ -161,7 +162,7 @@ describe('PromptsHandler', () => {
 
       const response = await handler.handlePromptsGet(makeRequest('load-rules', { topic: 'typescript' }));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('TypeScript');
       expect(content).not.toContain('tabs');
     });
@@ -179,7 +180,7 @@ describe('PromptsHandler', () => {
 
       const response = await handler.handlePromptsGet(makeRequest('session-review'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('# Session Review');
       expect(content).toContain('Promoted Lessons');
       expect(content).toContain('Always check file exists before edit');
@@ -197,7 +198,7 @@ describe('PromptsHandler', () => {
 
       const response = await handler.handlePromptsGet(makeRequest('session-review'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('Candidate Lessons');
       expect(content).toContain('Run tests after refactoring');
     });
@@ -213,7 +214,7 @@ describe('PromptsHandler', () => {
 
       const response = await handler.handlePromptsGet(makeRequest('session-review'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('Memory Summary');
       expect(content).toContain('1 active rules');
     });
@@ -221,15 +222,16 @@ describe('PromptsHandler', () => {
     it('handles empty outcome data gracefully', async () => {
       const response = await handler.handlePromptsGet(makeRequest('session-review'));
 
-      const content = response.result.messages[0].content;
+      const content = response.result.messages[0].content.text;
       expect(content).toContain('# Session Review');
       expect(content).toContain('Memory Summary');
     });
 
-    it('returns system role message', async () => {
+    it('returns spec-conformant user role message', async () => {
       const response = await handler.handlePromptsGet(makeRequest('session-review'));
 
-      expect(response.result.messages[0].role).toBe('system');
+      expect(response.result.messages[0].role).toBe('user');
+      expect(response.result.messages[0].content.type).toBe('text');
     });
   });
 

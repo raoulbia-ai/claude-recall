@@ -36,7 +36,7 @@ export class ResourcesHandler {
   constructor() {
     this.logger = LoggingService.getInstance();
     this.memoryService = MemoryService.getInstance();
-    this.memoryStorage = (this.memoryService as any).storage;
+    this.memoryStorage = this.memoryService.getStorage();
   }
 
   /**

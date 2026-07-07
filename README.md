@@ -378,12 +378,9 @@ claude-recall project register           # Register current project
 claude-recall project unregister [id]    # Unregister a project
 claude-recall project clean              # Remove stale registry entries
 
-# ── Database Migration ──────────────────────────────────────────────
-claude-recall migrate check              # Check if migration needed
-claude-recall migrate schema             # Show current schema version
-claude-recall migrate export             # Export pre-migration backup
-claude-recall migrate import             # Import from backup
-claude-recall migrate complete           # Run pending migrations
+# ── Database Maintenance ─────────────────────────────────────────────
+claude-recall compact                    # Dedup + prune retention overflow + VACUUM (also runs automatically on MCP boot)
+claude-recall compact --dry-run          # Preview what compaction would remove
 
 # ── Auto-Capture Hooks (run automatically, registered via setup --install) ──
 claude-recall hook run correction-detector   # UserPromptSubmit hook
@@ -448,6 +445,7 @@ Runtime behavior can be tuned via environment variables. Defaults are chosen so 
 | `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `on`    | Set to `off` to bypass the search-enforcer hook.                                                         |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
+| `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). Citations still scan every turn. `0` disables. |
 
 ---
 

@@ -8,7 +8,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { PatternService } from '../services/pattern-service';
-import { MigrateCommand } from './commands/migrate';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
 import { FailureExtractor } from '../services/failure-extractor';
@@ -1252,13 +1251,10 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: `${hookCmd} tool-outcome-watcher`,
-              timeout: 3
-            },
-            {
-              type: "command",
-              command: `${hookCmd} rule-injection-resolver`,
-              timeout: 3
+              // Both handlers share one process — each extra node invocation
+              // cold-boots the CLI and reopens the DB on every tool call
+              command: `${hookCmd} tool-outcome-watcher rule-injection-resolver`,
+              timeout: 5
             }
           ]
         }
@@ -1268,13 +1264,8 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: `${hookCmd} tool-failure`,
-              timeout: 3
-            },
-            {
-              type: "command",
-              command: `${hookCmd} rule-injection-resolver`,
-              timeout: 3
+              command: `${hookCmd} tool-failure rule-injection-resolver`,
+              timeout: 5
             }
           ]
         }
@@ -1314,13 +1305,10 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: `${hookCmd} memory-stop`,
-              timeout: 30
-            },
-            {
-              type: "command",
-              command: `${hookCmd} memory-sync`,
-              timeout: 10
+              // Sequential in one process; memory-sync runs after memory-stop
+              // so it syncs the rules memory-stop just updated
+              command: `${hookCmd} memory-stop memory-sync`,
+              timeout: 40
             }
           ]
         }
@@ -1891,7 +1879,6 @@ async function main() {
   HookCommands.register(program);
 
   // Migration commands
-  MigrateCommand.register(program);
 
   // Search command
   program
@@ -2060,6 +2047,30 @@ async function main() {
       const cli = new ClaudeRecallCLI(program.opts());
       await cli.clear(options);
       process.exit(0);
+    });
+
+  // Compact command — manual trigger for the same compaction that runs
+  // automatically on MCP server boot when thresholds are exceeded.
+  program
+    .command('compact')
+    .description('Compact the database: dedup identical memories, prune retention overflow, VACUUM')
+    .option('--dry-run', 'Report what would be removed without changing anything')
+    .action(async (options) => {
+      try {
+        const { DatabaseManager } = await import('../services/database-manager');
+        const result = await DatabaseManager.getInstance().compact(!!options.dryRun);
+        const savedMB = ((result.beforeSize - result.afterSize) / 1024 / 1024).toFixed(2);
+        if (options.dryRun) {
+          console.log(`Dry run: would deduplicate ${result.deduplicatedCount} and prune ${result.removedCount} memories.`);
+        } else {
+          console.log(`✅ Compaction done: deduplicated ${result.deduplicatedCount}, pruned ${result.removedCount}, saved ${savedMB}MB.`);
+          if (result.backupPath) console.log(`   Backup: ${result.backupPath}`);
+        }
+        process.exit(0);
+      } catch (error) {
+        console.error(`❌ Compaction failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
     });
 
   // Checkpoint command group

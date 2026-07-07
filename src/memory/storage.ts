@@ -114,37 +114,37 @@ export class MemoryStorage {
 
       // Add sophistication_level if missing (v0.7.0+)
       if (!columnNames.includes('sophistication_level')) {
-        console.log('📋 Migrating database schema: Adding sophistication_level column...');
+        console.error('📋 Migrating database schema: Adding sophistication_level column...');
         this.db.exec('ALTER TABLE memories ADD COLUMN sophistication_level INTEGER DEFAULT 1');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_sophistication ON memories(sophistication_level)');
-        console.log('✅ Added sophistication_level column');
+        console.error('✅ Added sophistication_level column');
       }
 
       // Add scope if missing (v0.7.2+)
       if (!columnNames.includes('scope')) {
-        console.log('📋 Migrating database schema: Adding scope column...');
+        console.error('📋 Migrating database schema: Adding scope column...');
         this.db.exec("ALTER TABLE memories ADD COLUMN scope TEXT CHECK(scope IN ('universal', 'project', NULL))");
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_scope_project ON memories(scope, project_id)');
-        console.log('✅ Added scope column');
+        console.error('✅ Added scope column');
       }
 
       // Add load_count if missing (compliance tracking v0.15.14)
       if (!columnNames.includes('load_count')) {
-        console.log('📋 Migrating database schema: Adding load_count column...');
+        console.error('📋 Migrating database schema: Adding load_count column...');
         this.db.exec('ALTER TABLE memories ADD COLUMN load_count INTEGER DEFAULT 0');
-        console.log('✅ Added load_count column');
+        console.error('✅ Added load_count column');
       }
 
       // Add cite_count if missing (compliance tracking v0.15.14)
       if (!columnNames.includes('cite_count')) {
-        console.log('📋 Migrating database schema: Adding cite_count column...');
+        console.error('📋 Migrating database schema: Adding cite_count column...');
         this.db.exec('ALTER TABLE memories ADD COLUMN cite_count INTEGER DEFAULT 0');
-        console.log('✅ Added cite_count column');
+        console.error('✅ Added cite_count column');
       }
 
       // Add content_hash if missing (content dedup)
       if (!columnNames.includes('content_hash')) {
-        console.log('📋 Migrating database schema: Adding content_hash column...');
+        console.error('📋 Migrating database schema: Adding content_hash column...');
         this.db.exec('ALTER TABLE memories ADD COLUMN content_hash TEXT');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash)');
 
@@ -159,9 +159,9 @@ export class MemoryStorage {
             }
           });
           backfillTransaction();
-          console.log(`✅ Added content_hash column, backfilled ${rows.length} records`);
+          console.error(`✅ Added content_hash column, backfilled ${rows.length} records`);
         } else {
-          console.log('✅ Added content_hash column');
+          console.error('✅ Added content_hash column');
         }
       }
       // v0.18.0: Outcome-aware learning tables
