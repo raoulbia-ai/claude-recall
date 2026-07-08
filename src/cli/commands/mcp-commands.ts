@@ -112,7 +112,7 @@ export class MCPCommands {
     } else {
       console.log();
       console.log(chalk.yellow('⚠ Project not registered in registry'));
-      console.log(chalk.gray('  Run `npx claude-recall project register` to register'));
+      console.log(chalk.gray('  Run `claude-recall project register` to register'));
     }
 
     console.log();
@@ -152,7 +152,7 @@ export class MCPCommands {
         console.log(`  ${chalk.gray(server.projectId.padEnd(40))} PID: ${chalk.gray(server.pid)} (not running)`);
       }
       console.log();
-      console.log(chalk.yellow(`💡 Run 'npx claude-recall mcp cleanup' to remove stale PID files`));
+      console.log(chalk.yellow(`💡 Run 'claude-recall mcp cleanup' to remove stale PID files`));
       console.log();
     }
 
@@ -166,7 +166,7 @@ export class MCPCommands {
         console.log(`  ${chalk.gray(projectId.padEnd(40))} v${entry.version}`);
       }
       console.log();
-      console.log(chalk.gray(`💡 Run 'npx claude-recall project list' for detailed registry info`));
+      console.log(chalk.gray(`💡 Run 'claude-recall project list' for detailed registry info`));
       console.log();
     }
   }
@@ -243,7 +243,7 @@ export class MCPCommands {
     }
 
     console.log('\nTo start the server, run:');
-    console.log(chalk.cyan('  npx claude-recall mcp start'));
+    console.log(chalk.cyan('  claude-recall mcp start'));
     console.log();
     console.log(chalk.gray('Note: The MCP server is normally started automatically by Claude Code.'));
     console.log(chalk.gray('      You only need to run this manually for debugging purposes.'));

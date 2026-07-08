@@ -1005,7 +1005,7 @@ class ClaudeRecallCLI {
     } else if (!hasPi) {
       console.log('Claude Code MCP:');
       console.log('  Status: Not registered');
-      console.log('  Command: claude mcp add claude-recall claude-recall mcp start');
+      console.log('  Command: claude mcp add claude-recall -- claude-recall mcp start');
     } else {
       // Pi is present; show Claude Code MCP as optional
       console.log('Claude Code MCP:');
@@ -1432,24 +1432,32 @@ async function main() {
         // Install skills and enforcement hook
         installSkillsAndHook();
       } else {
-        // Show activation instructions
+        // Show activation instructions. Registration uses the global
+        // `claude-recall` binary, NOT `npx ... @latest`: npx resolves through
+        // any stale project-local install (shadow trap) and @latest hits the
+        // registry on every server spawn. Consecutive commands are printed
+        // flush-left as one contiguous block so they can be copy-pasted in
+        // one go.
         console.log('\n✅ Claude Recall Setup\n');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('📌 ACTIVATE CLAUDE RECALL:');
+        console.log('📌 ACTIVATE CLAUDE RECALL (run in each project):');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('');
-        console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+        console.log('claude-recall setup --install');
+        console.log('claude mcp add claude-recall -- claude-recall mcp start');
         console.log('');
         console.log('  Then restart Claude Code (exit and re-enter the session).');
         console.log('');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('');
-        console.log('🔄 Already registered? Remove and re-add:');
-        console.log('  claude mcp remove claude-recall');
-        console.log('  claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
+        console.log('🔄 Registered under an old npx-based command? Remove and re-add:');
         console.log('');
-        console.log('🛑 Stop old instance:');
-        console.log('  npx claude-recall mcp stop');
+        console.log('claude mcp remove claude-recall');
+        console.log('claude mcp add claude-recall -- claude-recall mcp start');
+        console.log('');
+        console.log('🛑 Stop a running old instance:');
+        console.log('');
+        console.log('claude-recall mcp stop');
         console.log('');
       }
       process.exit(0);
@@ -1525,7 +1533,7 @@ async function main() {
 
     if (!settingsPath) {
       console.log('❌ No .claude/settings.json found in directory tree');
-      console.log('   Run: npx claude-recall repair\n');
+      console.log('   Run: claude-recall repair\n');
       return;
     }
     console.log(`✅ Found settings: ${settingsPath}`);
@@ -1588,7 +1596,7 @@ async function main() {
     }
 
     if (hasIssues) {
-      console.log('\n⚠️  Issues found. Run: npx claude-recall repair\n');
+      console.log('\n⚠️  Issues found. Run: claude-recall repair\n');
     } else {
       console.log('\n✅ All hooks OK!\n');
     }
@@ -1624,7 +1632,7 @@ async function main() {
 
     if (!enforcerPath) {
       console.log('❌ Could not find search_enforcer.py');
-      console.log('   Run: npx claude-recall repair\n');
+      console.log('   Run: claude-recall repair\n');
       return;
     }
 
@@ -1716,7 +1724,7 @@ async function main() {
       console.log('Claude will be blocked from Write/Edit until memory search is performed.\n');
     } else {
       console.log('❌ Some tests failed. Check hook configuration.\n');
-      console.log('Run: npx claude-recall repair\n');
+      console.log('Run: claude-recall repair\n');
     }
   }
 
@@ -1821,7 +1829,7 @@ async function main() {
 
       if (skills.length === 0) {
         console.log('No auto-generated skills found.\n');
-        console.log('Run `npx claude-recall skills generate` to create skills from memories.\n');
+        console.log('Run `claude-recall skills generate` to create skills from memories.\n');
       } else {
         for (const skill of skills) {
           console.log(`  ${skill.skillDir}/`);
