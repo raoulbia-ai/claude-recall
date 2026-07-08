@@ -215,8 +215,15 @@ export class KiroCommands {
     console.log('');
     for (const c of changes) console.log(`   • ${c}`);
     console.log('');
-    console.log('Kiro hot-reloads agent configs on save — the changes apply to your next');
-    console.log(`interaction with the "${safeName}" agent, no restart needed.`);
+    console.log('⚠️  IMPORTANT — one-time rollover per project: Kiro snapshots the agent');
+    console.log('config into each conversation AT CREATION, and --resume restores that');
+    console.log('snapshot. Conversations created BEFORE this merge will never run the');
+    console.log(`memory hooks. In each project, start ONE fresh conversation (no --resume):`);
+    console.log('');
+    console.log(`kiro-cli chat --agent ${safeName}`);
+    console.log('');
+    console.log('Every conversation created from now on carries the hooks — including');
+    console.log('when resumed, so your normal --resume workflow works from then on.');
     process.exit(0);
   }
 
@@ -260,6 +267,11 @@ export class KiroCommands {
     console.log('Rules load into context automatically at agent start; corrections and');
     console.log('preferences you state are captured; memories are shared with Claude Code');
     console.log('(same database, same per-project scoping).');
+    console.log('');
+    console.log('⚠️  Kiro snapshots the agent config into each conversation at creation —');
+    console.log('conversations created before this setup never run the hooks, even when');
+    console.log('resumed. Start ONE fresh conversation (no --resume) per project; every');
+    console.log('conversation from then on carries the hooks, including when resumed.');
     console.log('');
     console.log('Not available under Kiro: transcript-based failure detection and');
     console.log('session-end checkpoints (Kiro exposes no transcript to hooks).');
@@ -406,7 +418,7 @@ export class KiroCommands {
     if (kiro) {
       line('✓', `kiro hooks last ran${KiroCommands.fmtAge(kiro.ageMs)}: ${kiro.line.replace(/^\[[^\]]+\]\s*/, '')}`);
     } else {
-      line('⚠', 'no kiro.log — Kiro hooks have never fired. After `kiro setup`/`--merge-into`, RESTART Kiro (hooks bind at agent activation).');
+      line('⚠', 'no kiro.log — Kiro hooks have never fired. Kiro snapshots agent config into each conversation at creation, so conversations created before wiring never run hooks (even resumed). Start ONE fresh conversation (no --resume) in each project.');
     }
     if (cd) {
       line('✓', `capture hook last ran${KiroCommands.fmtAge(cd.ageMs)}: ${cd.line.replace(/^\[[^\]]+\]\s*/, '')}`);

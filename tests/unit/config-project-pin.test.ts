@@ -1,9 +1,9 @@
 /**
  * CLAUDE_RECALL_PROJECT_ID pins the project scope, overriding cwd detection.
  *
- * Motivation: `kiro --resume` restores the resumed conversation's working
- * directory, which may be a different project than the user intends. Pinning
- * forces a fixed project regardless of the reported cwd.
+ * Motivation: force a fixed project id regardless of the reported cwd —
+ * e.g. when one logical project spans several directories (worktrees,
+ * subrepos) or a runtime reports an unexpected working directory.
  */
 describe('ConfigService project pin', () => {
   const saved = {
@@ -26,7 +26,6 @@ describe('ConfigService project pin', () => {
 
   function freshProjectId(): string {
     jest.resetModules();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { ConfigService } = require('../../src/services/config');
     return ConfigService.getInstance().getProjectId();
   }
