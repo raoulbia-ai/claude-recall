@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.5] - 2026-07-08
+
+### Fixed
+
+- **`kiro --resume` workflows are now first-class** (#52). A resumed session captured and recalled correctly all along, but two things made it look broken:
+  - Under enterprise governance that drops the claude-recall MCP server, the agent answered "I have no memory tools" — true of the tool, false of the system (the hooks capture and inject against the local DB regardless). The Kiro `agentSpawn` directive now states this explicitly, so the agent confirms it will remember rather than denying it has memory.
+  - `kiro --resume` (no conversation id) continues the most-recent conversation and restores *its* working directory, so memories scope to that conversation's project — surprising when it differs from the shell's directory.
+
+### Added
+
+- **`CLAUDE_RECALL_PROJECT_ID`** — pin the project scope to a fixed id, overriding working-directory detection. Makes scoping deterministic regardless of which directory `kiro --resume` restores (e.g. a per-project shell alias `CLAUDE_RECALL_PROJECT_ID=foo kiro-cli chat --resume`). `CLAUDE_PROJECT_ID` is still honored; `CLAUDE_RECALL_PROJECT_ID` takes precedence.
+- `claude-recall kiro doctor` now reports whether the resolved project is pinned (and via which variable) or derived from the working directory.
+- README: a "Project scoping & `--resume`" subsection and the new env var in the reference table.
+
 ## [0.28.4] - 2026-07-08
 
 ### Fixed
