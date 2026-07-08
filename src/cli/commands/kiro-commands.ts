@@ -87,9 +87,15 @@ export class KiroCommands {
 
     console.log(`✅ Wrote Kiro agent config: ${agentPath}`);
     console.log('');
-    console.log('To use it, start Kiro CLI and switch to the agent:');
+    console.log('No mcp.json changes needed — the agent config carries its own claude-recall');
+    console.log('MCP server entry (and includeMcpJson keeps your other servers working).');
+    console.log('');
+    console.log('1. Start Kiro from your shell:');
     console.log('');
     console.log('kiro');
+    console.log('');
+    console.log('2. Inside the Kiro chat, switch to the agent:');
+    console.log('');
     console.log('/agent swap recall');
     console.log('');
     console.log('Rules load into context automatically at agent start; corrections and');
