@@ -98,17 +98,38 @@ function formatRulesForContext(): { body: string; total: number } {
 }
 
 /**
+ * Standing instruction so the agent KNOWS it has persistent memory. Without
+ * this, a session with no stored rules yet answers "I have no memory between
+ * conversations" and never calls store_memory when the user says
+ * "remember ..." — the exact failure observed on first use.
+ */
+const KIRO_MEMORY_DIRECTIVE =
+  'You have PERSISTENT MEMORY across sessions via Claude Recall (MCP server "claude-recall": ' +
+  'load_rules, store_memory, search_memory, delete_memory, save_checkpoint, load_checkpoint). ' +
+  'When the user says "remember ...", "store this", "recall ...", states a preference, or corrects you, ' +
+  'call store_memory (tell them what you will store). Use search_memory before decisions when past ' +
+  'context might apply. Memories are scoped per project and shared with the user\'s other coding agents.';
+
+/**
  * agentSpawn — runs once when a Kiro agent activates. Whatever we print is
  * added to the agent's context, so this IS the load_rules call: rules are in
- * context from turn one without any tool call or enforcement.
+ * context from turn one without any tool call or enforcement. The memory
+ * directive is always emitted, even with an empty database — capability
+ * awareness must not depend on having memories already.
  */
 export async function handleKiroAgentSpawn(_input: any): Promise<void> {
   try {
-    const { body, total } = formatRulesForContext();
+    const parts: string[] = [KIRO_MEMORY_DIRECTIVE];
+    let total = 0;
 
-    const parts: string[] = [];
-    if (body) {
-      parts.push(LOAD_RULES_DIRECTIVE, '---', body);
+    try {
+      const rules = formatRulesForContext();
+      total = rules.total;
+      if (rules.body) {
+        parts.push(LOAD_RULES_DIRECTIVE, '---', rules.body);
+      }
+    } catch (err) {
+      hookLog(HOOK_NAME, `agentSpawn rule load failed (directive still emitted): ${safeErrorMessage(err)}`);
     }
 
     // Surface a pending task checkpoint the same way load_rules hints at one
@@ -123,13 +144,8 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
       }
     } catch { /* checkpoint hint is best-effort */ }
 
-    if (parts.length === 0) {
-      hookLog(HOOK_NAME, 'agentSpawn: no active rules or checkpoint — nothing injected');
-      return;
-    }
-
     process.stdout.write(parts.join('\n\n') + '\n');
-    hookLog(HOOK_NAME, `agentSpawn: injected ${total} rule(s) into Kiro context`);
+    hookLog(HOOK_NAME, `agentSpawn: injected memory directive + ${total} rule(s) into Kiro context`);
   } catch (err) {
     // Never block agent startup
     hookLog(HOOK_NAME, `agentSpawn error: ${safeErrorMessage(err)}`);

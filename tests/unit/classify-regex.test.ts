@@ -46,6 +46,18 @@ describe('classifyContentRegex', () => {
       const r = classifyContentRegex('remember to bump the schema version when adding columns');
       expect(r?.type).toBe('preference');
     });
+
+    it('classifies bare "remember ..." phrasings (no that/this/to)', () => {
+      // Real-world miss: "remember my favourite color is green" slipped past
+      // the old regex, which required that/this/to after "remember"
+      const r = classifyContentRegex('remember my favourite color is green');
+      expect(r?.type).toBe('preference');
+      expect(r?.extract).toBe('my favourite color is green');
+      expect(r!.confidence).toBeGreaterThanOrEqual(0.75);
+
+      const r2 = classifyContentRegex('remember we deploy only from the release branch');
+      expect(r2?.type).toBe('preference');
+    });
   });
 
   describe('misfire guards', () => {
