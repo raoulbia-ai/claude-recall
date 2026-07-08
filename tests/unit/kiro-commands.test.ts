@@ -253,3 +253,49 @@ describe('kiro setup --merge-into', () => {
     expect(fs.readdirSync(dir).filter(f => f.includes('.bak.'))).toHaveLength(0);
   });
 });
+
+describe('KiroCommands.inspectAgent', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-inspect-'));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function write(config: any): string {
+    const p = path.join(tmpDir, 'a.json');
+    fs.writeFileSync(p, JSON.stringify(config));
+    return p;
+  }
+
+  it('reports MCP + which hooks are wired', () => {
+    const info = KiroCommands.inspectAgent(write({
+      name: 'mcp-agent-env',
+      mcpServers: { 'claude-recall': {}, jira: {} },
+      hooks: {
+        agentSpawn: [{ command: 'claude-recall hook run kiro-agent-spawn' }],
+        userPromptSubmit: [{ command: 'claude-recall hook run correction-detector' }],
+        preToolUse: [{ command: 'other-tool' }],
+      },
+    }));
+    expect(info).not.toBeNull();
+    expect(info!.name).toBe('mcp-agent-env');
+    expect(info!.mcp).toBe(true);
+    expect(info!.hooks).toEqual(['agentSpawn', 'userPromptSubmit']);
+  });
+
+  it('reports not-wired for an agent without claude-recall', () => {
+    const info = KiroCommands.inspectAgent(write({ name: 'plain', mcpServers: { jira: {} }, hooks: { agentSpawn: [{ command: 'git status' }] } }));
+    expect(info!.mcp).toBe(false);
+    expect(info!.hooks).toEqual([]);
+  });
+
+  it('returns null for malformed JSON or missing file', () => {
+    const p = path.join(tmpDir, 'broken.json');
+    fs.writeFileSync(p, '{ nope');
+    expect(KiroCommands.inspectAgent(p)).toBeNull();
+    expect(KiroCommands.inspectAgent(path.join(tmpDir, 'nonexistent.json'))).toBeNull();
+  });
+});
