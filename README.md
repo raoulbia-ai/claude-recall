@@ -49,6 +49,16 @@ claude mcp add claude-recall -- claude-recall mcp start
 
 Restart Claude Code. Ask *"Load my rules"* to verify — Claude should call `load_rules`.
 
+Prefer it active in **every** project? Register the MCP server once at user scope instead of per project (memories stay isolated per project either way — scoping comes from the working directory, not the install):
+
+```bash
+claude mcp add --scope user claude-recall -- claude-recall mcp start
+```
+
+Hook-based auto-capture remains a per-project opt-in via `claude-recall setup --install` (it writes to that project's `.claude/settings.json`).
+
+> **Do NOT add claude-recall as a project dependency** (`npm install claude-recall` inside a project). All projects share one database at `~/.claude-recall/` and whatever binary touches it runs schema migrations — multiple project-local copies at different versions fight over the same file. Worse, `npx claude-recall` prefers a project-local copy over your up-to-date global one, so a stale local install silently shadows every upgrade. One global binary; per-project *activation* only.
+
 > **Hit `EACCES: permission denied`?** Your global npm is owned by root. Either `sudo npm install -g claude-recall` once, or do the permanent fix described in [Upgrading](#upgrading) below.
 
 ### Install for Pi
@@ -70,6 +80,15 @@ claude-recall upgrade
 ```
 
 One command. Checks the registry, refreshes the global binary, clears any running MCP servers — Claude Code respawns them on the next tool call, picking up the new version. **No `claude mcp add` re-run needed** — existing registrations point at the `claude-recall` command, not a pinned path.
+
+If the release notes mention new or changed hooks (a `hooksVersion` bump), also re-run `claude-recall setup --install` in each active project. It's safe to run any time: when your hooks are already current it's a no-op and touches nothing.
+
+> **Registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which re-resolves the package on every server start and can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
+>
+> ```bash
+> claude mcp remove claude-recall
+> claude mcp add claude-recall -- claude-recall mcp start
+> ```
 
 For Pi, run `pi update npm:claude-recall` and restart Pi.
 

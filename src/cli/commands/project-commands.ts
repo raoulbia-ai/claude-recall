@@ -177,7 +177,7 @@ export class ProjectCommands {
     if (projects.length === 0) {
       console.log(chalk.gray('No projects registered.'));
       console.log();
-      console.log(chalk.yellow('💡 Run `npx claude-recall project register` to register the current project'));
+      console.log(chalk.yellow('💡 Run `claude-recall project register` to register the current project'));
       console.log();
       return;
     }
@@ -224,7 +224,7 @@ export class ProjectCommands {
     if (!entry) {
       console.log(chalk.yellow(`⚠ Project not found: ${targetProjectId}`));
       console.log();
-      console.log(chalk.gray('Run `npx claude-recall project list` to see registered projects'));
+      console.log(chalk.gray('Run `claude-recall project list` to see registered projects'));
       console.log();
       return;
     }

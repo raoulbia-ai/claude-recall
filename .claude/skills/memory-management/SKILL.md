@@ -131,9 +131,9 @@ memories to form a skill (3+ for most types, 5+ for preferences). If so, it writ
 a SKILL.md file that Claude Code loads automatically.
 
 **CLI commands:**
-- `npx claude-recall skills list` — see generated skills
-- `npx claude-recall skills generate --force` — force regeneration
-- `npx claude-recall skills clean --force` — remove all auto-generated skills
+- `claude-recall skills list` — see generated skills
+- `claude-recall skills generate --force` — force regeneration
+- `claude-recall skills clean --force` — remove all auto-generated skills
 
 ## Automatic Capture Hooks
 
@@ -158,7 +158,7 @@ Claude Recall registers hooks on six Claude Code events for automatic capture, j
 - Auto-checkpoint quality gate: refuses to save when the LLM detects the task was already complete — manual checkpoints stay sticky
 - Always exits 0 — hooks never block Claude
 
-**Setup:** Run `npx claude-recall setup --install` to register hooks in `.claude/settings.json`. After any upgrade, re-run `setup --install` in each project so newly-added hook events get registered (claude-recall uses a `hooksVersion` field to signal when registration has changed).
+**Setup:** Run `claude-recall setup --install` to register hooks in `.claude/settings.json`. After an upgrade whose release notes mention new or changed hooks (a `hooksVersion` bump), re-run it in each active project — it's idempotent, so when hooks are already current it's a no-op and touches nothing.
 
 ## Example Workflows
 

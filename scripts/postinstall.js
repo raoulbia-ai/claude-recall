@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-console.log('\n🚀 Setting up Claude Recall v0.9.x...\n');
+console.log('\n🚀 Setting up Claude Recall...\n');
 
 const { execSync } = require('child_process');
 
@@ -53,22 +53,20 @@ try {
     console.log(`📁 Created database directory: ${dbDir}`);
   }
 
-  // Register MCP server using official Claude CLI
-  try {
-    try {
-      execSync('claude mcp remove claude-recall', { stdio: 'ignore' });
-    } catch (e) {
-      // Ignore if not registered
-    }
-
-    execSync('claude mcp add claude-recall -- npx claude-recall mcp start', {
-      stdio: 'inherit'
-    });
-    console.log('✅ Registered Claude Recall MCP server');
-  } catch (mcpError) {
-    console.log('⚠️  Could not auto-register MCP server.');
-    console.log('   Run manually: claude mcp add claude-recall -- npx claude-recall mcp start');
-  }
+  // MCP registration: instructions only, no auto-registration.
+  //
+  // Earlier versions ran `claude mcp remove` + `claude mcp add ... npx ...`
+  // here on EVERY install/upgrade. That was wrong three ways:
+  //   • it silently REPLACED whatever registration the user had — including
+  //     the correct `claude-recall mcp start` form the README recommends —
+  //     with an npx-based one (registry lookup per server spawn, and npx
+  //     resolves through stale project-local installs);
+  //   • `claude mcp add` registers at LOCAL scope for whatever cwd npm
+  //     happened to run postinstall in — for `npm install -g` that is not
+  //     the user's project at all;
+  //   • a postinstall mutating user configuration unprompted is the same
+  //     overreach class the 0.24.0 audit fixes removed for hooks.
+  // Registration is now a conscious per-project step (printed below).
 
   // Auto-register project
   try {
@@ -112,10 +110,10 @@ try {
   // unrelated PreToolUse hooks). When `npm install -g` was run from $HOME it
   // even clobbered the user's GLOBAL Claude Code settings at ~/.claude/settings.json.
   //
-  // The MCP registration above is enough for memory tools to work. Hook-based
-  // auto-capture and search enforcement now require an explicit
-  // `claude-recall setup` invocation by the user, which is conscious and
-  // produces a diff the user can see.
+  // MCP registration (instructions printed below) is enough for memory tools
+  // to work. Hook-based auto-capture and search enforcement require an
+  // explicit `claude-recall setup --install` invocation by the user, which is
+  // conscious and produces a diff the user can see.
 
   // Conservative repair on upgrade: fix broken absolute hook paths in
   // ~/.claude/settings.json AND every project's .claude/settings.json under
@@ -146,18 +144,18 @@ try {
 
   console.log('\n✅ Installation complete!\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('📌 ACTIVATE CLAUDE RECALL:');
+  console.log('📌 ACTIVATE CLAUDE RECALL — run in each project where you want it:');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
-  console.log('  1. Register the MCP server (if the auto-register above failed):');
-  console.log('       claude mcp add claude-recall -- npx -y claude-recall@latest mcp start');
-  console.log('');
-  console.log('  2. (Optional) Enable hook-based auto-capture and search enforcement');
-  console.log('     in the CURRENT project. This writes to .claude/settings.json — review');
-  console.log('     the diff before committing:');
-  console.log('       npx claude-recall setup');
+  // Contiguous flush-left block: both commands copy-paste in one go
+  console.log('claude-recall setup --install');
+  console.log('claude mcp add claude-recall -- claude-recall mcp start');
   console.log('');
   console.log('  Then restart Claude Code.');
+  console.log('');
+  console.log('  (`setup --install` writes hooks/skills to .claude/settings.json —');
+  console.log('   review the diff before committing. Idempotent: re-runs are no-ops');
+  console.log('   when already current.)');
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
@@ -165,6 +163,8 @@ try {
 
 } catch (error) {
   console.error('❌ Error during setup:', error.message);
-  console.log('\nPlease run manually:');
-  console.log('  claude mcp add claude-recall -- npx claude-recall mcp start');
+  console.log('\nActivate manually in each project:');
+  console.log('');
+  console.log('claude-recall setup --install');
+  console.log('claude mcp add claude-recall -- claude-recall mcp start');
 }
