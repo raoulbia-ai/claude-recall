@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.2] - 2026-07-08
+
+### Fixed
+
+- **Kiro first-run experience** (#43), root-caused from a real first-use session where the agent answered *"I have no persistent memory"* and `remember my favourite color is green` stored nothing:
+  - `agentSpawn` now **always** injects a memory-capability directive (available tools + when to call `store_memory`/`search_memory`), even on an empty database. Previously a fresh project injected nothing, so the model had no idea it had memory tools.
+  - The regex fallback classifier catches bare `remember ...` phrasings — the old pattern required that/this/to after "remember", missing e.g. "remember my favourite color is green" when hooks run without `ANTHROPIC_API_KEY`. Question guards ("do you remember that config file?") remain.
+  - README: **restart Kiro after `kiro setup` / `--merge-into`** — Kiro binds hooks at agent activation, so an already-running session keeps its old wiring; plus an `ANTHROPIC_API_KEY` tip for LLM-quality capture in Kiro hooks.
+  - Kiro adapter unit tests isolate `CLAUDE_RECALL_DB_PATH` (they were writing mock-error noise into the developer's real hook logs).
+
 ## [0.28.1] - 2026-07-08
 
 ### Added
