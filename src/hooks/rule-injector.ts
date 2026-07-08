@@ -83,80 +83,99 @@ function formatInjection(matches: RankedRule[], toolName: string): string {
   );
 }
 
-export async function handleRuleInjector(input: any): Promise<void> {
-  const toolName: string = input?.tool_name ?? '';
-  const toolInput: any = input?.tool_input ?? {};
-  const toolUseId: string = input?.tool_use_id ?? '';
-
-  if (!toolName) {
-    // Nothing to do — print empty JSON so CC parses it cleanly
-    process.stdout.write('{}\n');
-    return;
-  }
+/**
+ * Runtime-agnostic core: rank active rules against this tool call, record
+ * the injections for outcome resolution, and return the formatted context
+ * block — or null when there is nothing to inject. Emitters wrap this per
+ * runtime (Claude Code wants a hookSpecificOutput JSON envelope; Kiro adds
+ * raw stdout to context).
+ */
+export async function computeInjection(
+  toolName: string,
+  toolInput: any,
+  toolUseId: string,
+): Promise<string | null> {
+  if (!toolName) return null;
 
   // Skip the hook for our own tools so we don't recursively inject rules
   // about claude-recall into claude-recall calls. The agent already has
   // claude-recall context when calling its own tools.
   if (toolName.startsWith('mcp__claude-recall__') || toolName.startsWith('mcp__claude_recall')) {
-    process.stdout.write('{}\n');
-    return;
+    return null;
   }
 
+  const projectId = ConfigService.getInstance().getProjectId();
+  const memoryService = MemoryService.getInstance();
+
+  // Fetch all active rules for this project. We pass them all to the ranker
+  // because the ranking function is fast and we want sticky rules to surface
+  // even when token overlap is low.
+  const activeRules = memoryService.loadActiveRules(projectId);
+  const allRules: Rule[] = [
+    ...activeRules.preferences,
+    ...activeRules.corrections,
+    ...activeRules.failures,
+    ...activeRules.devops,
+  ].map(m => ({
+    key: m.key,
+    type: m.type,
+    value: m.value,
+    is_active: m.is_active !== false,
+    timestamp: m.timestamp,
+    project_id: m.project_id,
+  }));
+
+  if (allRules.length === 0) {
+    hookLog('rule-injector', `No active rules for project ${projectId} (tool=${toolName})`);
+    return null;
+  }
+
+  const matches = rankRulesForToolCall(toolName, toolInput, allRules);
+
+  if (matches.length === 0) {
+    hookLog('rule-injector', `No relevant rules for ${toolName} (scanned ${allRules.length})`);
+    return null;
+  }
+
+  // Record each injection so PostToolUse can resolve it with the outcome
   try {
-    const projectId = ConfigService.getInstance().getProjectId();
-    const memoryService = MemoryService.getInstance();
+    const outcomeStorage = OutcomeStorage.getInstance();
+    for (const m of matches) {
+      outcomeStorage.recordRuleInjection({
+        rule_key: m.rule.key,
+        tool_name: toolName,
+        tool_use_id: toolUseId,
+        project_id: projectId,
+        match_score: m.score,
+        matched_tokens: m.matchedTokens,
+      });
+    }
+  } catch (err) {
+    // Non-critical — failure to record shouldn't block the injection itself
+    hookLog('rule-injector', `Failed to record injections: ${(err as Error).message}`);
+  }
 
-    // Fetch all active rules for this project. We pass them all to the ranker
-    // because the ranking function is fast and we want sticky rules to surface
-    // even when token overlap is low.
-    const activeRules = memoryService.loadActiveRules(projectId);
-    const allRules: Rule[] = [
-      ...activeRules.preferences,
-      ...activeRules.corrections,
-      ...activeRules.failures,
-      ...activeRules.devops,
-    ].map(m => ({
-      key: m.key,
-      type: m.type,
-      value: m.value,
-      is_active: m.is_active !== false,
-      timestamp: m.timestamp,
-      project_id: m.project_id,
-    }));
+  hookLog(
+    'rule-injector',
+    `Injected ${matches.length} rule(s) for ${toolName} (top score=${matches[0].score.toFixed(3)})`,
+  );
 
-    if (allRules.length === 0) {
-      hookLog('rule-injector', `No active rules for project ${projectId} (tool=${toolName})`);
+  return formatInjection(matches, toolName);
+}
+
+export async function handleRuleInjector(input: any): Promise<void> {
+  try {
+    const additionalContext = await computeInjection(
+      input?.tool_name ?? '',
+      input?.tool_input ?? {},
+      input?.tool_use_id ?? '',
+    );
+
+    if (!additionalContext) {
+      // Nothing to inject — print empty JSON so CC parses it cleanly
       process.stdout.write('{}\n');
       return;
     }
-
-    const matches = rankRulesForToolCall(toolName, toolInput, allRules);
-
-    if (matches.length === 0) {
-      hookLog('rule-injector', `No relevant rules for ${toolName} (scanned ${allRules.length})`);
-      process.stdout.write('{}\n');
-      return;
-    }
-
-    // Record each injection so PostToolUse can resolve it with the outcome
-    try {
-      const outcomeStorage = OutcomeStorage.getInstance();
-      for (const m of matches) {
-        outcomeStorage.recordRuleInjection({
-          rule_key: m.rule.key,
-          tool_name: toolName,
-          tool_use_id: toolUseId,
-          project_id: projectId,
-          match_score: m.score,
-          matched_tokens: m.matchedTokens,
-        });
-      }
-    } catch (err) {
-      // Non-critical — failure to record shouldn't block the injection itself
-      hookLog('rule-injector', `Failed to record injections: ${(err as Error).message}`);
-    }
-
-    const additionalContext = formatInjection(matches, toolName);
 
     const output = {
       hookSpecificOutput: {
@@ -166,11 +185,6 @@ export async function handleRuleInjector(input: any): Promise<void> {
     };
 
     process.stdout.write(JSON.stringify(output) + '\n');
-
-    hookLog(
-      'rule-injector',
-      `Injected ${matches.length} rule(s) for ${toolName} (top score=${matches[0].score.toFixed(3)})`,
-    );
   } catch (err) {
     hookLog('rule-injector', `Error: ${(err as Error).message}`);
     // Best-effort — never block the tool call

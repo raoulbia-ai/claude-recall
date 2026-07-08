@@ -14,6 +14,7 @@ import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
+import { KiroCommands } from './commands/kiro-commands';
 import { runRepair, resolveOnPath } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
@@ -1942,6 +1943,9 @@ async function main() {
 
   // Hook commands (automatic memory capture)
   HookCommands.register(program);
+
+  // Kiro CLI integration
+  KiroCommands.register(program);
 
   // Migration commands
 
