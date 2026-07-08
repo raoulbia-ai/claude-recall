@@ -5,7 +5,7 @@
 Claude Recall is a **local memory engine** that gives coding agents something they're missing by default:
 **the ability to learn from you over time.**
 
-Works with **Claude Code** (via MCP server + hooks) and **[Pi](https://github.com/mariozechner/pi)** (via native extension). Both share the same local database — a preference learned in one agent is available in the other.
+Works with **Claude Code** (via MCP server + hooks), **[Pi](https://github.com/mariozechner/pi)** (via native extension), and **[Kiro CLI](https://kiro.dev/cli/)** (via custom agent + hooks). All three share the same local database — a preference learned in one agent is available in the others.
 
 Your preferences, project structure, workflows, corrections, and coding style are captured automatically and applied in future sessions — **securely stored on your machine**.
 
@@ -71,45 +71,78 @@ That's it. Ask Pi to *"Load my rules"* to verify.
 
 ### Install for Kiro CLI
 
-Uses the same global binary (install it once per machine as above). In each project:
+Uses the same global binary (install it once per machine as above). Two ways to wire it in — full integration is what most people want.
+
+**Option A — full integration (recommended): memory + hooks via a custom agent.**
+
+In your shell, in the project directory, **before** starting Kiro:
 
 ```bash
 claude-recall kiro setup
 ```
 
-This writes a Kiro custom agent at `.kiro/agents/recall.json` (use `--global` for `~/.kiro/agents`, all projects). Then start Kiro and switch to it:
+This writes a Kiro custom agent at `.kiro/agents/recall.json` (use `--global` for `~/.kiro/agents` so it's available in every project). It does **not** touch your `mcp.json` — the agent config carries its own `mcpServers` entry for claude-recall, so no separate MCP registration is needed. It also sets `includeMcpJson: true`, so any other servers you have in `mcp.json` keep working alongside it.
+
+Then start Kiro from your shell:
 
 ```bash
 kiro
+```
+
+and inside the Kiro chat, switch to the agent:
+
+```
 /agent swap recall
 ```
 
-What you get under Kiro: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (`load_rules`, `store_memory`, `search_memory`, checkpoints — read-only tools pre-approved). Memories are shared with Claude Code and Pi: same database, same per-project scoping.
+You get: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (read-only tools pre-approved). Memories are shared with Claude Code and Pi: same database, same per-project scoping.
 
-Not available under Kiro (its hooks expose no transcript): transcript-based failure detection and session-end checkpoints.
+**Option B — MCP tools only (no hooks, works in Kiro's default agent).**
+
+If you don't want a custom agent, register just the MCP server in Kiro's config instead. Create or merge into `.kiro/settings/mcp.json` (project) or `~/.kiro/settings/mcp.json` (all projects):
+
+```json
+{
+  "mcpServers": {
+    "claude-recall": {
+      "command": "claude-recall",
+      "args": ["mcp", "start"],
+      "autoApprove": ["load_rules", "search_memory", "load_checkpoint"]
+    }
+  }
+}
+```
+
+With Option B the agent has the memory tools (`load_rules`, `store_memory`, `search_memory`, checkpoints) but nothing happens automatically — no rules at session start, no auto-capture. Ask it to *"load my rules"*.
+
+**Not available under Kiro** with either option (Kiro's hooks expose no transcript): transcript-based failure detection and session-end auto-checkpoints.
 
 ### Shared Database
 
-Both agents use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the other.
+All runtimes (Claude Code, Pi, Kiro CLI) use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the others.
 
 ### Upgrading
+
+One command upgrades the shared binary for **all** runtimes (Claude Code, Pi, and Kiro use the same global install):
 
 ```bash
 claude-recall upgrade
 ```
 
-One command. Checks the registry, refreshes the global binary, clears any running MCP servers — Claude Code respawns them on the next tool call, picking up the new version. **No `claude mcp add` re-run needed** — existing registrations point at the `claude-recall` command, not a pinned path.
+It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version.
 
-If the release notes mention new or changed hooks (a `hooksVersion` bump), also re-run `claude-recall setup --install` in each active project. It's safe to run any time: when your hooks are already current it's a no-op and touches nothing.
+Per-runtime notes:
 
-> **Registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which re-resolves the package on every server start and can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
+- **Claude Code** — nothing else needed; registrations point at the `claude-recall` command, not a pinned path. If the release notes mention new or changed hooks (a `hooksVersion` bump), also re-run `claude-recall setup --install` in each active project — safe any time; a no-op when hooks are already current.
+- **Pi** — run `pi update npm:claude-recall` and restart Pi.
+- **Kiro CLI** — nothing else needed; the agent config points at the `claude-recall` command. If the release notes mention changes to the Kiro agent template, re-run `claude-recall kiro setup --force` in each project that uses it.
+
+> **Claude Code registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which re-resolves the package on every server start and can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
 >
 > ```bash
 > claude mcp remove claude-recall
 > claude mcp add claude-recall -- claude-recall mcp start
 > ```
-
-For Pi, run `pi update npm:claude-recall` and restart Pi.
 
 > **Seeing `error: unknown command 'upgrade'`?** Your installed version predates 0.23.2 (the release that added the `upgrade` command). Bootstrap once with `npm install -g claude-recall@latest`, then all future upgrades use `claude-recall upgrade`.
 
@@ -147,19 +180,19 @@ The prefix fix only tells npm *where* to install; it doesn't install anything it
 
 Once installed, Claude Recall works automatically in the background. Each row below is tagged with the runtime it applies to so you can skip what doesn't apply to you.
 
-| When | What happens | CC | Pi |
-|---|---|:-:|:-:|
-| **Session start** | Active rules are loaded before the first action and injected into the agent's context | ✓ | ✓ |
-| **As you work** | Every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* are detected and stored | ✓ | ✓ |
-| **Before each tool call / agent turn** | **Just-in-time rule injection** — relevant rules are surfaced as a `<system-reminder>` block adjacent to the action so the agent sees them at the moment of decision (not 50,000 tokens upstream). Per-tool-call in CC; per-turn in Pi | ✓ | ✓ |
-| **Tool outcomes** | Tool results (Bash, Edit, Write, etc.) are captured. Failures are stored; Bash failures are paired with their successful fixes | ✓ | ✓ |
-| **Reask detection** | Frustration signals (*"still broken"*, *"that didn't work"*) are recorded as outcome events | ✓ | ✓ |
-| **Before context compression** | Aggressive memory sweep captures important context before the window shrinks | ✓ | ✓ |
-| **After context compression** | Rules are automatically re-injected into the new context so they're not lost | ✓ |   |
-| **Sub-agent spawned** | Active rules are injected into the sub-agent's context. Sub-agent outcomes (completed/failed/killed) are captured | ✓ |   |
-| **Rules sync** | Top 30 rules are exported as typed `.md` files to Claude Code's native memory directory | ✓ |   |
-| **Session exit** | **Auto-checkpoint** — the most recent task is extracted into a `{completed, remaining, blockers}` snapshot and saved for the next session. Critical for Pi (no `--resume` flag); safety net for CC users who exit without resuming | ✓ | ✓ |
-| **End of session** | Session episodes are created, candidate lessons are extracted from failures, and validated patterns are promoted into active rules | ✓ | ✓ |
+| When | What happens | CC | Pi | Kiro |
+|---|---|:-:|:-:|:-:|
+| **Session start** | Active rules are loaded before the first action and injected into the agent's context. Under Kiro this is fully automatic — rules land in context at `agentSpawn`, no tool call needed | ✓ | ✓ | ✓ |
+| **As you work** | Every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* are detected and stored | ✓ | ✓ | ✓ |
+| **Before each tool call / agent turn** | **Just-in-time rule injection** — relevant rules are surfaced adjacent to the action so the agent sees them at the moment of decision (not 50,000 tokens upstream). Per-tool-call in CC and Kiro; per-turn in Pi | ✓ | ✓ | ✓ |
+| **Tool outcomes** | Tool results (Bash, Edit, Write, etc.) are captured. Failures are stored; Bash failures are paired with their successful fixes | ✓ | ✓ | ✓ |
+| **Reask detection** | Frustration signals (*"still broken"*, *"that didn't work"*) are recorded as outcome events | ✓ | ✓ | ✓ |
+| **Before context compression** | Aggressive memory sweep captures important context before the window shrinks | ✓ | ✓ |   |
+| **After context compression** | Rules are automatically re-injected into the new context so they're not lost | ✓ |   |   |
+| **Sub-agent spawned** | Active rules are injected into the sub-agent's context. Sub-agent outcomes (completed/failed/killed) are captured | ✓ |   |   |
+| **Rules sync** | Top 30 rules are exported as typed `.md` files to Claude Code's native memory directory | ✓ |   |   |
+| **Session exit** | **Auto-checkpoint** — the most recent task is extracted into a `{completed, remaining, blockers}` snapshot and saved for the next session. Critical for Pi (no `--resume` flag); safety net for CC users who exit without resuming. Kiro surfaces existing checkpoints at agent start but doesn't auto-create them (no transcript in its hooks) | ✓ | ✓ |   |
+| **End of session** | Session episodes are created, candidate lessons are extracted from failures, and validated patterns are promoted into active rules | ✓ | ✓ |   |
 
 Classification and checkpoint extraction use Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
 
@@ -344,7 +377,8 @@ claude-recall mcp cleanup --all          # Stop all stale MCP servers
 ```bash
 # ── Setup & Diagnostics ─────────────────────────────────────────────
 claude-recall setup                      # Show activation instructions
-claude-recall setup --install            # Install skills + hooks
+claude-recall setup --install            # Install skills + hooks (Claude Code, current project)
+claude-recall kiro setup                 # Write Kiro custom agent (.kiro/agents/recall.json); --global for all projects
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Fix broken claude-recall hook paths (conservative: preserves user customizations)
