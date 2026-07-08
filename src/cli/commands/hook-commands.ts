@@ -149,6 +149,24 @@ export class HookCommands {
           input = {};
         }
 
+        // Deterministic project scoping. Resolve the project from the cwd the
+        // RUNTIME declares in the hook payload — NOT the cwd this subprocess
+        // happened to inherit. Both Claude Code and Kiro include `cwd`; for CC
+        // it equals process.cwd() so this is a no-op, but for Kiro it pins
+        // scoping to the session's working directory. Without this a memory
+        // captured while working on project A could land in project B (e.g. a
+        // `kiro --resume`d session whose cwd differs from the shell's), and
+        // capture (userPromptSubmit) and injection (agentSpawn) could even
+        // disagree. Project memories must scope to ONE deterministic project.
+        if (input && typeof input.cwd === 'string' && input.cwd.trim()) {
+          try {
+            const { ConfigService } = await import('../../services/config');
+            ConfigService.getInstance().updateConfig({ project: { rootDir: input.cwd } } as any);
+          } catch (err) {
+            hookLog('hook-dispatcher', `cwd scoping failed (using inherited cwd): ${safeErrorMessage(err)}`);
+          }
+        }
+
         for (const name of names) {
           try {
             await HookCommands.runOne(name, input);
