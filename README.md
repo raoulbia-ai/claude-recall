@@ -97,6 +97,14 @@ and inside the Kiro chat, switch to the agent:
 
 You get: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (read-only tools pre-approved). Memories are shared with Claude Code and Pi: same database, same per-project scoping.
 
+**Already have a custom agent you live in?** Don't swap — merge Claude Recall into it instead:
+
+```bash
+claude-recall kiro setup --merge-into <agent-name>
+```
+
+This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — without touching anything the agent already had. Idempotent: re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
+
 **Option B — MCP tools only (no hooks, works in Kiro's default agent).**
 
 If you don't want a custom agent, register just the MCP server in Kiro's config instead. Create or merge into `.kiro/settings/mcp.json` (project) or `~/.kiro/settings/mcp.json` (all projects):
@@ -390,6 +398,7 @@ claude-recall mcp cleanup --all          # Stop all stale MCP servers
 claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks (Claude Code, current project)
 claude-recall kiro setup                 # Write Kiro custom agent (.kiro/agents/recall.json); --global for all projects
+claude-recall kiro setup --merge-into <agent>  # Merge Claude Recall into an existing Kiro agent (backup + append-only + idempotent)
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Fix broken claude-recall hook paths (conservative: preserves user customizations)
