@@ -16,6 +16,9 @@ const AVAILABLE_HOOKS = [
   'session-end-checkpoint',
   'session-end-checkpoint-worker',
   'bash-failure-watcher',
+  'kiro-agent-spawn',
+  'kiro-rule-injector',
+  'kiro-tool-outcome',
 ] as const;
 
 /**
@@ -102,6 +105,23 @@ export class HookCommands {
         await handleRuleInjectionResolver(input);
         break;
       }
+      // Kiro CLI adapters — see src/hooks/kiro-hooks.ts. Kiro's
+      // userPromptSubmit needs no adapter: wire `correction-detector` directly.
+      case 'kiro-agent-spawn': {
+        const { handleKiroAgentSpawn } = await import('../../hooks/kiro-hooks');
+        await handleKiroAgentSpawn(input);
+        break;
+      }
+      case 'kiro-rule-injector': {
+        const { handleKiroRuleInjector } = await import('../../hooks/kiro-hooks');
+        await handleKiroRuleInjector(input);
+        break;
+      }
+      case 'kiro-tool-outcome': {
+        const { handleKiroToolOutcome } = await import('../../hooks/kiro-hooks');
+        await handleKiroToolOutcome(input);
+        break;
+      }
       default:
         console.error(`Unknown hook: ${name}`);
         console.error(`Available: ${AVAILABLE_HOOKS.join(', ')}`);
@@ -118,13 +138,15 @@ export class HookCommands {
       .description(`Run one or more hook handlers in a single process (${AVAILABLE_HOOKS.slice(0, 3).join(' | ')} | ...)`)
       .action(async (names: string[]) => {
         // Read stdin synchronously BEFORE dynamic import to avoid data loss;
-        // every handler receives the same event payload.
+        // every handler receives the same event payload. An empty/unreadable
+        // stdin degrades to {} instead of aborting — lifecycle events with no
+        // payload (e.g. Kiro agentSpawn variants) must still run the handler.
         let input: any;
         try {
           input = readStdin();
         } catch (err) {
-          hookLog('hook-dispatcher', `stdin read failed: ${safeErrorMessage(err)}`);
-          process.exit(0);
+          hookLog('hook-dispatcher', `stdin read failed (continuing with empty payload): ${safeErrorMessage(err)}`);
+          input = {};
         }
 
         for (const name of names) {

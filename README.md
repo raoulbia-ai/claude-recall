@@ -69,6 +69,25 @@ pi install npm:claude-recall
 
 That's it. Ask Pi to *"Load my rules"* to verify.
 
+### Install for Kiro CLI
+
+Uses the same global binary (install it once per machine as above). In each project:
+
+```bash
+claude-recall kiro setup
+```
+
+This writes a Kiro custom agent at `.kiro/agents/recall.json` (use `--global` for `~/.kiro/agents`, all projects). Then start Kiro and switch to it:
+
+```bash
+kiro
+/agent swap recall
+```
+
+What you get under Kiro: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (`load_rules`, `store_memory`, `search_memory`, checkpoints — read-only tools pre-approved). Memories are shared with Claude Code and Pi: same database, same per-project scoping.
+
+Not available under Kiro (its hooks expose no transcript): transcript-based failure detection and session-end checkpoints.
+
 ### Shared Database
 
 Both agents use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the other.
