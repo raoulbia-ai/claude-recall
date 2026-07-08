@@ -98,17 +98,27 @@ function formatRulesForContext(): { body: string; total: number } {
 }
 
 /**
- * Standing instruction so the agent KNOWS it has persistent memory. Without
- * this, a session with no stored rules yet answers "I have no memory between
- * conversations" and never calls store_memory when the user says
- * "remember ..." — the exact failure observed on first use.
+ * Standing instruction so the agent KNOWS it has persistent memory — and,
+ * critically, that capture happens via BACKGROUND HOOKS independent of the MCP
+ * tools. Under enterprise Kiro governance the claude-recall MCP server is
+ * dropped from the toolset, but the userPromptSubmit/preToolUse/postToolUse
+ * hooks still write to and read from the local DB. Without the "even without
+ * the tools" clause the agent answers "I can't store that, I have no memory
+ * tools" — technically true of the TOOL, but false of the system, since the
+ * hook already captured it. This is the exact confusion observed in a
+ * governance-locked session.
  */
 const KIRO_MEMORY_DIRECTIVE =
-  'You have PERSISTENT MEMORY across sessions via Claude Recall (MCP server "claude-recall": ' +
-  'load_rules, store_memory, search_memory, delete_memory, save_checkpoint, load_checkpoint). ' +
-  'When the user says "remember ...", "store this", "recall ...", states a preference, or corrects you, ' +
-  'call store_memory (tell them what you will store). Use search_memory before decisions when past ' +
-  'context might apply. Memories are scoped per project and shared with the user\'s other coding agents.';
+  'You have PERSISTENT MEMORY across sessions via Claude Recall. Your preferences, corrections, and the ' +
+  'rules shown below are captured AUTOMATICALLY by background hooks and injected into your context at the ' +
+  'start of every session — this works even if the claude-recall MCP tools (store_memory, search_memory, …) ' +
+  'are NOT in your current toolset (e.g. restricted by your organization\'s policy). ' +
+  'So when the user says "remember …", "recall …", "store this", states a preference, or corrects you: ' +
+  'if the store_memory tool is available, call it and say what you stored; if it is NOT available, simply ' +
+  'confirm the point will be remembered — it is already being captured automatically by the hook. ' +
+  'NEVER tell the user you have no memory between sessions or cannot persist anything. ' +
+  'When the MCP tools ARE available, also use search_memory before decisions where past context may apply. ' +
+  'Memories are scoped per project and shared with the user\'s other coding agents.';
 
 /**
  * agentSpawn — runs once when a Kiro agent activates. Whatever we print is

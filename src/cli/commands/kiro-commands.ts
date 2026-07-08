@@ -359,7 +359,10 @@ export class KiroCommands {
       const ms = MemoryService.getInstance();
       const projectId = ConfigService.getInstance().getProjectId();
       const stats = ms.getStats();
-      line('✓', `project: ${projectId}`);
+      const pin = process.env.CLAUDE_RECALL_PROJECT_ID || process.env.CLAUDE_PROJECT_ID;
+      line('✓', pin
+        ? `project: ${projectId} (PINNED via ${process.env.CLAUDE_RECALL_PROJECT_ID ? 'CLAUDE_RECALL_PROJECT_ID' : 'CLAUDE_PROJECT_ID'})`
+        : `project: ${projectId} (from working directory)`);
       line('•', `total memories (all projects): ${stats.total}`);
       const rules = ms.loadActiveRules(projectId);
       const ruleCount = rules.preferences.length + rules.corrections.length + rules.failures.length + rules.devops.length;

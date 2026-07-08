@@ -121,7 +121,13 @@ export class ConfigService {
       project: {
         rootDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
         name: process.env.CLAUDE_PROJECT_NAME,
-        id: process.env.CLAUDE_PROJECT_ID
+        // Explicit project pin. Overrides cwd-based scoping entirely — set it
+        // to force every memory into one project regardless of which directory
+        // the runtime reports (e.g. `kiro --resume` restores the resumed
+        // conversation's directory, which may not be the project you mean to
+        // work in). CLAUDE_RECALL_PROJECT_ID is the documented name;
+        // CLAUDE_PROJECT_ID is honored for backward compatibility.
+        id: process.env.CLAUDE_RECALL_PROJECT_ID || process.env.CLAUDE_PROJECT_ID
       },
       hooks: {
         timeout: parseInt(process.env.CLAUDE_RECALL_HOOK_TIMEOUT || '5000'),
