@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.3] - 2026-07-08
+
+### Added
+
+- **`claude-recall kiro doctor`** (#48) — a read-only diagnostic for the Kiro integration. Reports installed version and PATH resolution, whether `ANTHROPIC_API_KEY` is set (LLM vs regex-fallback capture), the current project's memory/rule counts, every Kiro agent (workspace and global) that has claude-recall wired and exactly which pieces (MCP server + which lifecycle hooks), and when the hooks last fired (from the hook logs) — so "is it wired, and are hooks actually running?" is answerable in one command. Includes a governance note: an MCP server missing from Kiro's load banner points at a trusted-registry allowlist, and hooks still capture/inject against the local DB regardless.
+
+### Fixed
+
+- **"recall ..." is now captured as a store request** (#47). It previously matched no capture pattern (ironic, given the product name), so under enterprise Kiro governance that blocks the MCP tools — and with no `ANTHROPIC_API_KEY` in the hook environment — "recall my favourite color is green" stored nothing. `remember` and `recall` are now treated identically by the regex fallback (the MCP- and key-independent path); `do you recall ...?` questions are still excluded.
+- The `correction-detector` hook now logs `no rule detected in prompt (len=N)` when it captures nothing, so "did the hook fire at all?" is answerable from the log alone. Prompt text is not logged.
+- `commander` pinned to v14 (#45) — v15 declares `node >=22.12` against our `>=20.19` support floor, so every Node 20 install printed `EBADENGINE` warnings (and engine-strict setups hard-failed). v14 declares `node >=20` and is behaviorally identical for us.
+
 ## [0.28.2] - 2026-07-08
 
 ### Fixed
