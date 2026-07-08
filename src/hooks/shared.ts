@@ -28,7 +28,11 @@ const CORRECTION_PATTERNS = [
 ];
 
 const PREFERENCE_PATTERNS = [
-  { regex: /\bremember\s+(?:that|this|to)\s+(.+)/i, confidence: 0.8 },
+  // "remember ..." is an explicit store request in any phrasing — "remember
+  // that X", "remember to X", but also "remember my favourite color is green".
+  // The interrogative/question-mark guards below keep "do you remember that
+  // config file?" out.
+  { regex: /\bremember\s+(?:that\s+|this\s+|to\s+)?(.+)/i, confidence: 0.8 },
   { regex: /\bfrom\s+now\s+on[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\bgoing\s+forward[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\balways\s+(.+)/i, confidence: 0.75 },

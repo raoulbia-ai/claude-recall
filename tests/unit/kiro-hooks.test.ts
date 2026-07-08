@@ -36,12 +36,34 @@ jest.mock('../../src/hooks/tool-outcome-watcher', () => ({
   handleToolOutcomeWatcher: mockToolOutcomeWatcher,
 }));
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as pathMod from 'path';
 import {
   normalizeKiroInput,
   handleKiroAgentSpawn,
   handleKiroRuleInjector,
   handleKiroToolOutcome,
 } from '../../src/hooks/kiro-hooks';
+
+// hookLog writes under CLAUDE_RECALL_DB_PATH (claudeRecallDir) — isolate it so
+// these tests never touch the developer's real ~/.claude-recall/hook-logs.
+const LOG_TMP = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'kiro-hooks-logs-'));
+let originalDbPath: string | undefined;
+
+beforeAll(() => {
+  originalDbPath = process.env.CLAUDE_RECALL_DB_PATH;
+  process.env.CLAUDE_RECALL_DB_PATH = LOG_TMP;
+});
+
+afterAll(() => {
+  if (originalDbPath === undefined) {
+    delete process.env.CLAUDE_RECALL_DB_PATH;
+  } else {
+    process.env.CLAUDE_RECALL_DB_PATH = originalDbPath;
+  }
+  fs.rmSync(LOG_TMP, { recursive: true, force: true });
+});
 
 function captureStdout(): { out: () => string; restore: () => void } {
   let buf = '';
@@ -122,7 +144,10 @@ describe('handleKiroAgentSpawn', () => {
     expect(out).toContain('never push directly to main');
   });
 
-  it('prints nothing when there are no rules and no checkpoint', async () => {
+  it('emits the memory-capability directive even with no rules and no checkpoint', async () => {
+    // Regression: on a fresh database the agent previously received NOTHING,
+    // answered "I have no persistent memory", and never called store_memory
+    // when the user said "remember ..."
     mockLoadActiveRules.mockReturnValue({ preferences: [], corrections: [], failures: [], devops: [], summary: '' });
 
     const cap = captureStdout();
@@ -131,7 +156,10 @@ describe('handleKiroAgentSpawn', () => {
     } finally {
       cap.restore();
     }
-    expect(cap.out()).toBe('');
+    const out = cap.out();
+    expect(out).toContain('PERSISTENT MEMORY');
+    expect(out).toContain('store_memory');
+    expect(out).not.toContain('## Preferences'); // no rule sections when empty
   });
 
   it('surfaces a pending checkpoint hint', async () => {

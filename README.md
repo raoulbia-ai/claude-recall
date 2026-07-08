@@ -105,6 +105,10 @@ claude-recall kiro setup --merge-into <agent-name>
 
 This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — without touching anything the agent already had. Idempotent: re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
 
+> **⚠️ Restart Kiro after `kiro setup` or `--merge-into`.** Hooks bind when an agent *activates* — a Kiro session that was already running keeps its old wiring and will behave as if it has no memory. Exit Kiro and start it again (or `/agent swap` away and back). Verify hooks are firing with `tail ~/.claude-recall/hook-logs/kiro.log`.
+
+> **Tip:** export `ANTHROPIC_API_KEY` in the shell you launch Kiro from. Hooks then use Claude Haiku to classify what's worth remembering; without it a conservative regex fallback runs, which catches explicit phrasings ("remember ...", "always ...", "never ...", "I prefer ...") but misses subtler ones.
+
 **Option B — MCP tools only (no hooks, works in Kiro's default agent).**
 
 If you don't want a custom agent, register just the MCP server in Kiro's config instead. Create or merge into `.kiro/settings/mcp.json` (project) or `~/.kiro/settings/mcp.json` (all projects):
