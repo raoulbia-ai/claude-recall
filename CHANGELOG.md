@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.4] - 2026-07-08
+
+### Fixed
+
+- **Deterministic per-project memory scoping** (#50). Memories can be project-specific, so a preference captured while working on project A must never land in project B. The hook dispatcher previously resolved the project from the subprocess's *inherited* working directory, which under Kiro could be a stale directory — `kiro --resume` carries the original session's cwd — silently scoping a capture to the wrong project (and capture could disagree with injection). The dispatcher now resolves the project from the `cwd` the runtime declares in the hook payload (both Claude Code and Kiro include it), set once before dispatching so every hook agrees. For Claude Code this equals `process.cwd()` (no change); for Kiro it pins scoping to the session's working directory.
+
+### Added
+
+- **`claude-recall delete <key>`** — delete a single memory by key from the CLI (previously only the `delete_memory` MCP tool could). Exits 1 when the key isn't found.
+- README: a Kiro project-scoping note (memories scope to the session's working directory; the `kiro --resume` gotcha; `kiro doctor` prints the resolved project).
+
 ## [0.28.3] - 2026-07-08
 
 ### Added
