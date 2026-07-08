@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.0] - 2026-07-08
+
+Follow-up campaign to the 0.26.0 review: the learning pipeline stops manufacturing failures out of ordinary work, the CLI stops lying, retrieval stops burying rules under history, and the three darkest core modules got their first real test coverage. PRs #29–#33 plus dependency refresh.
+
+### Fixed
+
+- **The learning pipeline no longer learns from noise** (#29):
+  - Tool-failure events carry a `session_id` (new column) and memory-stop only folds the *current* session's failures into its episode — previously a bare 1-hour window mixed events from concurrent sessions and other projects.
+  - Content sniffing of successful output removed for non-Bash tools: editing a file that merely *mentions* "ENOENT", or an MCP tool answering "0 errors found", no longer stores a bogus permanent failure memory. `PostToolUseFailure`'s structured error (and Pi's `isError`) are the trusted signals.
+  - Regex fallback classifier calibrated: eight sub-threshold patterns that could never fire were promoted or deleted, and new guards stop questions ("do you remember that config file?") and pleasantries ("no worries, that looks good") from being stored as rules.
+  - Detector recalibration: edit-test-cycle treats read-only tools as transparent (it previously reset on every `Read` and could effectively never fire); retry-loop only counts *failed* identical repeats and excludes test commands — three `npm test` runs are TDD, not a failure.
+  - search_enforcer.py: word-boundary prefix matching (`catastrophic-script.sh` no longer passes as `cat`), the exemption also applies on a fresh session (the first `git status` was hard-blocked up to 3×), honest list naming, no bare `except:`.
+- **CLI honesty and resilience** (#30): `mcp stop` verifies the process actually died against the saved PID (it previously deleted the PID file, then "verified" by re-reading it — always claiming success); `upgrade` distinguishes "npm not found" from install failures and works on Windows; `failures` survives one malformed row; the `debug` log level is reachable (`LogLevel.DEBUG === 0` vs `||`); numeric flags (`--limit abc`) fail loudly instead of silently returning nothing.
+- **Retrieval and storage scoping** (#31): every rule type now outranks tool-use history in search (a keyword-matched correction previously ranked below noise and the top-5 could be all tool-use); the retrieval N+1 (2 queries per candidate) is batched; the `scope` CHECK constraint actually constrains (`IN (..., NULL)` passed anything); a project-scoped override now supersedes the same preference stored unscoped; `detectScope` checks project indicators before universal ones ("always use X *in this project*" no longer leaks everywhere); **memory-sync writes to the directory Claude Code actually reads** — any project path containing a dot or underscore previously synced its entire rules output into a directory CC never looks at.
+- **Pipeline edges hardened** (#32): the detached session-end checkpoint worker gets spawn/stdin error handlers (EPIPE was an uncaught exception inside a hook) and a 30s self-deadline — a hung LLM call no longer leaves an orphan node process holding a DB handle per session exit; batch classification sends a JSON array instead of `---ITEM---`-joined text (content can no longer desync the batch); project-registry id collisions (two directories with the same basename) are preserved, warned about, and displayed in `project list`/`show` instead of silently overwriting the other entry.
+
+### Added
+
+- `import --project <id>` — deliberate rescoping on import; without it, each memory's original `project_id`/`scope` is preserved (previously *everything* was silently rescoped to the current project).
+- Log rotation honoring the `logging.maxSize`/`maxFiles` config that had existed unimplemented since the beginning — hook-driven `info.log` no longer grows forever.
+- `setup` is idempotent: when the installed `hooksVersion` is already current it refreshes skills and leaves `settings.json` untouched (no backup churn); `repair --reinstall-hooks` force-rewrites — the `force` flag previously did nothing. Setup also writes portable `claude-recall hook run` commands whenever the binary is on PATH, instead of hardcoding absolute dist paths (the exact breakage `repair` exists to fix).
+- First-ever test coverage for the MCP server (0% → 72% statements), plus `services/memory.ts` 32% → 84% and `llm-classifier.ts` 29% → 94% (#33). Global coverage 48.9% → 57.7%; the CI ratchet rose to 57/50/61/57.
+
+### Changed
+
+- Dependencies: `commander` 12 → 15 (excess CLI arguments now error instead of being silently ignored), `better-sqlite3` 12.9 → 12.11, `jest`/`ts-jest` minors, `actions/checkout` v7 and `actions/setup-node` v6 in CI. TypeScript 6 and `@types/node` 26 were deliberately deferred (TS 6 needs real migration; type declarations shouldn't outrun the Node 20.19 runtime floor).
+
 ## [0.26.1] - 2026-07-07
 
 ### Fixed
