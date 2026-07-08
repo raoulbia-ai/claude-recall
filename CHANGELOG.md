@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.1] - 2026-07-08
+
+### Added
+
+- **`claude-recall kiro setup --merge-into <agent>`** (#41) — wire Claude Recall into an existing Kiro agent instead of swapping to the generated `recall` agent. Lookup follows Kiro's precedence (workspace `.kiro/agents` first, then `~/.kiro/agents`; `--global` restricts to global). Append-only and idempotent: a timestamped backup is written before any change; an existing `mcpServers.claude-recall` is never overwritten; `allowedTools` entries are deduplicated; each lifecycle hook is skipped when already wired; `@claude-recall` is added only to explicit `tools` lists (`'*'` and absent lists are left to the agent's own policy). Missing agent or malformed JSON aborts with zero changes.
+
 ## [0.28.0] - 2026-07-08
 
 ### Added
