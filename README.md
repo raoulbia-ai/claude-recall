@@ -129,7 +129,17 @@ With Option B the agent has the memory tools (`load_rules`, `store_memory`, `sea
 
 **Not available under Kiro** with either option (Kiro's hooks expose no transcript): transcript-based failure detection and session-end auto-checkpoints.
 
-> **Project scoping under Kiro.** Memories scope to the **working directory Kiro reports for the session**, not your shell's current directory. These are usually the same — but `kiro --resume` carries the *original* session's directory, so a resumed session captures into the project it was first started in (even if your shell has since moved). Start Kiro fresh from a project directory to scope there. `claude-recall kiro doctor` prints the resolved project so you can confirm where memories are landing.
+> **Project scoping & `--resume`.** Memories scope to the **working directory Kiro reports for the session**. `kiro --resume` (with no conversation id) continues your *most-recent conversation* and restores **its** directory — which may be a different project than the one your shell is in. So a resumed session captures into the project of the conversation you're continuing, not wherever you launched Kiro. That's usually what you want (memories follow the conversation), but if you bounce between projects it can surprise you.
+>
+> To force a fixed project regardless of what `--resume` restores, pin it with `CLAUDE_RECALL_PROJECT_ID`. A per-project shell alias makes it seamless:
+>
+> ```bash
+> alias kiro-epic='CLAUDE_RECALL_PROJECT_ID=epic-workflow-cicd kiro-cli chat --agent mcp-agent-env --resume'
+> ```
+>
+> `claude-recall kiro doctor` always prints the resolved project (and whether it's pinned) so you can confirm where memories are landing before trusting it.
+>
+> **Capture works even when the MCP tools are blocked.** Under enterprise governance that restricts MCP to a trusted registry, Kiro drops the claude-recall MCP server — so the agent may say it "has no memory tools." Ignore that: the hooks capture and inject against the local DB regardless. The agent is told this at session start and will confirm it's remembering; only the on-demand tools (the agent calling `search_memory` itself) need an admin to allowlist claude-recall.
 
 ### Shared Database
 
@@ -545,6 +555,7 @@ Runtime behavior can be tuned via environment variables. Defaults are chosen so 
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `on`    | Set to `off` to bypass the search-enforcer hook.                                                         |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). Citations still scan every turn. `0` disables. |
+| `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. Useful when `kiro --resume` restores a different project's directory than you intend. |
 
 ---
 
