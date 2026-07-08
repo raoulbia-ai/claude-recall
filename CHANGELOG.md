@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.0] - 2026-07-08
+
+### Added
+
+- **Kiro CLI support** (#37, #38). Claude Recall now spans three runtimes — Claude Code, Pi, and Kiro CLI — sharing one local database with per-project scoping. One command wires it in:
+
+  ```bash
+  claude-recall kiro setup
+  ```
+
+  This writes a Kiro custom agent (`.kiro/agents/recall.json`; `--global` for all projects, no-clobber without `--force`) carrying its own MCP server entry (no `mcp.json` changes needed; `includeMcpJson` keeps other servers working) and four lifecycle hooks:
+  - `agentSpawn` → active rules + the audited trust directive + any pending task checkpoint are injected into context at session start — fully automatic, no tool call needed (Kiro adds hook stdout to context).
+  - `userPromptSubmit` → correction/preference capture (the existing handler, wired unchanged — Kiro's payload matches Claude Code's).
+  - `preToolUse` → just-in-time rule injection per tool call (shared ranking core, plain-text emission).
+  - `postToolUse` → tool-outcome tracking and Bash fix-pairing (Kiro's `tool_response` object and `execute_bash`/`fs_write`/`fs_read` names normalized to the shared pipeline).
+
+  An MCP-tools-only alternative (`.kiro/settings/mcp.json` snippet, default agent, no hooks) is documented in the README. Known Kiro gaps, documented: its hooks expose no transcript (so no transcript-based failure detection or session-end auto-checkpoints) and no `tool_use_id` (weaker injection→outcome correlation).
+
+### Changed
+
+- The rule-injector's ranking/recording core is extracted into a shared `computeInjection()` with per-runtime emitters — Claude Code behavior is unchanged (same JSON envelope).
+- The hook dispatcher tolerates payload-less stdin (degrades to `{}` instead of aborting) so lifecycle events without a payload still run their handler.
+- README restructured with per-runtime install/upgrade sections and a three-column (CC/Pi/Kiro) feature matrix; `kiro setup` output separates shell commands from in-Kiro commands into distinct copy-paste blocks.
+
 ## [0.27.1] - 2026-07-08
 
 ### Fixed
