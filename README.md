@@ -105,7 +105,7 @@ claude-recall kiro setup --merge-into <agent-name>
 
 This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — without touching anything the agent already had. Idempotent: re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
 
-> **⚠️ Restart Kiro after `kiro setup` or `--merge-into`.** Hooks bind when an agent *activates* — a Kiro session that was already running keeps its old wiring and will behave as if it has no memory. Exit Kiro and start it again (or `/agent swap` away and back). Verify hooks are firing with `tail ~/.claude-recall/hook-logs/kiro.log`.
+> **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project). Verify with `claude-recall kiro doctor` or `tail ~/.claude-recall/hook-logs/kiro.log`.
 
 > **Tip:** export `ANTHROPIC_API_KEY` in the shell you launch Kiro from. Hooks then use Claude Haiku to classify what's worth remembering; without it a conservative regex fallback runs, which catches explicit phrasings ("remember ...", "always ...", "never ...", "I prefer ...") but misses subtler ones.
 
@@ -129,9 +129,9 @@ With Option B the agent has the memory tools (`load_rules`, `store_memory`, `sea
 
 **Not available under Kiro** with either option (Kiro's hooks expose no transcript): transcript-based failure detection and session-end auto-checkpoints.
 
-> **Project scoping & `--resume`.** Memories scope to the **working directory Kiro reports for the session**. `kiro --resume` (with no conversation id) continues your *most-recent conversation* and restores **its** directory — which may be a different project than the one your shell is in. So a resumed session captures into the project of the conversation you're continuing, not wherever you launched Kiro. That's usually what you want (memories follow the conversation), but if you bounce between projects it can surprise you.
+> **Project scoping & `--resume`.** Memories scope to the **working directory Kiro reports for the session** — normally the directory you launched Kiro from. `kiro --resume` resumes the most recent conversation *from the current directory* (it's per-project), so scoping and `--resume` naturally agree. Just remember the snapshot rule above: only conversations **created after** wiring run the hooks.
 >
-> To force a fixed project regardless of what `--resume` restores, pin it with `CLAUDE_RECALL_PROJECT_ID`. A per-project shell alias makes it seamless:
+> To force a fixed project id regardless of directory, pin it with `CLAUDE_RECALL_PROJECT_ID`. A per-project shell alias makes it seamless:
 >
 > ```bash
 > alias kiro-epic='CLAUDE_RECALL_PROJECT_ID=epic-workflow-cicd kiro-cli chat --agent mcp-agent-env --resume'
@@ -555,7 +555,7 @@ Runtime behavior can be tuned via environment variables. Defaults are chosen so 
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `on`    | Set to `off` to bypass the search-enforcer hook.                                                         |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). Citations still scan every turn. `0` disables. |
-| `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. Useful when `kiro --resume` restores a different project's directory than you intend. |
+| `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. Useful when one logical project spans several directories (worktrees, subrepos). |
 
 ---
 

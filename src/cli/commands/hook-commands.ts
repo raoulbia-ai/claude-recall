@@ -154,10 +154,11 @@ export class HookCommands {
         // happened to inherit. Both Claude Code and Kiro include `cwd`; for CC
         // it equals process.cwd() so this is a no-op, but for Kiro it pins
         // scoping to the session's working directory. Without this a memory
-        // captured while working on project A could land in project B (e.g. a
-        // `kiro --resume`d session whose cwd differs from the shell's), and
-        // capture (userPromptSubmit) and injection (agentSpawn) could even
-        // disagree. Project memories must scope to ONE deterministic project.
+        // captured while working on project A could land in project B (any
+        // session whose declared cwd differs from what this subprocess
+        // inherited), and capture (userPromptSubmit) and injection
+        // (agentSpawn) could even disagree. Project memories must scope to
+        // ONE deterministic project.
         try {
           const { ConfigService } = await import('../../services/config');
           const cfg = ConfigService.getInstance();
