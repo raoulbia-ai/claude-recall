@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.27.1] - 2026-07-08
+
+### Fixed
+
+- **postinstall no longer rewrites your MCP registration.** Every install/upgrade previously ran `claude mcp remove` + `claude mcp add ... npx claude-recall mcp start`, silently replacing whatever registration existed — including the correct `claude-recall mcp start` form — with an npx-based one (a registry lookup on every server spawn, resolvable through stale project-local installs, registered at local scope for whatever directory npm ran in). postinstall now prints activation instructions only.
+- **One canonical registration command everywhere.** README, `setup` output, `status` output, and postinstall all previously disagreed (four variants, one missing the `--` separator). All now print `claude mcp add claude-recall -- claude-recall mcp start`, and user-facing `npx claude-recall ...` suggestions use the global binary form.
+
+### Changed
+
+- README: explicit "do NOT install claude-recall as a project dependency" warning (one shared database + schema migrations; the npx local-shadow trap), documented `claude mcp add --scope user` for machine-wide registration, honest upgrade guidance for `hooksVersion` bumps, and a migration snippet for pre-0.27.x npx-based registrations.
+- Multi-command instructions are printed as contiguous flush-left blocks — copy-pasteable in one go.
+
 ## [0.27.0] - 2026-07-08
 
 Follow-up campaign to the 0.26.0 review: the learning pipeline stops manufacturing failures out of ordinary work, the CLI stops lying, retrieval stops burying rules under history, and the three darkest core modules got their first real test coverage. PRs #29–#33 plus dependency refresh.
