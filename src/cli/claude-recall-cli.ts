@@ -2106,6 +2106,25 @@ async function main() {
       process.exit(0);
     });
 
+  // Delete a single memory by key
+  program
+    .command('delete <key>')
+    .description('Delete a single memory by its key (find keys with `search`)')
+    .action((key) => {
+      try {
+        const deleted = MemoryService.getInstance().delete(key);
+        if (deleted) {
+          console.log(`✅ Deleted memory: ${key}`);
+        } else {
+          console.log(`⚠️  No memory found with key: ${key}`);
+        }
+        process.exit(deleted ? 0 : 1);
+      } catch (error) {
+        console.error(`❌ Delete failed: ${(error as Error).message}`);
+        process.exit(1);
+      }
+    });
+
   // Clear command
   program
     .command('clear')

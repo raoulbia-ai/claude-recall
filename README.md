@@ -129,6 +129,8 @@ With Option B the agent has the memory tools (`load_rules`, `store_memory`, `sea
 
 **Not available under Kiro** with either option (Kiro's hooks expose no transcript): transcript-based failure detection and session-end auto-checkpoints.
 
+> **Project scoping under Kiro.** Memories scope to the **working directory Kiro reports for the session**, not your shell's current directory. These are usually the same — but `kiro --resume` carries the *original* session's directory, so a resumed session captures into the project it was first started in (even if your shell has since moved). Start Kiro fresh from a project directory to scope there. `claude-recall kiro doctor` prints the resolved project so you can confirm where memories are landing.
+
 ### Shared Database
 
 All runtimes (Claude Code, Pi, Kiro CLI) use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the others.
@@ -425,6 +427,7 @@ claude-recall store "content" -t <type>  # Store with type (preference, correcti
 claude-recall export backup.json         # Export current project's memories to JSON
 claude-recall export backup.json --global # Export all projects
 claude-recall import backup.json         # Import memories from JSON
+claude-recall delete <key>               # Delete one memory by key (get keys from `search`)
 claude-recall clear --force              # Clear current project (auto-backup written first)
 claude-recall clear --force --global     # Clear all projects
 claude-recall failures                   # View failure memories
