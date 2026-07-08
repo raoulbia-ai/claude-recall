@@ -158,13 +158,23 @@ export class HookCommands {
         // `kiro --resume`d session whose cwd differs from the shell's), and
         // capture (userPromptSubmit) and injection (agentSpawn) could even
         // disagree. Project memories must scope to ONE deterministic project.
-        if (input && typeof input.cwd === 'string' && input.cwd.trim()) {
-          try {
-            const { ConfigService } = await import('../../services/config');
-            ConfigService.getInstance().updateConfig({ project: { rootDir: input.cwd } } as any);
-          } catch (err) {
-            hookLog('hook-dispatcher', `cwd scoping failed (using inherited cwd): ${safeErrorMessage(err)}`);
+        try {
+          const { ConfigService } = await import('../../services/config');
+          const cfg = ConfigService.getInstance();
+          const payloadCwd = (input && typeof input.cwd === 'string' && input.cwd.trim()) ? input.cwd : null;
+          if (payloadCwd) {
+            cfg.updateConfig({ project: { rootDir: payloadCwd } } as any);
           }
+          // Diagnostic: record what the runtime declared vs. what this
+          // subprocess inherited, and the project we resolved. Makes "which
+          // project did this scope to, and why" answerable from the log —
+          // the definitive check for `kiro --resume` scoping questions.
+          const pin = process.env.CLAUDE_RECALL_PROJECT_ID || process.env.CLAUDE_PROJECT_ID;
+          hookLog('hook-dispatcher',
+            `scope [${names.join('+')}]: payload.cwd=${payloadCwd ?? '(none)'} ` +
+            `process.cwd=${process.cwd()} pin=${pin ?? '(none)'} → project=${cfg.getProjectId()}`);
+        } catch (err) {
+          hookLog('hook-dispatcher', `cwd scoping failed (using inherited cwd): ${safeErrorMessage(err)}`);
         }
 
         for (const name of names) {
