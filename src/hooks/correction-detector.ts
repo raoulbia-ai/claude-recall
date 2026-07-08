@@ -50,7 +50,14 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   }
 
   const result = await classifyContent(prompt);
-  if (!result) return;
+  if (!result) {
+    // Terse trace so "did the hook fire?" is answerable from the log alone:
+    // absence of any line = hook never ran; "no rule detected" = ran but the
+    // prompt wasn't a storable rule; "Captured X" = ran and stored. Prompt
+    // text is NOT logged (privacy) — only its length.
+    hookLog('correction-detector', `no rule detected in prompt (len=${prompt.length})`);
+    return;
+  }
 
   // Reject short/garbage extracts and raw dumps (not clean rules)
   if (result.extract.length < 10 || result.extract.length > 200) return;
