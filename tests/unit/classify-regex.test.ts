@@ -58,6 +58,19 @@ describe('classifyContentRegex', () => {
       const r2 = classifyContentRegex('remember we deploy only from the release branch');
       expect(r2?.type).toBe('preference');
     });
+
+    it('classifies "recall ..." store requests (resilient path for MCP-blocked Kiro)', () => {
+      // Real-world miss under enterprise Kiro governance: MCP tools blocked,
+      // no API key in the hook env, and "recall ..." matched no pattern
+      const r = classifyContentRegex('recall my favourite color is green');
+      expect(r?.type).toBe('preference');
+      expect(r?.extract).toBe('my favourite color is green');
+      expect(r!.confidence).toBeGreaterThanOrEqual(0.75);
+    });
+
+    it('does not classify "do you recall ...?" questions', () => {
+      expect(classifyContentRegex('do you recall which branch we deployed from?')).toBeNull();
+    });
   });
 
   describe('misfire guards', () => {

@@ -28,11 +28,13 @@ const CORRECTION_PATTERNS = [
 ];
 
 const PREFERENCE_PATTERNS = [
-  // "remember ..." is an explicit store request in any phrasing — "remember
-  // that X", "remember to X", but also "remember my favourite color is green".
-  // The interrogative/question-mark guards below keep "do you remember that
-  // config file?" out.
-  { regex: /\bremember\s+(?:that\s+|this\s+|to\s+)?(.+)/i, confidence: 0.8 },
+  // "remember ..." / "recall ..." are explicit store requests in any phrasing —
+  // "remember that X", "remember to X", "remember my favourite color is green",
+  // "recall my favourite color is green". This is the resilient (no-LLM,
+  // no-MCP) capture path, which matters under enterprise Kiro governance that
+  // blocks the MCP tools. The interrogative/question-mark guards below keep
+  // "do you remember that config file?" / "do you recall X?" out.
+  { regex: /\b(?:remember|recall)\s+(?:that\s+|this\s+|to\s+)?(.+)/i, confidence: 0.8 },
   { regex: /\bfrom\s+now\s+on[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\bgoing\s+forward[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\balways\s+(.+)/i, confidence: 0.75 },
