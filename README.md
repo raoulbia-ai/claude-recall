@@ -71,7 +71,7 @@ That's it. Ask Pi to *"Load my rules"* to verify.
 
 ### Install for Kiro CLI
 
-Uses the same global binary (install it once per machine as above). Two ways to wire it in — full integration is what most people want.
+Requires claude-recall **≥ 0.28.0** (`claude-recall --version` to check; `claude-recall upgrade` to update). Uses the same global binary (install it once per machine as above). Two ways to wire it in — full integration is what most people want.
 
 **Option A — full integration (recommended): memory + hooks via a custom agent.**
 
@@ -144,7 +144,13 @@ Per-runtime notes:
 > claude mcp add claude-recall -- claude-recall mcp start
 > ```
 
-> **Seeing `error: unknown command 'upgrade'`?** Your installed version predates 0.23.2 (the release that added the `upgrade` command). Bootstrap once with `npm install -g claude-recall@latest`, then all future upgrades use `claude-recall upgrade`.
+> **Seeing `error: unknown command '<anything>'`?** Your installed global binary is older than the docs you're reading — commands ship with releases (`kiro` needs ≥ 0.28.0, `compact` ≥ 0.26.0, `upgrade` ≥ 0.23.2). Fix:
+>
+> ```bash
+> claude-recall upgrade
+> ```
+>
+> If `upgrade` itself is the unknown command (pre-0.23.2 install), bootstrap once with `npm install -g claude-recall@latest`.
 
 <details>
 <summary><b>If the install step reports <code>EACCES: permission denied</code></b></summary>
@@ -338,6 +344,11 @@ Manual `checkpoint save` is the explicit path. **Auto-checkpoint** is the safety
 ### Troubleshooting
 
 ```bash
+# "error: unknown command 'kiro'" (or any other command)?
+# Your global binary is older than the feature — upgrade it:
+claude-recall --version                  # What you have
+claude-recall upgrade                    # Get current
+
 # "Are my hooks installed?"
 claude-recall status                     # Shows hook registration status
 claude-recall hooks check                # Verify hook files exist and are valid
