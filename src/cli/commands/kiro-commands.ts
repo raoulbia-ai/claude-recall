@@ -266,10 +266,169 @@ export class KiroCommands {
     process.exit(0);
   }
 
+  /**
+   * Read a Kiro agent config and report whether claude-recall is wired
+   * (MCP server + which lifecycle hooks). Returns null if the file is missing
+   * or unparseable.
+   */
+  static inspectAgent(agentPath: string): {
+    name: string;
+    mcp: boolean;
+    hooks: string[];
+  } | null {
+    let config: any;
+    try {
+      config = JSON.parse(fs.readFileSync(agentPath, 'utf8'));
+    } catch {
+      return null;
+    }
+    const mcp = !!(config.mcpServers && config.mcpServers['claude-recall']);
+    const hooks: string[] = [];
+    if (config.hooks && typeof config.hooks === 'object') {
+      for (const [event, entries] of Object.entries(config.hooks)) {
+        if (Array.isArray(entries) && entries.some(
+          (h: any) => typeof h?.command === 'string' && h.command.includes('claude-recall'),
+        )) {
+          hooks.push(event);
+        }
+      }
+    }
+    return { name: config.name || path.basename(agentPath, '.json'), mcp, hooks };
+  }
+
+  /** Last non-empty line of a hook log + how long ago, or null if none. */
+  private static lastLogLine(logPath: string): { line: string; ageMs: number | null } | null {
+    try {
+      const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(l => l.trim());
+      if (lines.length === 0) return null;
+      const line = lines[lines.length - 1];
+      const m = line.match(/^\[([^\]]+)\]/);
+      let ageMs: number | null = null;
+      if (m) {
+        const t = Date.parse(m[1]);
+        if (!Number.isNaN(t)) ageMs = Date.now() - t;
+      }
+      return { line, ageMs };
+    } catch {
+      return null;
+    }
+  }
+
+  private static fmtAge(ageMs: number | null): string {
+    if (ageMs === null) return '';
+    const min = Math.round(ageMs / 60000);
+    if (min < 1) return ' (just now)';
+    if (min < 60) return ` (${min}m ago)`;
+    const h = Math.round(min / 60);
+    if (h < 48) return ` (${h}h ago)`;
+    return ` (${Math.round(h / 24)}d ago)`;
+  }
+
+  /**
+   * `claude-recall kiro doctor` — read-only diagnostic. Answers the questions
+   * that otherwise take a support round-trip: is the binary current and on
+   * PATH, is a key available for LLM capture, does the DB have memories, which
+   * Kiro agents have claude-recall wired, and are the hooks actually firing.
+   */
+  static runDoctor(): void {
+    const line = (marker: string, text: string) => console.log(`  ${marker} ${text}`);
+
+    console.log('\n🩺 Claude Recall — Kiro diagnostic\n');
+
+    // --- Install ---
+    console.log('Install');
+    let version = 'unknown';
+    try {
+      version = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'package.json'), 'utf8')).version;
+    } catch { /* leave unknown */ }
+    line('•', `version: ${version}`);
+    const onPath = resolveOnPath('claude-recall');
+    line(onPath ? '✓' : '⚠', onPath
+      ? `on PATH: ${onPath}`
+      : 'not on PATH — hooks/agent commands will use absolute paths (break if the install moves)');
+    line(process.env.ANTHROPIC_API_KEY ? '✓' : '•', process.env.ANTHROPIC_API_KEY
+      ? 'ANTHROPIC_API_KEY set — hooks use Claude Haiku for classification'
+      : 'ANTHROPIC_API_KEY not set — hooks use the regex fallback (explicit "remember/recall/always/never/I prefer …" still captured)');
+
+    // --- Database ---
+    console.log('\nDatabase (this project)');
+    try {
+      // Lazy require so a broken DB can't stop the earlier sections printing
+      const { MemoryService } = require('../../services/memory');
+      const { ConfigService } = require('../../services/config');
+      const ms = MemoryService.getInstance();
+      const projectId = ConfigService.getInstance().getProjectId();
+      const stats = ms.getStats();
+      line('✓', `project: ${projectId}`);
+      line('•', `total memories (all projects): ${stats.total}`);
+      const rules = ms.loadActiveRules(projectId);
+      const ruleCount = rules.preferences.length + rules.corrections.length + rules.failures.length + rules.devops.length;
+      line(ruleCount > 0 ? '✓' : '•', `active rules for this project: ${ruleCount}`);
+    } catch (err) {
+      line('⚠', `could not open database: ${(err as Error).message}`);
+    }
+
+    // --- Kiro agents ---
+    console.log('\nKiro agents with Claude Recall wired');
+    const agentDirs = [
+      { label: 'workspace', dir: path.join(process.cwd(), '.kiro', 'agents') },
+      { label: 'global', dir: path.join(os.homedir(), '.kiro', 'agents') },
+    ];
+    let anyWired = false;
+    for (const { label, dir } of agentDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      for (const f of files) {
+        const info = KiroCommands.inspectAgent(path.join(dir, f));
+        if (!info || (!info.mcp && info.hooks.length === 0)) continue;
+        anyWired = true;
+        const bits = [
+          info.mcp ? 'MCP' : null,
+          info.hooks.length ? `hooks: ${info.hooks.join(', ')}` : null,
+        ].filter(Boolean).join(' | ');
+        line('✓', `${info.name} (${label}) — ${bits}`);
+      }
+    }
+    if (!anyWired) {
+      line('⚠', 'none found. Run `claude-recall kiro setup` (new agent) or');
+      line(' ', '        `claude-recall kiro setup --merge-into <agent>` (existing agent).');
+    }
+
+    // --- Hook activity ---
+    console.log('\nRecent hook activity');
+    const dir = process.env.CLAUDE_RECALL_DB_PATH || path.join(os.homedir(), '.claude-recall');
+    const logDir = path.join(dir, 'hook-logs');
+    const kiro = KiroCommands.lastLogLine(path.join(logDir, 'kiro.log'));
+    const cd = KiroCommands.lastLogLine(path.join(logDir, 'correction-detector.log'));
+    if (kiro) {
+      line('✓', `kiro hooks last ran${KiroCommands.fmtAge(kiro.ageMs)}: ${kiro.line.replace(/^\[[^\]]+\]\s*/, '')}`);
+    } else {
+      line('⚠', 'no kiro.log — Kiro hooks have never fired. After `kiro setup`/`--merge-into`, RESTART Kiro (hooks bind at agent activation).');
+    }
+    if (cd) {
+      line('✓', `capture hook last ran${KiroCommands.fmtAge(cd.ageMs)}: ${cd.line.replace(/^\[[^\]]+\]\s*/, '')}`);
+    }
+
+    // --- Governance note ---
+    console.log('\nNotes');
+    line('•', 'If Kiro\'s startup banner omits "claude-recall" from loaded servers, your org likely');
+    line(' ', '  restricts MCP to a trusted registry. Hooks still work (capture + injection go straight');
+    line(' ', '  to the local DB) — only the interactive MCP tools need an admin to allowlist claude-recall.');
+    console.log('');
+    process.exit(0);
+  }
+
   static register(program: Command): void {
     const kiroCmd = program
       .command('kiro')
       .description('Kiro CLI integration');
+
+    kiroCmd
+      .command('doctor')
+      .description('Diagnose the Kiro integration: install, database, wired agents, and whether hooks are firing')
+      .action(() => {
+        KiroCommands.runDoctor();
+      });
 
     kiroCmd
       .command('setup')
