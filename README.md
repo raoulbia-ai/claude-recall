@@ -107,7 +107,7 @@ This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agen
 
 > **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project).
 
-**What you need to do — once per project, no code changes needed.** In each project, start one conversation *without* `--resume` (add your usual flags, e.g. `--classic`, `--trust-all-tools`):
+The rollover, concretely (add your usual flags, e.g. `--classic`, `--trust-all-tools`):
 
 ```bash
 cd ~/path/to/your-project
@@ -121,7 +121,7 @@ claude-recall search "helm"
 tail -5 ~/.claude-recall/hook-logs/hook-dispatcher.log
 ```
 
-You should see a `scope [...] → project=your-project` line. From then on your normal `--resume` command works — every conversation created after wiring carries the hooks permanently, including when resumed. `claude-recall kiro doctor` gives a fuller health report.
+The log should show a `scope [...] → project=your-project` line; `claude-recall kiro doctor` gives a fuller health report.
 
 > **Tip:** export `ANTHROPIC_API_KEY` in the shell you launch Kiro from. Hooks then use Claude Haiku to classify what's worth remembering; without it a conservative regex fallback runs, which catches explicit phrasings ("remember ...", "always ...", "never ...", "I prefer ...") but misses subtler ones.
 
@@ -150,7 +150,7 @@ With Option B the agent has the memory tools (`load_rules`, `store_memory`, `sea
 > To force a fixed project id regardless of directory, pin it with `CLAUDE_RECALL_PROJECT_ID`. A per-project shell alias makes it seamless:
 >
 > ```bash
-> alias kiro-epic='CLAUDE_RECALL_PROJECT_ID=epic-workflow-cicd kiro-cli chat --agent mcp-agent-env --resume'
+> alias kiro-myproj='CLAUDE_RECALL_PROJECT_ID=my-project kiro-cli chat --agent <your-agent> --resume'
 > ```
 >
 > `claude-recall kiro doctor` always prints the resolved project (and whether it's pinned) so you can confirm where memories are landing before trusting it.
@@ -521,6 +521,8 @@ claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rul
 ## Project Scoping
 
 Each project gets isolated memory based on its working directory. **Project ID** is derived from the `cwd` passed by the agent. Universal memories (no project scope) are available everywhere. Switching projects switches memory automatically.
+
+To pin the project id explicitly — e.g. one logical project spanning several directories (worktrees, subrepos) — set `CLAUDE_RECALL_PROJECT_ID` (see [Environment Variables](#environment-variables)).
 
 Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `project_id` column).
 
