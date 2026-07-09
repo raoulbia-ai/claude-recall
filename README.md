@@ -105,7 +105,23 @@ claude-recall kiro setup --merge-into <agent-name>
 
 This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — without touching anything the agent already had. Idempotent: re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
 
-> **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project). Verify with `claude-recall kiro doctor` or `tail ~/.claude-recall/hook-logs/kiro.log`.
+> **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project).
+
+**What you need to do — once per project, no code changes needed.** In each project, start one conversation *without* `--resume` (add your usual flags, e.g. `--classic`, `--trust-all-tools`):
+
+```bash
+cd ~/path/to/your-project
+kiro-cli chat --agent <your-agent>
+```
+
+In that session state something memorable (e.g. `recall the deploy pipeline uses helm`), exit, then verify it was captured:
+
+```bash
+claude-recall search "helm"
+tail -5 ~/.claude-recall/hook-logs/hook-dispatcher.log
+```
+
+You should see a `scope [...] → project=your-project` line. From then on your normal `--resume` command works — every conversation created after wiring carries the hooks permanently, including when resumed. `claude-recall kiro doctor` gives a fuller health report.
 
 > **Tip:** export `ANTHROPIC_API_KEY` in the shell you launch Kiro from. Hooks then use Claude Haiku to classify what's worth remembering; without it a conservative regex fallback runs, which catches explicit phrasings ("remember ...", "always ...", "never ...", "I prefer ...") but misses subtler ones.
 
