@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.8] - 2026-07-09
+
+### Changed
+
+- README polish (docs-only release so the npm package page shows it): the Kiro snapshot warning is now the single place the rollover behavior is explained, with the walkthrough beneath it reduced to the concrete commands; the `CLAUDE_RECALL_PROJECT_ID` alias example uses generic placeholders; the Project Scoping section cross-references `CLAUDE_RECALL_PROJECT_ID`.
+
 ## [0.28.7] - 2026-07-09
 
 ### Fixed
