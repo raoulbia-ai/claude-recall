@@ -28,7 +28,7 @@ describe('KiroCommands.buildAgentConfig', () => {
 
   it('wires all four lifecycle hooks with timeouts', () => {
     expect(config.hooks.agentSpawn[0].command).toBe('claude-recall hook run kiro-agent-spawn');
-    expect(config.hooks.userPromptSubmit[0].command).toBe('claude-recall hook run correction-detector');
+    expect(config.hooks.userPromptSubmit[0].command).toBe('claude-recall hook run kiro-capture');
     expect(config.hooks.preToolUse[0]).toMatchObject({
       matcher: '*',
       command: 'claude-recall hook run kiro-rule-injector',
@@ -182,7 +182,7 @@ describe('kiro setup --merge-into', () => {
     expect(merged.mcpServers['claude-recall']).toBeDefined();
     expect(merged.allowedTools).toContain('@claude-recall/load_rules');
     expect(merged.hooks.agentSpawn.some((h: any) => h.command.includes('kiro-agent-spawn'))).toBe(true);
-    expect(merged.hooks.userPromptSubmit.some((h: any) => h.command.includes('correction-detector'))).toBe(true);
+    expect(merged.hooks.userPromptSubmit.some((h: any) => h.command.includes('kiro-capture'))).toBe(true);
     expect(merged.hooks.preToolUse.some((h: any) => h.command.includes('kiro-rule-injector'))).toBe(true);
     expect(merged.hooks.postToolUse.some((h: any) => h.command.includes('kiro-tool-outcome'))).toBe(true);
     expect(exitSpy).toHaveBeenCalledWith(0);

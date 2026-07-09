@@ -34,6 +34,39 @@ export class KiroCommands {
     '@claude-recall/load_checkpoint',
   ];
 
+  /**
+   * Name of the bare agent used for headless memory classification. Kept in
+   * sync with CLASSIFIER_AGENT in src/hooks/kiro-classifier.ts (duplicated as a
+   * plain string so this module doesn't pull the hooks graph into jest).
+   */
+  static readonly CLASSIFIER_AGENT_NAME = 'claude-recall-classifier';
+
+  /** The bare classifier agent config — no MCP, no hooks, no tools. */
+  static buildClassifierAgentConfig(): Record<string, unknown> {
+    return {
+      name: KiroCommands.CLASSIFIER_AGENT_NAME,
+      description: 'Headless memory classifier for Claude Recall. No MCP servers, hooks, or tools — invoked by the capture worker to decide what to remember, using Kiro\'s own LLM.',
+      mcpServers: {},
+      includeMcpJson: false,
+      tools: [],
+      allowedTools: [],
+      hooks: {},
+    };
+  }
+
+  /**
+   * Write the bare classifier agent to ~/.kiro/agents/ (always global, so any
+   * project's capture worker can invoke `--agent claude-recall-classifier`).
+   * Idempotent overwrite — the file is entirely ours. Returns its path.
+   */
+  static writeClassifierAgent(): string {
+    const dir = path.join(os.homedir(), '.kiro', 'agents');
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, `${KiroCommands.CLASSIFIER_AGENT_NAME}.json`);
+    fs.writeFileSync(p, JSON.stringify(KiroCommands.buildClassifierAgentConfig(), null, 2) + '\n');
+    return p;
+  }
+
   /** The four lifecycle hook entries (shared by fresh config and merge). */
   static buildHookEntries(hookCmd: string): Record<string, Array<Record<string, unknown>>> {
     return {
@@ -41,9 +74,12 @@ export class KiroCommands {
       agentSpawn: [
         { command: `${hookCmd} kiro-agent-spawn`, timeout_ms: 10000 },
       ],
-      // Kiro's userPromptSubmit payload matches correction-detector exactly
+      // Capture. kiro-capture spawns a detached worker that classifies the
+      // prompt via Kiro's own headless LLM (no ANTHROPIC_API_KEY needed) and
+      // stores in the background — see src/hooks/kiro-classifier.ts. The hook
+      // itself returns in milliseconds, so the short timeout is ample.
       userPromptSubmit: [
-        { command: `${hookCmd} correction-detector`, timeout_ms: 8000 },
+        { command: `${hookCmd} kiro-capture`, timeout_ms: 8000 },
       ],
       preToolUse: [
         { matcher: '*', command: `${hookCmd} kiro-rule-injector`, timeout_ms: 5000 },
@@ -121,7 +157,7 @@ export class KiroCommands {
     }
     const handlerMarkers: Record<string, string> = {
       agentSpawn: 'kiro-agent-spawn',
-      userPromptSubmit: 'correction-detector',
+      userPromptSubmit: 'kiro-capture',
       preToolUse: 'kiro-rule-injector',
       postToolUse: 'kiro-tool-outcome',
     };
@@ -210,8 +246,12 @@ export class KiroCommands {
     fs.writeFileSync(backupPath, raw);
     fs.writeFileSync(agentPath, JSON.stringify(config, null, 2) + '\n');
 
+    // Capture uses Kiro's own headless LLM via a bare classifier agent.
+    const classifierPath = KiroCommands.writeClassifierAgent();
+
     console.log(`✅ Merged Claude Recall into: ${agentPath}`);
     console.log(`   Backup: ${backupPath}`);
+    console.log(`   Classifier agent: ${classifierPath}`);
     console.log('');
     for (const c of changes) console.log(`   • ${c}`);
     console.log('');
@@ -251,7 +291,11 @@ export class KiroCommands {
     const config = KiroCommands.buildAgentConfig(hookCmd, mcpCommand, mcpArgs);
     fs.writeFileSync(agentPath, JSON.stringify(config, null, 2) + '\n');
 
+    // Capture uses Kiro's own headless LLM via a bare classifier agent.
+    const classifierPath = KiroCommands.writeClassifierAgent();
+
     console.log(`✅ Wrote Kiro agent config: ${agentPath}`);
+    console.log(`✅ Wrote classifier agent:  ${classifierPath}`);
     console.log('');
     console.log('No mcp.json changes needed — the agent config carries its own claude-recall');
     console.log('MCP server entry (and includeMcpJson keeps your other servers working).');
@@ -266,7 +310,9 @@ export class KiroCommands {
     console.log('');
     console.log('Rules load into context automatically at agent start; corrections and');
     console.log('preferences you state are captured; memories are shared with Claude Code');
-    console.log('(same database, same per-project scoping).');
+    console.log('(same database, same per-project scoping). Capture classifies each prompt');
+    console.log('with Kiro\'s own LLM — no ANTHROPIC_API_KEY needed (spends ~0.06 Kiro');
+    console.log('credits/prompt; set CLAUDE_RECALL_KIRO_MODEL to change the model).');
     console.log('');
     console.log('⚠️  Kiro snapshots the agent config into each conversation at creation —');
     console.log('conversations created before this setup never run the hooks, even when');
@@ -407,6 +453,24 @@ export class KiroCommands {
     if (!anyWired) {
       line('⚠', 'none found. Run `claude-recall kiro setup` (new agent) or');
       line(' ', '        `claude-recall kiro setup --merge-into <agent>` (existing agent).');
+    }
+
+    // --- Capture backend (Kiro LLM classifier) ---
+    console.log('\nCapture backend (no ANTHROPIC_API_KEY needed under Kiro)');
+    const classifierPath = path.join(os.homedir(), '.kiro', 'agents', `${KiroCommands.CLASSIFIER_AGENT_NAME}.json`);
+    if (fs.existsSync(classifierPath)) {
+      line('✓', `classifier agent present: ${classifierPath}`);
+    } else {
+      line('⚠', `classifier agent missing (${KiroCommands.CLASSIFIER_AGENT_NAME}.json) — re-run \`claude-recall kiro setup\` or \`--merge-into\`. Capture falls back to regex without it.`);
+    }
+    if (resolveOnPath('kiro-cli')) {
+      const model = process.env.CLAUDE_RECALL_KIRO_MODEL || 'claude-haiku-4.5';
+      line('✓', `kiro-cli on PATH — capture classifies with Kiro's LLM (model: ${model})`);
+    } else {
+      line('⚠', 'kiro-cli not on PATH — capture cannot reach Kiro\'s LLM and falls back to regex.');
+    }
+    if (process.env.ANTHROPIC_API_KEY) {
+      line('•', 'ANTHROPIC_API_KEY is set — it takes precedence over the Kiro LLM for capture.');
     }
 
     // --- Hook activity ---
