@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Memory capture under Kiro now uses Kiro's own LLM — no `ANTHROPIC_API_KEY` required.** Previously, without an API key the capture hook fell back to a regex that only caught explicit phrasings, so natural statements like "my favourite color is green" were dropped. The capture hook now classifies each prompt by shelling out to Kiro's headless model (`kiro-cli chat --no-interactive`) through a bundled bare `claude-recall-classifier` agent (no MCP servers, hooks, or tools — so it's fast and can't recurse). This works even under enterprise governance that blocks the claude-recall MCP server, since capture never needs the `store_memory` tool. Classification runs in a **detached background worker** (same pattern as session-end checkpoints), so the user's turn is never blocked by the ~3s call. Capture precedence: `ANTHROPIC_API_KEY` → Kiro's headless LLM → regex fallback. New env vars `CLAUDE_RECALL_KIRO_MODEL` (default `claude-haiku-4.5`) and `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS` (default 30000). `claude-recall kiro doctor` reports the classifier agent and whether `kiro-cli` is on PATH. Full findings in [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md).
+
 ## [0.28.8] - 2026-07-09
 
 ### Changed

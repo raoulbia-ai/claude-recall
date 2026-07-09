@@ -26,12 +26,14 @@
  * detectors and session extraction don't run under Kiro.
  */
 
+import { spawn } from 'child_process';
 import { hookLog, safeErrorMessage } from './shared';
 import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { computeInjection } from './rule-injector';
 import { handleToolOutcomeWatcher } from './tool-outcome-watcher';
+import { handleCorrectionDetector } from './correction-detector';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
 
 const HOOK_NAME = 'kiro';
@@ -193,5 +195,66 @@ export async function handleKiroToolOutcome(input: any): Promise<void> {
     await handleToolOutcomeWatcher(normalizeKiroInput(input));
   } catch (err) {
     hookLog(HOOK_NAME, `tool-outcome error: ${safeErrorMessage(err)}`);
+  }
+}
+
+/**
+ * userPromptSubmit — the synchronous gate Kiro waits on. Under Kiro there is no
+ * ANTHROPIC_API_KEY, so classification uses Kiro's own headless LLM
+ * (`kiro-cli chat --no-interactive`), which cold-boots in ~3–15s — too slow to
+ * run inline within Kiro's hook timeout, and a poor UX blocking every turn.
+ *
+ * So this handler does NOT classify. It spawns a DETACHED worker
+ * (kiro-capture-worker) that survives this process, pipes the prompt payload to
+ * it over stdin, and returns in milliseconds. The worker performs the slow Kiro
+ * classify call and stores the memory in the background. Same pattern as
+ * session-end-checkpoint. See docs/kiro-llm-capture.md.
+ */
+export async function handleKiroCapture(input: any): Promise<void> {
+  const prompt: string = input?.prompt ?? '';
+  // Cheap pre-checks mirror correction-detector so we don't spawn a worker (and
+  // spend Kiro credits) on input that could never be stored.
+  if (prompt.length < 20 || prompt.length > 2000) return;
+  if (prompt.startsWith('```') || prompt.startsWith('{')) return;
+
+  try {
+    const cliPath = process.argv[1]; // absolute path to claude-recall-cli.js
+    const child = spawn(
+      process.execPath,
+      [cliPath, 'hook', 'run', 'kiro-capture-worker'],
+      { detached: true, stdio: ['pipe', 'ignore', 'ignore'] },
+    );
+
+    child.on('error', (err) => {
+      hookLog(HOOK_NAME, `capture worker spawn error: ${err?.message ?? err}`);
+    });
+
+    if (child.stdin) {
+      child.stdin.on('error', (err) => {
+        hookLog(HOOK_NAME, `capture worker stdin error: ${err?.message ?? err}`);
+      });
+      child.stdin.write(JSON.stringify(input));
+      child.stdin.end();
+    }
+
+    child.unref();
+    hookLog(HOOK_NAME, `capture: spawned detached worker (pid=${child.pid})`);
+  } catch (err) {
+    hookLog(HOOK_NAME, `capture spawn failed: ${safeErrorMessage(err)}`);
+  }
+}
+
+/**
+ * kiro-capture-worker — the background half of handleKiroCapture. Enables the
+ * Kiro-LLM classifier path (CLAUDE_RECALL_KIRO_CLASSIFIER) and delegates to the
+ * standard correction-detector, which now classifies via Kiro's headless LLM
+ * and stores. Runs detached, so its output goes nowhere and capture is silent.
+ */
+export async function handleKiroCaptureWorker(input: any): Promise<void> {
+  process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = '1';
+  try {
+    await handleCorrectionDetector(input);
+  } catch (err) {
+    hookLog(HOOK_NAME, `capture worker error: ${safeErrorMessage(err)}`);
   }
 }

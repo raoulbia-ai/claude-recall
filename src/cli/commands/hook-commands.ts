@@ -19,6 +19,8 @@ const AVAILABLE_HOOKS = [
   'kiro-agent-spawn',
   'kiro-rule-injector',
   'kiro-tool-outcome',
+  'kiro-capture',
+  'kiro-capture-worker',
 ] as const;
 
 /**
@@ -120,6 +122,16 @@ export class HookCommands {
       case 'kiro-tool-outcome': {
         const { handleKiroToolOutcome } = await import('../../hooks/kiro-hooks');
         await handleKiroToolOutcome(input);
+        break;
+      }
+      case 'kiro-capture': {
+        const { handleKiroCapture } = await import('../../hooks/kiro-hooks');
+        await handleKiroCapture(input);
+        break;
+      }
+      case 'kiro-capture-worker': {
+        const { handleKiroCaptureWorker } = await import('../../hooks/kiro-hooks');
+        await handleKiroCaptureWorker(input);
         break;
       }
       default:

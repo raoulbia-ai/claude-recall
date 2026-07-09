@@ -96,12 +96,26 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
 
 /**
  * Classify text content — LLM-first, regex fallback.
- * Tries Claude Haiku via ANTHROPIC_API_KEY (set by Claude Code automatically).
- * Falls back to regex patterns if API is unavailable or call fails.
+ * Precedence:
+ *   1. Claude Haiku via ANTHROPIC_API_KEY (Claude Code sets this automatically).
+ *   2. Kiro's headless LLM (`kiro-cli chat --no-interactive`) when running under
+ *      Kiro — no API key needed. Gated on CLAUDE_RECALL_KIRO_CLASSIFIER, which
+ *      the kiro-capture-worker sets; the classify call is ~3s so it only runs
+ *      from that detached worker, never inline. See docs/kiro-llm-capture.md.
+ *   3. Regex patterns, if neither LLM path yields a result.
  */
 export async function classifyContent(text: string): Promise<ClassifyResult | null> {
   const llmResult = await classifyWithLLM(text);
   if (llmResult) return llmResult;
+
+  if (process.env.CLAUDE_RECALL_KIRO_CLASSIFIER) {
+    // Dynamic import keeps kiro-classifier (and child_process) out of the
+    // module graph for every non-Kiro hook invocation.
+    const { classifyWithKiro } = await import('./kiro-classifier');
+    const kiroResult = await classifyWithKiro(text);
+    if (kiroResult) return kiroResult;
+  }
+
   return classifyContentRegex(text);
 }
 
