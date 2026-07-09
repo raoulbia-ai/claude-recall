@@ -5,12 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.28.7] - 2026-07-09
 
 ### Fixed
 
 - **Root cause of "hooks never fire" under Kiro found and documented: conversation-level agent-config snapshots.** A controlled experiment proved Kiro snapshots the agent config into each conversation *at creation*; `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created before `kiro setup`/`--merge-into` never run the claude-recall hooks, no matter how often they're resumed — while every conversation created *after* wiring carries the hooks permanently, including when resumed. The fix is a one-time rollover: start ONE fresh conversation (no `--resume`) per project. README, `kiro setup`/`--merge-into` output, and the `kiro doctor` "hooks never fired" hint now all say exactly this (previously they said "restart Kiro", which does nothing for pre-wiring conversations).
 - Corrected `--resume` semantics throughout docs and comments: `kiro --resume` resumes the most recent conversation *from the current directory* (per-project), not the globally most-recent one. The `CLAUDE_RECALL_PROJECT_ID` pin remains useful for spanning worktrees/subrepos, and its documentation now says so instead of citing a cross-project resume hazard that doesn't exist.
+
+### Added
+
+- README: a step-by-step rollover walkthrough in the Kiro section — start one conversation without `--resume` per project, state something memorable, verify capture with `claude-recall search` and the `scope [...] → project=...` line in `hook-dispatcher.log`.
 
 ## [0.28.6] - 2026-07-08
 
