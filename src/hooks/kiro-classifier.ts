@@ -161,6 +161,12 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
       const result = extractClassification(stdout);
       if (!result) {
         hookLog('kiro-classifier', 'no parseable classification in kiro-cli output');
+      } else {
+        // Log success too, not just failures — otherwise a successful Kiro
+        // classification is silent and indistinguishable from "never ran",
+        // which makes "did the Kiro LLM handle this?" impossible to answer
+        // from the log. Records the model actually used.
+        hookLog('kiro-classifier', `classified via Kiro LLM (${model}): ${result.type} — ${result.extract.slice(0, 60)}`);
       }
       done(result);
     });
