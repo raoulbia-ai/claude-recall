@@ -2,37 +2,58 @@
 
 ### Persistent, local memory for coding agents — learn from every session.
 
-Claude Recall is a **local memory engine** that gives coding agents something they're missing by default:
-**the ability to learn from you over time.**
+Coding agents forget everything between sessions. Claude Recall fixes that: it captures your preferences, corrections, project facts, and failures **automatically as you work**, stores them in a local SQLite database, and injects them back into the agent's context in every future session.
 
-Works with **Claude Code** (via MCP server + hooks), **[Pi](https://github.com/mariozechner/pi)** (via native extension), and **[Kiro CLI](https://kiro.dev/cli/)** (via custom agent + hooks). All three share the same local database — a preference learned in one agent is available in the others.
+It works with **Claude Code**, **[Pi](https://github.com/mariozechner/pi)**, and **[Kiro CLI](https://kiro.dev/cli/)** — all three share the same database, so a rule learned in one agent is applied in the others. Everything stays on your machine: no cloud, no telemetry, works offline.
 
-Your preferences, project structure, workflows, corrections, and coding style are captured automatically and applied in future sessions — **securely stored on your machine**.
+---
+
+## What it looks like in practice
+
+**Tuesday — you correct the agent once, in plain language:**
+
+> **You:** use pnpm here, not npm
+
+```text
+📌 Recall: auto-captured correction — Use pnpm, not npm
+```
+
+That one line did everything. A hook classified your prompt with an LLM, decided it was a durable rule (not chit-chat), and stored it locally. No "remember this" incantation, no tool call, no config file to edit.
+
+**Friday — brand-new session, no shared history:**
+
+> **You:** set up a test runner for this project
+>
+> **Agent:** Installing vitest with **pnpm** *(applied from memory: "Use pnpm, not npm")* …
+
+Your rules are injected at session start and again right before each relevant tool call — at the moment of decision, not 50,000 tokens upstream. This works across agents too: correct Claude Code on Tuesday, and Kiro applies it on Friday.
+
+**And you can audit what it knows at any time:**
+
+```bash
+$ claude-recall search "pnpm"
+🔍 Found 1 memories (showing top 1):
+
+1. [correction] Score: 7.9
+   Content: {"content":"Use pnpm, not npm","confidence":0.95,"source":"hook-auto-capture",...}
+```
 
 ---
 
 ## Features
 
-- **Smart Memory Capture** — LLM-powered classification (via Claude Haiku) detects preferences and corrections from natural language, with silent regex fallback
-- **Project-Scoped Knowledge** — each project gets its own memory namespace; switch projects and the agent switches context automatically
-- **Failure Learning** — captures what failed, why, and what to do instead — so the agent doesn't repeat mistakes
-- **Outcome-Aware Learning** — tracks action outcomes (all tool results, test cycles, user corrections), synthesizes candidate lessons, and promotes validated patterns into active rules automatically
-- **Skill Crystallization** — auto-generates `.claude/skills/auto-*/` files from accumulated memories, using Anthropic's [Agent Skills](https://agentskills.io/) open standard
-- **Rule Hygiene** — token-budgeted `load_rules` payload, citation-aware auto-demotion of rules that never earn citations, and retroactive dedup for near-duplicates
-- **Local-Only** — SQLite on your machine, no telemetry, no cloud, works fully offline
+- **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts (regex fallback when no LLM is available)
+- **Applied where it counts** — rules load at session start *and* are re-surfaced just-in-time before each tool call
+- **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
+- **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
+- **Outcome-aware** — tracks whether rules actually help (tool results, test cycles, re-asks) and promotes validated lessons into active rules
+- **Local-only** — one SQLite file on your machine; inspect, export, or delete everything from the CLI
 
 ---
 
 ## Quick Start
 
-### Requirements
-
-| Component | Version                 | Notes                       |
-| --------- | ----------------------- | --------------------------- |
-| Node.js   | **20.19+**              | required for better-sqlite3 (Node 20+) and chalk 5 (ESM `require()` needs ≥20.19) |
-| OS        | macOS / Linux / Windows | WSL supported               |
-
-### Install for Claude Code
+**Requirements:** Node.js **20.19+**, macOS / Linux / Windows (WSL supported).
 
 Install the global binary once per machine:
 
@@ -40,7 +61,12 @@ Install the global binary once per machine:
 npm install -g claude-recall
 ```
 
-Then, in each project directory where you want claude-recall active:
+> **Do NOT add claude-recall as a project dependency** (`npm install claude-recall` inside a project). All projects share one database, and a stale project-local copy silently shadows your global one. One global binary; per-project *activation* only.
+> Hit `EACCES: permission denied`? See [Upgrade & install troubleshooting](#upgrading) below.
+
+### Claude Code
+
+In each project where you want it active:
 
 ```bash
 claude-recall setup --install
@@ -49,19 +75,15 @@ claude mcp add claude-recall -- claude-recall mcp start
 
 Restart Claude Code. Ask *"Load my rules"* to verify — Claude should call `load_rules`.
 
-Prefer it active in **every** project? Register the MCP server once at user scope instead of per project (memories stay isolated per project either way — scoping comes from the working directory, not the install):
+Prefer it available in **every** project? Register the MCP server once at user scope (memories stay isolated per project either way — scoping comes from the working directory, not the install):
 
 ```bash
 claude mcp add --scope user claude-recall -- claude-recall mcp start
 ```
 
-Hook-based auto-capture remains a per-project opt-in via `claude-recall setup --install` (it writes to that project's `.claude/settings.json`).
+Hook-based auto-capture remains a per-project opt-in via `claude-recall setup --install`.
 
-> **Do NOT add claude-recall as a project dependency** (`npm install claude-recall` inside a project). All projects share one database at `~/.claude-recall/` and whatever binary touches it runs schema migrations — multiple project-local copies at different versions fight over the same file. Worse, `npx claude-recall` prefers a project-local copy over your up-to-date global one, so a stale local install silently shadows every upgrade. One global binary; per-project *activation* only.
-
-> **Hit `EACCES: permission denied`?** Your global npm is owned by root. Either `sudo npm install -g claude-recall` once, or do the permanent fix described in [Upgrading](#upgrading) below.
-
-### Install for Pi
+### Pi
 
 ```bash
 pi install npm:claude-recall
@@ -69,184 +91,47 @@ pi install npm:claude-recall
 
 That's it. Ask Pi to *"Load my rules"* to verify.
 
-### Install for Kiro CLI
+### Kiro CLI
 
-Requires claude-recall **≥ 0.28.0** (`claude-recall --version` to check; `claude-recall upgrade` to update). Uses the same global binary (install it once per machine as above). Two ways to wire it in — full integration is what most people want.
-
-**Option A — full integration (recommended): memory + hooks via a custom agent.**
-
-In your shell, in the project directory, **before** starting Kiro:
+Requires claude-recall ≥ 0.28.0. In the project directory, before starting Kiro:
 
 ```bash
-claude-recall kiro setup
+claude-recall kiro setup      # writes a custom agent at .kiro/agents/recall.json
+kiro                          # then inside the chat:  /agent swap recall
 ```
 
-This writes a Kiro custom agent at `.kiro/agents/recall.json` (use `--global` for `~/.kiro/agents` so it's available in every project). It does **not** touch your `mcp.json` — the agent config carries its own `mcpServers` entry for claude-recall, so no separate MCP registration is needed. It also sets `includeMcpJson: true`, so any other servers you have in `mcp.json` keep working alongside it.
-
-Then start Kiro from your shell:
-
-```bash
-kiro
-```
-
-and inside the Kiro chat, switch to the agent:
-
-```
-/agent swap recall
-```
-
-You get: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (read-only tools pre-approved). Memories are shared with Claude Code and Pi: same database, same per-project scoping.
-
-**Already have a custom agent you live in?** Don't swap — merge Claude Recall into it instead:
+Already living in a custom agent of your own? Merge Claude Recall into it instead of swapping (backup written, idempotent, your config preserved):
 
 ```bash
 claude-recall kiro setup --merge-into <agent-name>
 ```
 
-This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — while leaving your own config untouched. It only rewrites claude-recall's own entries: superseded ones from an older version are swapped for the current wiring (any unrelated hook you have on the same event is preserved). Idempotent: on an already-current agent, re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
+> **⚠️ One-time rollover:** after `kiro setup` or `--merge-into`, start **one fresh conversation** (no `--resume`). Kiro snapshots the agent config when a conversation is *created*, so older conversations never see the new hooks — even resumed or after a restart. After that one fresh start, `--resume` works normally.
 
-> **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project).
+Capture under Kiro runs on **Kiro's own LLM** — no `ANTHROPIC_API_KEY`, no personal Anthropic subscription. It uses a dedicated fixed classifier model (default `claude-haiku-4.5`, independent of your chat model), costs ~0.06 Kiro credits per prompt, and never blocks your turn. Verify with `claude-recall kiro doctor`.
 
-The rollover, concretely (add your usual flags, e.g. `--classic`, `--trust-all-tools`):
-
-```bash
-cd ~/path/to/your-project
-kiro-cli chat --agent <your-agent>
-```
-
-In that session state something memorable (e.g. `recall the deploy pipeline uses helm`), exit, then verify it was captured:
-
-```bash
-claude-recall search "helm"
-tail -5 ~/.claude-recall/hook-logs/hook-dispatcher.log
-```
-
-The log should show a `scope [...] → project=your-project` line; `claude-recall kiro doctor` gives a fuller health report.
-
-> **Capture uses Kiro's own LLM — no API key needed.** To decide what's worth remembering, the capture hook classifies each prompt via a headless `kiro-cli chat --no-interactive --model …` call (through a bundled bare `claude-recall-classifier` agent). So natural statements like "my favourite color is green" are captured without any `ANTHROPIC_API_KEY` and without the `store_memory` MCP tool — which matters under enterprise governance that blocks the MCP server. It runs in a detached background worker, so your turn is never blocked; it spends ~0.06 Kiro credits per prompt.
->
-> **The classifier uses a dedicated, fixed model — not your chat model.** It always runs the model in `CLAUDE_RECALL_KIRO_MODEL` (default `claude-haiku-4.5`, chosen because classification is cheap and high-volume), **independent of your interactive Kiro chat model** (e.g. `auto`). This keeps classification cost predictable no matter what your chat is set to. Set `CLAUDE_RECALL_KIRO_MODEL` to any model from `kiro-cli chat --list-models` to change it. Every successful classification is logged to `~/.claude-recall/hook-logs/kiro-classifier.log` as `classified via kiro-cli (model=…, Kiro credits, no API key)`, so you can always see which model ran.
->
-> **Under Kiro the included LLM is used first even if you happen to have `ANTHROPIC_API_KEY` set** — so a key exported for other tools won't quietly spend your Anthropic credits. Order: Kiro's LLM → `ANTHROPIC_API_KEY` (if present) → regex; set `CLAUDE_RECALL_PREFER_API_KEY=1` to force your key first (e.g. for a stronger model you pay for). Details in [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md).
-
-**Option B — MCP tools only (no hooks, works in Kiro's default agent).**
-
-If you don't want a custom agent, register just the MCP server in Kiro's config instead. Create or merge into `.kiro/settings/mcp.json` (project) or `~/.kiro/settings/mcp.json` (all projects):
-
-```json
-{
-  "mcpServers": {
-    "claude-recall": {
-      "command": "claude-recall",
-      "args": ["mcp", "start"],
-      "autoApprove": ["load_rules", "search_memory", "load_checkpoint"]
-    }
-  }
-}
-```
-
-With Option B the agent has the memory tools (`load_rules`, `store_memory`, `search_memory`, checkpoints) but nothing happens automatically — no rules at session start, no auto-capture. Ask it to *"load my rules"*.
-
-**Not available under Kiro** with either option (Kiro's hooks expose no transcript): transcript-based failure detection and session-end auto-checkpoints.
-
-> **Project scoping & `--resume`.** Memories scope to the **working directory Kiro reports for the session** — normally the directory you launched Kiro from. `kiro --resume` resumes the most recent conversation *from the current directory* (it's per-project), so scoping and `--resume` naturally agree. Just remember the snapshot rule above: only conversations **created after** wiring run the hooks.
->
-> To force a fixed project id regardless of directory, pin it with `CLAUDE_RECALL_PROJECT_ID`. A per-project shell alias makes it seamless:
->
-> ```bash
-> alias kiro-myproj='CLAUDE_RECALL_PROJECT_ID=my-project kiro-cli chat --agent <your-agent> --resume'
-> ```
->
-> `claude-recall kiro doctor` always prints the resolved project (and whether it's pinned) so you can confirm where memories are landing before trusting it.
->
-> **Capture works even when the MCP tools are blocked.** Under enterprise governance that restricts MCP to a trusted registry, Kiro drops the claude-recall MCP server — so the agent may say it "has no memory tools." Ignore that: the hooks capture and inject against the local DB regardless. The agent is told this at session start and will confirm it's remembering; only the on-demand tools (the agent calling `search_memory` itself) need an admin to allowlist claude-recall.
-
-### Shared Database
-
-All runtimes (Claude Code, Pi, Kiro CLI) use the same database at `~/.claude-recall/claude-recall.db`, scoped per project by working directory. A correction learned in one agent is available in the others.
-
-### Upgrading
-
-One command upgrades the shared binary for **all** runtimes (Claude Code, Pi, and Kiro use the same global install):
-
-```bash
-claude-recall upgrade
-```
-
-It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version.
-
-Per-runtime notes:
-
-- **Claude Code** — nothing else needed; registrations point at the `claude-recall` command, not a pinned path. If the release notes mention new or changed hooks (a `hooksVersion` bump), also re-run `claude-recall setup --install` in each active project — safe any time; a no-op when hooks are already current.
-- **Pi** — run `pi update npm:claude-recall` and restart Pi.
-- **Kiro CLI** — the agent config points at the `claude-recall` command, so the binary upgrade alone applies to hook *behaviour*. But when the release notes change the agent *template* (new hooks, the classifier agent, revised wiring — e.g. the **0.29.x** Kiro-LLM capture), re-run setup once so the agent picks it up: `claude-recall kiro setup --force` for the standalone `recall` agent, or `claude-recall kiro setup --merge-into <agent>` for an agent you merged into. That also writes the `claude-recall-classifier` agent and strips any superseded hooks. Then start one fresh conversation per project (the snapshot rollover above). `claude-recall kiro doctor` confirms the result.
-
-> **Claude Code registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which re-resolves the package on every server start and can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
->
-> ```bash
-> claude mcp remove claude-recall
-> claude mcp add claude-recall -- claude-recall mcp start
-> ```
-
-> **Seeing `error: unknown command '<anything>'`?** Your installed global binary is older than the docs you're reading — commands ship with releases (`kiro` needs ≥ 0.28.0, `compact` ≥ 0.26.0, `upgrade` ≥ 0.23.2). Fix:
->
-> ```bash
-> claude-recall upgrade
-> ```
->
-> If `upgrade` itself is the unknown command (pre-0.23.2 install), bootstrap once with `npm install -g claude-recall@latest`.
-
-<details>
-<summary><b>If the install step reports <code>EACCES: permission denied</code></b></summary>
-
-Your global npm prefix is root-owned (common when node was installed via `apt install nodejs`). Pick one:
-
-**Quick** — one-time sudo:
-```bash
-sudo npm install -g claude-recall@latest
-```
-
-**Permanent** — move the prefix to a user-owned directory so no global install ever needs sudo again:
-```bash
-mkdir -p ~/.npm-global
-npm config set prefix ~/.npm-global
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-
-# Install claude-recall into the new user-owned prefix:
-npm install -g claude-recall@latest
-
-# Verify and you're done:
-claude-recall --version
-```
-
-The prefix fix only tells npm *where* to install; it doesn't install anything itself. The explicit `npm install -g` line picks up the new binary into the new prefix so `claude-recall` on your PATH has the `upgrade` command.
-
-</details>
+**Everything else Kiro** — MCP-only mode, project scoping and `--resume`, the classifier internals, enterprise-governance notes, troubleshooting: **[docs/kiro.md](docs/kiro.md)**.
 
 ---
 
-## What to Expect
+## What happens automatically
 
-Once installed, Claude Recall works automatically in the background. Each row below is tagged with the runtime it applies to so you can skip what doesn't apply to you.
+Once installed, Claude Recall works in the background (CC = Claude Code):
 
 | When | What happens | CC | Pi | Kiro |
 |---|---|:-:|:-:|:-:|
-| **Session start** | Active rules are loaded before the first action and injected into the agent's context. Under Kiro this is fully automatic — rules land in context at `agentSpawn`, no tool call needed | ✓ | ✓ | ✓ |
-| **As you work** | Every prompt is classified for corrections and preferences. Natural statements like *"we use tabs here"* are detected and stored | ✓ | ✓ | ✓ |
-| **Before each tool call / agent turn** | **Just-in-time rule injection** — relevant rules are surfaced adjacent to the action so the agent sees them at the moment of decision (not 50,000 tokens upstream). Per-tool-call in CC and Kiro; per-turn in Pi | ✓ | ✓ | ✓ |
-| **Tool outcomes** | Tool results (Bash, Edit, Write, etc.) are captured. Failures are stored; Bash failures are paired with their successful fixes | ✓ | ✓ | ✓ |
-| **Reask detection** | Frustration signals (*"still broken"*, *"that didn't work"*) are recorded as outcome events | ✓ | ✓ | ✓ |
-| **Before context compression** | Aggressive memory sweep captures important context before the window shrinks | ✓ | ✓ |   |
-| **After context compression** | Rules are automatically re-injected into the new context so they're not lost | ✓ |   |   |
-| **Sub-agent spawned** | Active rules are injected into the sub-agent's context. Sub-agent outcomes (completed/failed/killed) are captured | ✓ |   |   |
-| **Rules sync** | Top 30 rules are exported as typed `.md` files to Claude Code's native memory directory | ✓ |   |   |
-| **Session exit** | **Auto-checkpoint** — the most recent task is extracted into a `{completed, remaining, blockers}` snapshot and saved for the next session. Critical for Pi (no `--resume` flag); safety net for CC users who exit without resuming. Kiro surfaces existing checkpoints at agent start but doesn't auto-create them (no transcript in its hooks) | ✓ | ✓ |   |
-| **End of session** | Session episodes are created, candidate lessons are extracted from failures, and validated patterns are promoted into active rules | ✓ | ✓ |   |
+| **Session start** | Active rules are injected into the agent's context | ✓ | ✓ | ✓ |
+| **As you type** | Prompts are classified; durable preferences/corrections are stored | ✓ | ✓ | ✓ |
+| **Before each tool call** | Relevant rules are re-surfaced next to the action (just-in-time injection) | ✓ | ✓ | ✓ |
+| **Tool outcomes** | Failures are recorded; Bash failures are paired with their eventual fix | ✓ | ✓ | ✓ |
+| **Re-ask detection** | Frustration signals (*"still broken"*) are recorded as outcome events | ✓ | ✓ | ✓ |
+| **Before context compression** | Important context is captured before the window shrinks | ✓ | ✓ |  |
+| **After context compression** | Rules are re-injected into the fresh context | ✓ |  |  |
+| **Sub-agent spawned** | Rules are injected into the sub-agent; its outcome is captured | ✓ |  |  |
+| **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
+| **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 
-Classification and checkpoint extraction use Claude Haiku (via `ANTHROPIC_API_KEY`) with silent regex fallback. No configuration needed.
-
-**Next session:** `load_rules` returns everything captured previously — the agent applies your preferences without being told twice.
+Classification uses an LLM wherever one is available — Claude Code provides `ANTHROPIC_API_KEY` to its hooks; Kiro uses its own included LLM — with silent regex fallback. No configuration needed.
 
 ```bash
 # Verify it's working
@@ -256,249 +141,107 @@ claude-recall search "preference"
 
 ---
 
-## How It Works
-
-Claude Recall provides six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`, `save_checkpoint`, `load_checkpoint`) backed by a local SQLite database with WAL mode, content-hash deduplication, and automatic compaction. The tools are exposed differently depending on the agent:
-
-- **Claude Code** — MCP server with four tools and seven prompts, plus file-system hooks for automatic capture
-- **Pi** — native extension with registered tools and event handlers, plus a skill file for behavioral guidance
-
-| Tool | Claude Code | Pi |
-| ---- | ----------- | --- |
-| Load rules | `mcp__claude-recall__load_rules` | `recall_load_rules` |
-| Store memory | `mcp__claude-recall__store_memory` | `recall_store_memory` |
-| Search memory | `mcp__claude-recall__search_memory` | `recall_search_memory` |
-| Delete memory | `mcp__claude-recall__delete_memory` | `recall_delete_memory` |
-
-### Skills
-
-Claude Recall uses skill files to teach agents when and how to use memory tools.
-
-**Claude Code** uses Anthropic's [Agent Skills](https://agentskills.io/) open standard:
-
-- `.claude/skills/memory-management/SKILL.md` — core skill, guides memory behavior
-- `.claude/skills/auto-*/` — auto-generated, crystallized from accumulated memories
-
-See Anthropic's [Agent Skills blog post](https://claude.com/blog/equipping-agents-for-the-real-world-with-agent-skills) for the standard.
-
-**Pi** ships a single `skills/memory-management.md` loaded via Pi's package manifest. No setup needed.
-
-### Outcome-Aware Learning
-
-Claude Recall tracks what happens *after* the agent acts — not just what was said. The pipeline:
-
-```
-action → outcome event → episode → candidate lesson → promotion → active rule
-                                                                        ↓
-                                                            JIT-injected before next action
-                                                                        ↓
-                                                       PostToolUse resolves outcome per rule
-```
-
-- **Outcome events** capture results from all tool types (Bash, Edit, Write, MCP), test outcomes, user corrections, and reask signals
-- **Episodes** summarize entire sessions with outcome type, severity, and confidence
-- **Candidate lessons** are extracted from failure patterns — deduplicated by Jaccard similarity
-- **Promotion engine** graduates lessons into active rules after 2+ observations (or immediately for high-severity failures)
-- **Just-in-time rule injection (v0.22.0+)** — active rules are surfaced as a `<system-reminder>` block adjacent to each tool call (Claude Code) or each agent turn (Pi). Each injection is recorded in `rule_injection_events` and resolved with the tool's success/failure outcome by the PostToolUse hook. **This is the meter that measures rule effectiveness in practice.** It replaces the older citation-detection regex (which empirically returned 0 citations across thousands of opportunities — agents don't reliably write `(applied from memory: …)` markers, so the meter never had data to work with).
-- **Per-rule effectiveness data** accumulates over time in `rule_injection_events`. Future releases will use it to deboost rules that are repeatedly injected without correlating to successful tool calls, and to auto-promote rules that are repeatedly injected before failures. As of v0.22.0 the data is being collected; ranking is not yet feeding back from it.
-
----
-
-## CLI Reference
-
-### Health Check (run these first)
+## Everyday commands
 
 ```bash
-claude-recall --version              # Confirm installed version
-claude-recall status                 # Installation health: hooks, MCP, DB path, project ID
-claude-recall stats                  # What's in the DB for this project
-claude-recall stats --global         # What's in the DB across ALL projects
-```
+claude-recall status                     # Installation health: hooks, MCP, DB path, project ID
+claude-recall stats                      # What's in the DB for this project (--global for all)
 
-### Inspecting Memories
-
-```bash
-claude-recall search "query"             # Search current project's memories
-claude-recall search "query" --global    # Search across all projects
-claude-recall search "query" --json      # Machine-readable output
-claude-recall search "query" --project <id>  # Search a specific project
-
-claude-recall failures                   # View failure memories (current project)
-claude-recall failures --limit 20        # Show more
-
+claude-recall search "query"             # Search this project's memories (--global, --json, --project <id>)
+claude-recall failures                   # What broke and what fixed it
 claude-recall outcomes                   # Outcome-aware learning status
-claude-recall outcomes --section lessons # Just candidate lessons
-claude-recall outcomes --section stats   # Retrieval/helpfulness stats per memory
-claude-recall outcomes --limit 20        # More items per section
 
-claude-recall monitor                    # Memory search monitoring stats
+claude-recall store "content"            # Store a memory by hand (-t correction|devops|...)
+claude-recall delete <key>               # Delete one memory (keys shown by search)
+claude-recall export backup.json         # Export to JSON (import to restore)
+claude-recall clear --force              # Wipe this project's memories (auto-backup first)
+
+claude-recall upgrade                    # Update the global binary for all runtimes
 ```
 
-### Managing Memories
+### Task checkpoints
+
+Persistent "where I left off" snapshots — one per project, replaced on each save:
 
 ```bash
-claude-recall store "content"                # Store a memory (default type: preference)
-claude-recall store "content" -t correction  # Store with specific type
-claude-recall export backup.json             # Export current project's memories to JSON
-claude-recall export backup.json --global    # Export ALL projects' memories
-claude-recall import backup.json             # Import memories from JSON
-claude-recall clear --force                  # Delete current project's memories (auto-backup written first)
-claude-recall clear --force --global         # Delete ALL projects' memories
+claude-recall checkpoint save --completed "API layer" --remaining "wire the UI" --blockers "none"
+claude-recall checkpoint load
 ```
 
-### Task Checkpoints
-
-Persistent "where I left off" snapshots — one per project, replaces previous on save. Not loaded as a rule; `load_rules` only hints that one exists.
-
-```bash
-claude-recall checkpoint save \
-  --completed "inference layer, domain layer" \
-  --remaining "wire server.js, strip 3GPP URNs" \
-  --blockers "none" \
-  --notes "see inference/README.md"
-
-claude-recall checkpoint load              # Show the latest checkpoint
-claude-recall checkpoint load --json       # Machine-readable
-claude-recall checkpoint clear             # Delete the checkpoint
-```
-
-Agents can also save/load checkpoints via MCP tools (`mcp__claude-recall__save_checkpoint` / `mcp__claude-recall__load_checkpoint`) or Pi tools (`recall_save_checkpoint` / `recall_load_checkpoint`).
-
-#### Auto-checkpoint on session exit (v0.21.2+)
-
-Manual `checkpoint save` is the explicit path. **Auto-checkpoint** is the safety net: when a session ends, the most recent task is extracted into a checkpoint automatically so the next session can resume.
-
-**When it fires:**
-
-- **Pi** — every `session_shutdown` event. **This is the only way to recover context in Pi: there is no `pi --resume` equivalent.**
-- **Claude Code** — voluntary `SessionEnd` reasons (`clear`, `prompt_input_exit`, `logout`). Skips `bypass_permissions_disabled` and `other` (system-driven exits, not user intent). Useful if you exit and start fresh instead of using `claude --resume`.
-
-**Behavior (both runtimes):**
-
-- Uses Haiku to extract `{completed, remaining, blockers}` from the most recent task in the transcript
-- **Quality gate**: refuses to save if the LLM detects the task was already complete (e.g., agent said "Done.", user said "thanks"). **Manual checkpoints are never overwritten with garbage** — an empty checkpoint is far better than a fabricated one
-- **Tagged**: auto-saved checkpoints include `[auto-saved on <pi|cc> session exit at <iso-timestamp>]` in their notes field
-- **Requires `ANTHROPIC_API_KEY`**. Without it, no auto-checkpoint is saved and manual `checkpoint save` still works
-
-**Disable:**
-
-- **Claude Code**: remove the `SessionEnd` block from `.claude/settings.json`
-- **Pi**: no per-project disable flag yet — [open an issue](https://github.com/raoulbia-ai/claude-recall/issues) if you need one
+Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction uses Haiku via `ANTHROPIC_API_KEY`; without a key, only manual checkpoints work. A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
 
 ### Troubleshooting
 
 ```bash
-# "error: unknown command 'kiro'" (or any other command)?
-# Your global binary is older than the feature — upgrade it:
-claude-recall --version                  # What you have
-claude-recall upgrade                    # Get current
+claude-recall status                     # Are hooks + MCP registered? Which project is this?
+claude-recall hooks check                # Do the hook files exist and validate?
+claude-recall mcp status                 # Is the MCP server running? (mcp ps lists all)
+claude-recall project show               # Which project ID does this directory map to?
+claude-recall repair                     # Fix broken hook paths (--dry-run to preview)
+claude-recall mcp cleanup --all          # Stop stale MCP servers
 
-# "Are my hooks installed?"
-claude-recall status                     # Shows hook registration status
-claude-recall hooks check                # Verify hook files exist and are valid
+# What did the hooks actually do?
+tail -20 ~/.claude-recall/hook-logs/hook-dispatcher.log
 
-# "Is the MCP server running?"
-claude-recall mcp status                 # Current project's server status
-claude-recall mcp ps                     # List all running servers
-
-# "Which project does this directory map to?"
-claude-recall project show               # Shows project ID for current directory
-claude-recall project list               # All registered projects
-
-# "Why do I see memories from other projects?"
-claude-recall search "query"             # Scoped to current project (default)
-claude-recall search "query" --global    # Explicitly cross-project
-
-# "How do I check what the DB actually contains?"
-sqlite3 ~/.claude-recall/claude-recall.db "SELECT type, COUNT(*) FROM memories GROUP BY type"
-sqlite3 ~/.claude-recall/claude-recall.db "SELECT type, COUNT(*) FROM memories WHERE project_id = '<id>' GROUP BY type"
-
-# "Hook logs — what did the hooks actually do?"
-tail -20 ~/.claude-recall/hook-logs/tool-outcome-watcher.log
-tail -20 ~/.claude-recall/hook-logs/memory-stop.log
-tail -20 ~/.claude-recall/hook-logs/correction-detector.log
-
-# "Something is broken, start fresh"
-claude-recall repair                     # Conservative: fix broken hook paths in settings.json (preserves your customizations)
-claude-recall repair --dry-run           # Preview what repair would change
-claude-recall repair --reinstall-hooks   # Opinionated: rewrite entire hook block from current template
-claude-recall setup --install            # Reinstall skills + hooks
-claude-recall mcp cleanup --all          # Stop all stale MCP servers
+# "error: unknown command '<x>'" → your binary predates the feature:
+claude-recall upgrade
 ```
 
 <details>
-<summary>All commands</summary>
+<summary><b>All commands</b></summary>
 
 ```bash
 # ── Setup & Diagnostics ─────────────────────────────────────────────
 claude-recall setup                      # Show activation instructions
 claude-recall setup --install            # Install skills + hooks (Claude Code, current project)
-claude-recall kiro setup                 # Write Kiro custom agent (.kiro/agents/recall.json); --global for all projects
-claude-recall kiro setup --merge-into <agent>  # Merge Claude Recall into an existing Kiro agent (backup + append-only + idempotent)
+claude-recall kiro setup                 # Write Kiro custom agent (--global for all projects)
+claude-recall kiro setup --merge-into <agent>  # Merge into an existing Kiro agent
+claude-recall kiro doctor                # Kiro integration health report
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
-claude-recall repair                     # Fix broken claude-recall hook paths (conservative: preserves user customizations)
-claude-recall repair --auto              # Non-interactive; apply safe fixes without prompting (used by postinstall)
+claude-recall repair                     # Fix broken claude-recall hook paths (preserves your customizations)
+claude-recall repair --auto              # Non-interactive; apply safe fixes without prompting
 claude-recall repair --dry-run           # Report what would change without writing
-claude-recall repair --scope user|project|all  # Scope the scan: user (~/.claude), project (closest .claude walking up from cwd), all (user + every nested project under ~). Default: all
+claude-recall repair --scope user|project|all  # Scope the scan (default: all)
 claude-recall repair --reinstall-hooks   # Opinionated: rewrite entire hook block from current template
 claude-recall hooks check                # Verify hook files exist and are valid
 claude-recall hooks test-enforcement     # Test if search enforcer hook works
 
 # ── Memory ───────────────────────────────────────────────────────────
-claude-recall stats                      # Memory statistics (current project)
-claude-recall stats --global             # Memory statistics (all projects)
-claude-recall search "query"             # Search memories (current project)
-claude-recall search "query" --global    # Search memories (all projects)
-claude-recall search "query" --json      # Output as JSON
-claude-recall search "query" --project <id>  # Search specific project
+claude-recall stats                      # Memory statistics (--global for all projects)
+claude-recall search "query"             # Search memories (--global, --json, --project <id>)
 claude-recall store "content"            # Store memory directly
-claude-recall store "content" -t <type>  # Store with type (preference, correction, failure, devops, project-knowledge)
-claude-recall export backup.json         # Export current project's memories to JSON
-claude-recall export backup.json --global # Export all projects
+claude-recall store "content" -t <type>  # Type: preference, correction, failure, devops, project-knowledge
+claude-recall export backup.json         # Export current project (--global for all)
 claude-recall import backup.json         # Import memories from JSON
 claude-recall delete <key>               # Delete one memory by key (get keys from `search`)
-claude-recall clear --force              # Clear current project (auto-backup written first)
-claude-recall clear --force --global     # Clear all projects
-claude-recall failures                   # View failure memories
-claude-recall failures --limit 20        # Limit results
-claude-recall outcomes                   # Outcome-aware learning status
-claude-recall outcomes --section lessons # Just candidate lessons
-claude-recall outcomes --section stats   # Retrieval/helpfulness stats
-claude-recall outcomes --limit 20        # More items per section
+claude-recall clear --force              # Clear current project (--global for all; auto-backup written first)
+claude-recall failures                   # View failure memories (--limit N)
+claude-recall outcomes                   # Outcome-aware learning status (--section lessons|stats, --limit N)
 claude-recall monitor                    # Memory search monitoring stats
 
 # ── Rule Hygiene ─────────────────────────────────────────────────────
-claude-recall rules demote [--dry-run]              # Demote rules loaded >=N times but never cited
-claude-recall rules demote --min-loads 20           # Tune load-count threshold (default 20)
-claude-recall rules demote --min-age-days 7         # Minimum age before demotion (default 7)
-claude-recall rules promote <id>                    # Restore an auto-demoted or auto-deduped rule
-claude-recall rules dedup [--dry-run]               # Collapse near-duplicate rules (Jaccard >= threshold)
-claude-recall rules dedup --threshold 0.8           # Stricter similarity (default 0.65)
-
-# ── Cleanup (destructive — always --dry-run first) ─────────────────
-claude-recall cleanup test-pollution [--dry-run]    # Delete legacy test-fixture rows
+claude-recall rules demote [--dry-run]   # Demote rules loaded >=N times but never cited
+claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
+claude-recall rules promote <id>         # Restore an auto-demoted or auto-deduped rule
+claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)
 
 # ── Task Checkpoints ────────────────────────────────────────────────
-claude-recall checkpoint save --completed <text> --remaining <text> [--blockers <text>] [--notes <text>] [--project <id>]
-claude-recall checkpoint load [--project <id>] [--json]
-claude-recall checkpoint clear [--project <id>]
+claude-recall checkpoint save --completed <text> --remaining <text> [--blockers <text>] [--notes <text>]
+claude-recall checkpoint load [--json]
+claude-recall checkpoint clear
 
 # ── Skills ───────────────────────────────────────────────────────────
-claude-recall skills generate            # Generate skills from memories
-claude-recall skills generate --dry-run  # Preview without writing
-claude-recall skills generate --force    # Regenerate even if unchanged
+claude-recall skills generate            # Generate skills from memories (--dry-run, --force)
 claude-recall skills list                # List generated skills
 claude-recall skills clean --force       # Remove all auto-generated skills
 
 # ── MCP Server ───────────────────────────────────────────────────────
 claude-recall mcp status                 # Current project's server status
 claude-recall mcp ps                     # List all running servers
-claude-recall mcp stop                   # Stop server
-claude-recall mcp stop --force           # Force stop
-claude-recall mcp restart                # Stop server + print start instructions (a stdio server can't self-respawn; Claude Code restarts it on next session)
-claude-recall mcp cleanup                # Remove stale PID files
-claude-recall mcp cleanup --all          # Stop all servers
+claude-recall mcp stop [--force]         # Stop server
+claude-recall mcp restart                # Stop server (Claude Code respawns it next session)
+claude-recall mcp cleanup [--all]        # Remove stale PID files / stop all servers
 
 # ── Project ──────────────────────────────────────────────────────────
 claude-recall project show               # Current project info
@@ -508,8 +251,8 @@ claude-recall project unregister [id]    # Unregister a project
 claude-recall project clean              # Remove stale registry entries
 
 # ── Database Maintenance ─────────────────────────────────────────────
-claude-recall compact                    # Dedup + prune retention overflow + VACUUM (also runs automatically on MCP boot)
-claude-recall compact --dry-run          # Preview what compaction would remove
+claude-recall compact                    # Dedup + prune + VACUUM (--dry-run to preview; also runs on MCP boot)
+claude-recall cleanup test-pollution [--dry-run]  # Delete legacy test-fixture rows
 
 # ── Auto-Capture Hooks (run automatically, registered via setup --install) ──
 claude-recall hook run correction-detector   # UserPromptSubmit hook
@@ -522,46 +265,86 @@ claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rul
 
 ---
 
-## Project Scoping
+## How it works
 
-Each project gets isolated memory based on its working directory. **Project ID** is derived from the `cwd` passed by the agent. Universal memories (no project scope) are available everywhere. Switching projects switches memory automatically.
+Six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`, `save_checkpoint`, `load_checkpoint`) backed by one local SQLite database (`~/.claude-recall/claude-recall.db`, WAL mode, content-hash dedup, auto-compaction). Exposure per agent:
 
-To pin the project id explicitly — e.g. one logical project spanning several directories (worktrees, subrepos) — set `CLAUDE_RECALL_PROJECT_ID` (see [Environment Variables](#environment-variables)).
+- **Claude Code** — MCP server (`mcp__claude-recall__*` tools) + file-system hooks for automatic capture
+- **Pi** — native extension (`recall_*` tools) + event handlers
+- **Kiro CLI** — custom agent bundling the MCP server + Kiro hooks ([details](docs/kiro.md))
 
-Database location: `~/.claude-recall/claude-recall.db` (shared file, scoped by `project_id` column).
+**Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`, plus auto-generated `.claude/skills/auto-*/` crystallized from accumulated memories), and a bundled skill file for Pi.
 
----
+**Outcome-aware learning.** Claude Recall tracks what happens *after* the agent acts:
 
-## Security & Privacy
-
-- SQLite memory never leaves your machine
-- No prompts, code, or memory content is transmitted
-- Full transparency via CLI (`stats`, `search`, `export`)
-- Never stores secrets (API keys, passwords, tokens)
-
-Details in [docs/security.md](docs/security.md).
-
----
-
-<details>
-<summary>WSL Users</summary>
-
-If you hit "invalid ELF header" errors from mixed Windows/WSL `node_modules`, ensure you're using the global install (now the default). Verify the binary resolves to a Linux path:
-
-```bash
-which claude-recall
-# Should show: /home/<user>/.nvm/.../bin/claude-recall (NOT a Windows path)
+```
+action → outcome event → episode → candidate lesson → promotion → active rule
+                                                                      ↓
+                                                    JIT-injected before the next action
+                                                                      ↓
+                                                    outcome resolved per injected rule
 ```
 
-Global installation does **not** affect project scoping — project ID is still detected from Claude Code's working directory.
+Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
+
+---
+
+## Upgrading
+
+One command upgrades the shared binary for **all** runtimes:
+
+```bash
+claude-recall upgrade
+```
+
+It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version.
+
+Per-runtime notes:
+
+- **Claude Code** — nothing else needed. If the release notes mention new or changed hooks, also re-run `claude-recall setup --install` in each active project (safe any time; a no-op when current).
+- **Pi** — run `pi update npm:claude-recall` and restart Pi.
+- **Kiro CLI** — the binary upgrade covers hook behaviour; when release notes change the agent *template*, re-run `kiro setup` once and start one fresh conversation — see [docs/kiro.md](docs/kiro.md#upgrading).
+
+<details>
+<summary><b>Install & upgrade troubleshooting</b> (EACCES, unknown command, pre-0.27 registrations)</summary>
+
+**`EACCES: permission denied`** — your global npm prefix is root-owned (common when node came from `apt`). Quick fix: `sudo npm install -g claude-recall@latest`. Permanent fix — move the prefix to a user-owned directory so global installs never need sudo again:
+
+```bash
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+npm install -g claude-recall@latest
+claude-recall --version
+```
+
+**`error: unknown command '<anything>'`** — your installed binary is older than the docs you're reading (`kiro` needs ≥ 0.28.0, `compact` ≥ 0.26.0, `upgrade` ≥ 0.23.2). Run `claude-recall upgrade`; if `upgrade` itself is unknown, bootstrap with `npm install -g claude-recall@latest`.
+
+**Claude Code registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
+
+```bash
+claude mcp remove claude-recall
+claude mcp add claude-recall -- claude-recall mcp start
+```
+
+**WSL: "invalid ELF header"** — mixed Windows/WSL `node_modules`. Use the global install (the default) and verify the binary resolves to a Linux path: `which claude-recall` should show `/home/<user>/...`, not a Windows path. Global installation does not affect project scoping.
 
 </details>
 
 ---
 
-## Environment Variables
+## Project scoping
 
-Runtime behavior can be tuned via environment variables. Defaults are chosen so out-of-the-box behavior stays close to historical output; opt in as needed.
+Each project gets isolated memory. The **project ID** is derived from the working directory the agent reports; universal memories (no project scope) are available everywhere. Switching projects switches memory automatically — no configuration.
+
+To pin one logical project across several directories (worktrees, subrepos), set `CLAUDE_RECALL_PROJECT_ID`. Details: [docs/project-scoping.md](docs/project-scoping.md).
+
+---
+
+## Configuration
+
+Defaults work out of the box; tune via environment variables as needed.
 
 | Variable                                 | Default | Effect                                                                                                   |
 | ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
@@ -579,14 +362,24 @@ Runtime behavior can be tuned via environment variables. Defaults are chosen so 
 | `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `on`    | Set to `off` to bypass the search-enforcer hook.                                                         |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
-| `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). Citations still scan every turn. `0` disables. |
-| `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. Useful when one logical project spans several directories (worktrees, subrepos). |
+| `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). `0` disables. |
+| `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
 
 ---
 
-## Development & Contributions
+## Security & privacy
 
-PRs welcome — Claude Recall is open to contributors.
+- SQLite memory never leaves your machine — no prompts, code, or memory content is transmitted
+- Full transparency via CLI (`stats`, `search`, `export`)
+- Never stores secrets (API keys, passwords, tokens)
+
+Details in [docs/security.md](docs/security.md).
+
+---
+
+## Development & contributions
+
+PRs welcome.
 
 ```bash
 npm run build          # Compile TypeScript
