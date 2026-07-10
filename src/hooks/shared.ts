@@ -20,9 +20,16 @@ export interface ClassifyResult {
 // "I want", "I use" — were deleted rather than promoted because they match
 // ordinary conversation far too often.)
 const CORRECTION_PATTERNS = [
-  { regex: /^no[,.]?\s+(.+)/i, confidence: 0.8 },
+  // "no ..." only counts as a correction when the remainder carries a durable-
+  // rule signal (use/not/instead/always/...). Without the lookahead, one-off
+  // task imperatives were stored: "no first fix the sentence" became the
+  // correction "first fix the sentence".
+  { regex: /^no[,.]?\s+(?=.*\b(?:use|not|instead|never|always|don'?t|stop|should|must)\b)(.+)/i, confidence: 0.8 },
   { regex: /^wrong[,.]?\s+(.+)/i, confidence: 0.8 },
-  { regex: /\bnever\s+(.+)/i, confidence: 0.75 },
+  // "never" must start the message or a sentence. Mid-clause "never" fired on
+  // QUOTED text the user was discussing: pasting "it never touches your token
+  // allowance" stored "touches your token allowance..." as a correction.
+  { regex: /(?:^|[.!?;:]\s+)never\s+(.+)/i, confidence: 0.75 },
   { regex: /\bdon'?t\s+ever\s+(.+)/i, confidence: 0.8 },
   { regex: /\bstop\s+(doing|using|adding)\s+(.+)/i, confidence: 0.75 },
 ];
@@ -34,7 +41,16 @@ const PREFERENCE_PATTERNS = [
   // no-MCP) capture path, which matters under enterprise Kiro governance that
   // blocks the MCP tools. The interrogative/question-mark guards below keep
   // "do you remember that config file?" / "do you recall X?" out.
-  { regex: /\b(?:remember|recall)\s+(?:that\s+|this\s+|to\s+)?(.+)/i, confidence: 0.8 },
+  //
+  // Two hazards from talking ABOUT this tool (both observed in the wild):
+  //   1. The product name: "claude-recall" / "claude recall" contains the
+  //      trigger word — "how claude recall is used" stored "is used...". The
+  //      lookbehind skips "recall" when preceded by "claude-"/"claude ".
+  //   2. Non-imperative uses where "recall" is a noun/subject followed by a
+  //      copula or auxiliary ("the recall is broken") — an imperative
+  //      "remember/recall X" is never followed by a bare auxiliary, so the
+  //      negative lookahead rejects those.
+  { regex: /(?<!claude[- ])\b(?:remember|recall)\s+(?:that\s+|this\s+|to\s+)?(?!(?:is|was|are|were|has|have|had|does|did|will|would|can|could|should|may|might)\b)(.+)/i, confidence: 0.8 },
   { regex: /\bfrom\s+now\s+on[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\bgoing\s+forward[,.]?\s+(.+)/i, confidence: 0.8 },
   { regex: /\balways\s+(.+)/i, confidence: 0.75 },
@@ -108,15 +124,22 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
  * Classify text content — LLM-first, regex fallback. No API key is ever
  * required: each runtime brings its own LLM.
  *
- * Precedence:
- *   - Under Claude Code: Claude Haiku via ANTHROPIC_API_KEY (Claude Code
- *     provides this to its hooks) → regex.
- *   - Under Kiro (CLAUDE_RECALL_KIRO_CLASSIFIER set by the kiro-capture-worker):
- *     Kiro's own headless LLM (`kiro-cli chat --no-interactive`) → ANTHROPIC_
- *     API_KEY if present → regex. Kiro's included LLM is preferred so a stray
- *     key doesn't spend the user's Anthropic credits; CLAUDE_RECALL_PREFER_API_
- *     KEY flips the order. The Kiro call is ~3s, so it runs only from the
- *     detached worker, never inline. See docs/kiro-llm-capture.md.
+ * Precedence (the included-LLM backends run only inside the detached capture
+ * workers, which set the *_CLASSIFIER env vars — a ~4s CLI call can't run
+ * inline on a turn):
+ *   - Under Claude Code (CLAUDE_RECALL_CC_CLASSIFIER set by cc-capture-worker):
+ *     headless `claude -p` on the user's Claude SUBSCRIPTION → ANTHROPIC_API_KEY
+ *     if present → regex.
+ *   - Under Kiro (CLAUDE_RECALL_KIRO_CLASSIFIER set by kiro-capture-worker):
+ *     Kiro's own headless LLM (`kiro-cli chat --no-interactive`, Kiro credits)
+ *     → ANTHROPIC_API_KEY if present → regex.
+ *   - Inline callers (memory-stop batch, etc.): ANTHROPIC_API_KEY → regex.
+ *
+ * The included LLM is preferred so a stray exported key doesn't silently
+ * spend the user's Anthropic API credits; CLAUDE_RECALL_PREFER_API_KEY flips
+ * the order. NOTE: ANTHROPIC_API_KEY is always a personal key the user
+ * exported — Claude Code does NOT provide one from the subscription.
+ * See docs/kiro-llm-capture.md.
  */
 export async function classifyContent(text: string): Promise<ClassifyResult | null> {
   // Guard the LLM paths the same way the regex path is guarded: a question or
@@ -136,24 +159,33 @@ export async function classifyContent(text: string): Promise<ClassifyResult | nu
 
 async function classifyContentInner(text: string): Promise<ClassifyResult | null> {
   const underKiro = !!process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+  const underCc = !!process.env.CLAUDE_RECALL_CC_CLASSIFIER;
   const preferApiKey = !!process.env.CLAUDE_RECALL_PREFER_API_KEY;
 
   const tryApiKey = () => classifyWithLLM(text);
-  // Dynamic import keeps kiro-classifier (and child_process) out of the module
-  // graph for every non-Kiro hook invocation.
+  // Dynamic imports keep the CLI classifiers (and child_process) out of the
+  // module graph for hook invocations that don't run in a capture worker.
   const tryKiro = async () => (await import('./kiro-classifier')).classifyWithKiro(text);
+  const tryCc = async () => (await import('./cc-classifier')).classifyWithClaudeCli(text);
 
-  // Order the two LLM backends. Under Kiro, prefer Kiro's INCLUDED LLM over a
-  // stray ANTHROPIC_API_KEY: a key exported for other tools should not silently
-  // spend the user's Anthropic credits when Kiro already ships an LLM. Set
-  // CLAUDE_RECALL_PREFER_API_KEY to force the key first (e.g. to use a stronger
-  // model you pay for). Under Claude Code the Kiro backend isn't available, so
-  // the key path is the only LLM classifier.
+  // Order the LLM backends. Each runtime's INCLUDED LLM comes before a stray
+  // ANTHROPIC_API_KEY: a key exported for other tools should not silently
+  // spend the user's Anthropic API credits when the runtime already provides
+  // an LLM — Kiro via `kiro-cli chat --no-interactive` (Kiro credits), Claude
+  // Code via `claude -p` (the user's Claude subscription). Set
+  // CLAUDE_RECALL_PREFER_API_KEY to force the key first (e.g. to use a
+  // stronger model you pay for). The CLI backends only run inside their
+  // detached capture workers (which set the *_CLASSIFIER env vars) — inline
+  // hook paths stay key → regex, since a ~4s CLI call can't block a turn.
   const backends: Array<() => Promise<ClassifyResult | null>> = [];
   if (underKiro && !preferApiKey) {
     backends.push(tryKiro, tryApiKey);
   } else if (underKiro) {
     backends.push(tryApiKey, tryKiro);
+  } else if (underCc && !preferApiKey) {
+    backends.push(tryCc, tryApiKey);
+  } else if (underCc) {
+    backends.push(tryApiKey, tryCc);
   } else {
     backends.push(tryApiKey);
   }

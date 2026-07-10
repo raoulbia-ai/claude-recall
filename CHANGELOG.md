@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.31.0] - 2026-07-10
+
+### Added
+
+- **Capture under Claude Code now runs on your Claude subscription — no API key.** A new `cc-classifier` invokes headless `claude -p` (the same login that powers your interactive session) from a detached background worker, mirroring the 0.29.x Kiro-LLM design. Precedence under Claude Code is now: **Claude subscription (`claude -p`) → `ANTHROPIC_API_KEY` (if you exported one) → regex**; `CLAUDE_RECALL_PREFER_API_KEY=1` flips to key-first. New env vars: `CLAUDE_RECALL_CC_MODEL` (default `haiku`), `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS` (default `30000`). Notes:
+  - `ANTHROPIC_API_KEY` is **stripped from the `claude -p` child env** — the CLI otherwise prefers a key over subscription auth, so a stray (possibly dead) key would hijack the call.
+  - Recursion-guarded: the nested headless session inherits `CLAUDE_RECALL_CC_CLASSIFIER=1`, and the capture hook refuses to spawn a worker when it's set.
+  - No re-setup needed: the registered hook name (`hook run correction-detector`) is unchanged; it now spawns the worker instead of classifying inline.
+  - **Behavior change:** the synchronous `📌 Recall: auto-captured …` echo is gone under Claude Code — capture is silent and lands a few seconds later (same contract as Kiro). Verify via `~/.claude-recall/hook-logs/cc-classifier.log` or `claude-recall search`.
+- CLI classifiers now log a deliberate `none` verdict as `classified as none (not a durable rule)` instead of the ambiguous `no parseable classification`.
+
+### Fixed
+
+- **Four regex false positives observed while talking *about* claude-recall** (each stored a junk memory in a real session):
+  - `recall …` no longer fires inside the product name (`claude-recall` / `claude recall`) — previously "how claude recall is used in practice" stored "is used in practice".
+  - `recall/remember` followed by a bare auxiliary ("the recall is broken") no longer reads as an imperative.
+  - `never …` must now start the message or a sentence — previously quoting "it never touches your token allowance" stored the quoted tail as a correction.
+  - `no …` only counts as a correction when the remainder carries a durable-rule signal (use/not/instead/always/…) — previously "no first fix the sentence" stored "first fix the sentence".
+- **Strengthened both LLM classify prompts against one-off task instructions.** New "standalone test": a rule must make sense read cold in a future session; deictic references ("this", "that", "the sentence"), task-scoped imperatives ("fix the sentence"), fragments, and meta-conversation are explicitly `none`, with negative examples drawn from the observed junk. Verified live: 8/8 noise phrases rejected, genuine preferences still captured.
+
+### Documentation
+
+- Corrected a long-standing false claim: Claude Code does **not** provide `ANTHROPIC_API_KEY` to its hooks — hooks merely inherit your environment, so the key path always meant *your personal API credits*. README (worked example, features, env table), `docs/kiro-llm-capture.md`, and code comments updated to describe the real model: each runtime brings its own LLM, and an exported key is opt-in fallback only.
+
 ## [0.30.3] - 2026-07-10
 
 ### Documentation

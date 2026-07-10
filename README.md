@@ -14,11 +14,13 @@ It works with **Claude Code**, **[Pi](https://github.com/mariozechner/pi)**, and
 
 > **You:** use pnpm here, not npm
 
+Seconds later, silently in the background (`~/.claude-recall/hook-logs/cc-classifier.log`):
+
 ```text
-📌 Recall: auto-captured correction — Use pnpm, not npm
+classified via claude -p (model=haiku, Claude subscription, no API key): correction — Use pnpm, not npm
 ```
 
-That one line did everything. A hook classified your prompt with an LLM, decided it was a durable rule (not chit-chat), and stored it locally. No "remember this" incantation, no tool call, no config file to edit.
+That's the whole workflow. A background hook classified your prompt with an LLM — **the agent's own LLM** (your Claude subscription under Claude Code, Kiro's credits under Kiro; no API key involved) — decided it was a durable rule and stored it locally. No "remember this" incantation, no tool call, no config file to edit.
 
 **Friday — brand-new session, no shared history:**
 
@@ -42,7 +44,7 @@ $ claude-recall search "pnpm"
 
 ## Features
 
-- **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts (regex fallback when no LLM is available)
+- **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts, running on **the agent's own LLM** (Claude subscription / Kiro credits — never a separate API key), with regex fallback when no LLM is available
 - **Applied where it counts** — rules load at session start *and* are re-surfaced just-in-time before each tool call
 - **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
 - **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
@@ -82,6 +84,13 @@ claude mcp add --scope user claude-recall -- claude-recall mcp start
 ```
 
 Hook-based auto-capture remains a per-project opt-in via `claude-recall setup --install`.
+
+**Capture runs on your Claude subscription — no API key.** The capture hook classifies each prompt via a headless `claude -p` call on the same login that powers your session, in a detached background worker (your turn is never blocked; capture is silent and lands a few seconds later). If you happen to have `ANTHROPIC_API_KEY` exported for other tools, it is deliberately **not** used unless you set `CLAUDE_RECALL_PREFER_API_KEY=1` — a stray key shouldn't quietly spend your Anthropic API credits. Verify captures any time:
+
+```bash
+tail -5 ~/.claude-recall/hook-logs/cc-classifier.log   # which model ran, what was stored
+claude-recall search "something you said"
+```
 
 ### Pi
 
@@ -160,7 +169,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 
-Classification uses an LLM wherever one is available — Claude Code provides `ANTHROPIC_API_KEY` to its hooks; Kiro uses its own included LLM — with silent regex fallback. No configuration needed.
+Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with `ANTHROPIC_API_KEY` (if you exported one *and* opted in) and regex as fallbacks. No API key is ever required; no configuration needed.
 
 ```bash
 # Verify it's working
@@ -378,9 +387,11 @@ Defaults work out of the box; tune via environment variables as needed.
 | Variable                                 | Default | Effect                                                                                                   |
 | ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `CLAUDE_RECALL_DB_PATH`                  | `~/.claude-recall/` | Database directory.                                                                          |
-| `ANTHROPIC_API_KEY`                      | _(unset)_ | LLM classification via Haiku. Not required — Claude Code provides it to its hooks, and under Kiro the included LLM is used instead (and is preferred even if this is set). Regex is the final fallback. |
+| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based classification. **Never required and never provided by Claude Code** — capture uses each runtime's own LLM first (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`). A key you exported is only consulted as a fallback, or first with `CLAUDE_RECALL_PREFER_API_KEY=1`. Regex is the final fallback. |
+| `CLAUDE_RECALL_CC_MODEL`                 | `haiku` | Dedicated model for capture classification under Claude Code (passed to `claude -p --model`) — independent of your interactive session model. |
+| `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS`        | `30000` | Hard cap on the headless `claude -p` classify call before the capture worker gives up and falls through. |
 | `CLAUDE_RECALL_KIRO_MODEL`               | `claude-haiku-4.5` | Dedicated model for Kiro-LLM capture classification — **independent of your interactive Kiro chat model**. Raise to `claude-sonnet-4.6` for steadier judgement at more credits. See [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md). |
-| `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | Under Kiro, force `ANTHROPIC_API_KEY`-based classification ahead of Kiro's included LLM (uses your Anthropic credits — e.g. for a stronger model). No effect under Claude Code. |
+| `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | Force `ANTHROPIC_API_KEY`-based classification ahead of the runtime's included LLM (uses your Anthropic API credits — e.g. for a model you pay for). Applies under both Claude Code and Kiro. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS`      | `30000` | Hard cap on the headless `kiro-cli` classify call before the capture worker gives up and falls back to regex. |
 | `CLAUDE_RECALL_LOAD_BUDGET_TOKENS`       | `2000`  | Token budget for the `load_rules` payload. Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures) and dropped rules surface via `search_memory`. |
 | `CLAUDE_RECALL_AUTO_DEMOTE`              | `false` | When `true`, auto-demote rules on MCP boot where `load_count >= CLAUDE_RECALL_DEMOTE_MIN_LOADS`, `cite_count = 0`, and age `> CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`. Still reversible via `rules promote <id>`. |
