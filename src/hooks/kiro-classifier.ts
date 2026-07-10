@@ -161,6 +161,14 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
       const result = extractClassification(stdout);
       if (!result) {
         hookLog('kiro-classifier', 'no parseable classification in kiro-cli output');
+      } else {
+        // Log success too, not just failures — otherwise a successful Kiro
+        // classification is silent and indistinguishable from "never ran",
+        // which makes "did the Kiro LLM handle this?" impossible to answer
+        // from the log. Spell out that this ran on Kiro credits (not the
+        // ANTHROPIC_API_KEY) using a dedicated classifier model — the `model`
+        // is CLAUDE_RECALL_KIRO_MODEL, independent of the interactive chat model.
+        hookLog('kiro-classifier', `classified via kiro-cli (model=${model}, Kiro credits, no API key): ${result.type} — ${result.extract.slice(0, 60)}`);
       }
       done(result);
     });
