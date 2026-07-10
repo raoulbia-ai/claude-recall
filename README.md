@@ -103,7 +103,7 @@ You get: active rules injected into context automatically at agent start (no too
 claude-recall kiro setup --merge-into <agent-name>
 ```
 
-This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — without touching anything the agent already had. Idempotent: re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
+This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — while leaving your own config untouched. It only rewrites claude-recall's own entries: superseded ones from an older version are swapped for the current wiring (any unrelated hook you have on the same event is preserved). Idempotent: on an already-current agent, re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
 
 > **⚠️ After `kiro setup` or `--merge-into`: start ONE fresh conversation per project (no `--resume`).** Kiro snapshots the agent config into each conversation **at creation** — `--resume` restores that snapshot and ignores agent-config changes made since. So conversations created *before* you wired claude-recall will **never** run its hooks, no matter how often you resume them or restart Kiro. Start one fresh conversation after wiring; every conversation created from then on carries the hooks, **including when resumed** (`--resume` works normally afterwards — this is a one-time rollover per project).
 
@@ -175,7 +175,7 @@ Per-runtime notes:
 
 - **Claude Code** — nothing else needed; registrations point at the `claude-recall` command, not a pinned path. If the release notes mention new or changed hooks (a `hooksVersion` bump), also re-run `claude-recall setup --install` in each active project — safe any time; a no-op when hooks are already current.
 - **Pi** — run `pi update npm:claude-recall` and restart Pi.
-- **Kiro CLI** — nothing else needed; the agent config points at the `claude-recall` command. If the release notes mention changes to the Kiro agent template, re-run `claude-recall kiro setup --force` in each project that uses it.
+- **Kiro CLI** — the agent config points at the `claude-recall` command, so the binary upgrade alone applies to hook *behaviour*. But when the release notes change the agent *template* (new hooks, the classifier agent, revised wiring — e.g. the **0.29.x** Kiro-LLM capture), re-run setup once so the agent picks it up: `claude-recall kiro setup --force` for the standalone `recall` agent, or `claude-recall kiro setup --merge-into <agent>` for an agent you merged into. That also writes the `claude-recall-classifier` agent and strips any superseded hooks. Then start one fresh conversation per project (the snapshot rollover above). `claude-recall kiro doctor` confirms the result.
 
 > **Claude Code registered before v0.27.x?** Older versions auto-registered the MCP server with an `npx`-based command, which re-resolves the package on every server start and can be shadowed by stale project-local installs. Switch to the direct binary form (run in each affected project):
 >
