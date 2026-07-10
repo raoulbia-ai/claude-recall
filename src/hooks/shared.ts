@@ -128,18 +128,17 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
  * workers, which set the *_CLASSIFIER env vars — a ~4s CLI call can't run
  * inline on a turn):
  *   - Under Claude Code (CLAUDE_RECALL_CC_CLASSIFIER set by cc-capture-worker):
- *     headless `claude -p` on the user's Claude SUBSCRIPTION → ANTHROPIC_API_KEY
- *     if present → regex.
+ *     headless `claude -p` on the user's Claude SUBSCRIPTION → regex.
  *   - Under Kiro (CLAUDE_RECALL_KIRO_CLASSIFIER set by kiro-capture-worker):
  *     Kiro's own headless LLM (`kiro-cli chat --no-interactive`, Kiro credits)
- *     → ANTHROPIC_API_KEY if present → regex.
- *   - Inline callers (memory-stop batch, etc.): ANTHROPIC_API_KEY → regex.
+ *     → regex.
+ *   - Inline callers: straight to regex.
  *
- * The included LLM is preferred so a stray exported key doesn't silently
- * spend the user's Anthropic API credits; CLAUDE_RECALL_PREFER_API_KEY flips
- * the order. NOTE: ANTHROPIC_API_KEY is always a personal key the user
- * exported — Claude Code does NOT provide one from the subscription.
- * See docs/kiro-llm-capture.md.
+ * The ANTHROPIC_API_KEY path is STRICTLY OPT-IN via
+ * CLAUDE_RECALL_PREFER_API_KEY — an exported key is never consulted
+ * otherwise, not even as a fallback. (It is always a personal key the user
+ * exported — Claude Code does NOT provide one from the subscription.)
+ * See docs/cc-llm-capture.md and docs/kiro-llm-capture.md.
  */
 export async function classifyContent(text: string): Promise<ClassifyResult | null> {
   // Guard the LLM paths the same way the regex path is guarded: a question or
@@ -168,26 +167,23 @@ async function classifyContentInner(text: string): Promise<ClassifyResult | null
   const tryKiro = async () => (await import('./kiro-classifier')).classifyWithKiro(text);
   const tryCc = async () => (await import('./cc-classifier')).classifyWithClaudeCli(text);
 
-  // Order the LLM backends. Each runtime's INCLUDED LLM comes before a stray
-  // ANTHROPIC_API_KEY: a key exported for other tools should not silently
-  // spend the user's Anthropic API credits when the runtime already provides
-  // an LLM — Kiro via `kiro-cli chat --no-interactive` (Kiro credits), Claude
-  // Code via `claude -p` (the user's Claude subscription). Set
-  // CLAUDE_RECALL_PREFER_API_KEY to force the key first (e.g. to use a
-  // stronger model you pay for). The CLI backends only run inside their
-  // detached capture workers (which set the *_CLASSIFIER env vars) — inline
-  // hook paths stay key → regex, since a ~4s CLI call can't block a turn.
+  // Pick the LLM backends. The ANTHROPIC_API_KEY path is STRICTLY OPT-IN
+  // (CLAUDE_RECALL_PREFER_API_KEY): claude-recall was built for runtimes that
+  // bring their own LLM — Kiro via `kiro-cli chat --no-interactive` (Kiro
+  // credits), Claude Code via `claude -p` (the user's Claude subscription) —
+  // and a key exported for other tools must NEVER be spent silently, not even
+  // as a fallback. Without the opt-in, the chain is included LLM → regex.
+  // The opt-in exists for Pi-only users (no `claude` binary; their key is how
+  // they run Pi itself) and anyone deliberately paying for a stronger model.
+  // The CLI backends only run inside their detached capture workers (which
+  // set the *_CLASSIFIER env vars) — inline hook paths go straight to regex,
+  // since a ~4s CLI call can't block a turn.
   const backends: Array<() => Promise<ClassifyResult | null>> = [];
-  if (underKiro && !preferApiKey) {
-    backends.push(tryKiro, tryApiKey);
-  } else if (underKiro) {
-    backends.push(tryApiKey, tryKiro);
-  } else if (underCc && !preferApiKey) {
-    backends.push(tryCc, tryApiKey);
+  if (preferApiKey) backends.push(tryApiKey);
+  if (underKiro) {
+    backends.push(tryKiro);
   } else if (underCc) {
-    backends.push(tryApiKey, tryCc);
-  } else {
-    backends.push(tryApiKey);
+    backends.push(tryCc);
   }
 
   for (const backend of backends) {

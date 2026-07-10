@@ -89,20 +89,23 @@ Kiro userPromptSubmit
         ▼
   handleCorrectionDetector → classifyContent()
         │
-        ├─ classifyWithLLM()   → ANTHROPIC_API_KEY (unset under Kiro) → null
         ├─ classifyWithKiro()  → kiro-cli chat --no-interactive --agent
         │                         claude-recall-classifier --model claude-haiku-4.5
         │                         → {"type","confidence","extract"}
-        └─ regex fallback       (only if both above yield nothing)
+        └─ regex fallback       (only if the above yields nothing)
+
+  (classifyWithLLM() / ANTHROPIC_API_KEY exists but is OPT-IN only —
+   never in the default chain)
 ```
 
-Capture precedence under Kiro: **Kiro's included LLM → `ANTHROPIC_API_KEY` if
-present → regex as a last resort.** The Kiro LLM comes first *even when a key is
-set*, so a key exported for other tools never silently spends the user's
-Anthropic credits — Kiro already ships an LLM. `CLAUDE_RECALL_PREFER_API_KEY=1`
-flips the order back to key-first for anyone who deliberately wants to pay for a
-stronger model. (Under Claude Code the same pattern applies with `claude -p` on
-the user's subscription as the included LLM — see
+Capture precedence under Kiro: **Kiro's included LLM → regex as a last
+resort.** An exported `ANTHROPIC_API_KEY` is **never consulted by default —
+not even as a fallback** — so a key exported for other tools never silently
+spends the user's Anthropic credits; Kiro already ships an LLM.
+`CLAUDE_RECALL_PREFER_API_KEY=1` is the one explicit switch that enables (and
+prefers) the key, for anyone who deliberately wants to pay for a stronger
+model. (Under Claude Code the same pattern applies with `claude -p` on the
+user's subscription as the included LLM — see
 [cc-llm-capture.md](cc-llm-capture.md).)
 
 ### Output parsing
@@ -120,7 +123,7 @@ returns `null`, degrading to regex — a hook must never throw.
 | `CLAUDE_RECALL_KIRO_CLASSIFIER` | *(set by the worker)* | Enables the Kiro-LLM path in `classifyContent`. Set automatically by `kiro-capture-worker`; never needed by hand. |
 | `CLAUDE_RECALL_KIRO_MODEL` | `claude-haiku-4.5` | Model for the classify call, passed explicitly as `--model`. This is a **dedicated classifier model, independent of the user's interactive Kiro chat model** (e.g. `auto`) — the headless call always uses this value. Raise to `claude-sonnet-4.6` for steadier judgement at ~3× the credits. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS` | `30000` | Hard cap on the headless call before the worker gives up and falls back to regex. |
-| `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | Force `ANTHROPIC_API_KEY`-based classification ahead of Kiro's included LLM (opt-in; uses your Anthropic credits). |
+| `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | **The only switch that enables the `ANTHROPIC_API_KEY` backend** — without it an exported key is never touched, not even as a fallback. |
 
 ## Caveats
 

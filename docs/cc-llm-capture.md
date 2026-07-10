@@ -60,15 +60,18 @@ Claude Code UserPromptSubmit
         │
         ├─ classifyWithClaudeCli()  → claude -p --model haiku "<prompt>"
         │                             (subscription auth, key stripped)
-        ├─ classifyWithLLM()        → ANTHROPIC_API_KEY, if exported
         └─ regex fallback
+
+  (classifyWithLLM() / ANTHROPIC_API_KEY exists but is OPT-IN only —
+   see below; it is never in the default chain)
 ```
 
-Precedence mirrors Kiro: **the runtime's included LLM → exported key →
-regex**, flipped by `CLAUDE_RECALL_PREFER_API_KEY=1`. The registered hook name
-(`hook run correction-detector`) was deliberately kept, so existing
-`settings.json` files work with no re-setup — only the dispatch behind it
-changed.
+Precedence mirrors Kiro: **the runtime's included LLM → regex.** An exported
+`ANTHROPIC_API_KEY` is **never consulted by default — not even as a
+fallback**; `CLAUDE_RECALL_PREFER_API_KEY=1` is the one switch that enables
+(and prefers) it. The registered hook name (`hook run correction-detector`)
+was deliberately kept, so existing `settings.json` files work with no
+re-setup — only the dispatch behind it changed.
 
 **Trade-off:** the synchronous `📌 Recall: auto-captured …` echo is gone.
 A cold `claude -p` takes ~4 s, far too slow to block the user's prompt, so
@@ -123,14 +126,15 @@ uses the Kiro backend.
 | --- | --- | --- |
 | `CLAUDE_RECALL_CC_MODEL` | `haiku` | Model passed to `claude -p --model` — a dedicated classifier model, independent of the user's interactive session model. |
 | `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS` | `30000` | Hard cap on the capture worker's `claude -p` call. (Secondary features use a fixed 10 s per call.) |
-| `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | Force `ANTHROPIC_API_KEY` ahead of the subscription CLI (opt-in; spends API credits). Applies to capture and the secondary features, under both Claude Code and Kiro. |
+| `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | **The only switch that enables the `ANTHROPIC_API_KEY` backend** (and prefers it first) — without it an exported key is never touched, not even as a fallback. For Pi-only machines without the `claude` binary, or a stronger model you deliberately pay for. Applies to capture and the secondary features, on every runtime. |
 | `CLAUDE_RECALL_NESTED` | *(set on `claude -p` children)* | Recursion marker — never set it by hand. |
 
 ## Caveats
 
-- **Requires the `claude` binary on `PATH`.** Absent (e.g. a bare CI box), the
-  CLI backend errors out and the chain falls through to the key/regex exactly
-  as before — no crash, no behavior regression.
+- **Requires the `claude` binary on `PATH`.** Absent (e.g. a bare CI box, or a
+  Pi-only machine), the CLI backend errors out and the chain falls through to
+  regex — or to an `ANTHROPIC_API_KEY` if you opted in with
+  `CLAUDE_RECALL_PREFER_API_KEY=1`. No crash, no exception.
 - **Subscription usage.** Each classified prompt is one small Haiku call
   against the user's Claude plan limits. That is the deliberate trade — the
   user's existing plan instead of a second wallet.

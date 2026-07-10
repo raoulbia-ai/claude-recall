@@ -51,7 +51,15 @@ describe('isConversationalNotRule', () => {
 });
 
 describe('classifyContent guards', () => {
-  beforeEach(() => mockClassifyWithLLM.mockReset());
+  // These guards are path-independent; the API-key backend (opt-in since
+  // 0.33.0) is the test vehicle used to feed results through them.
+  beforeEach(() => {
+    mockClassifyWithLLM.mockReset();
+    process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
+  });
+  afterAll(() => {
+    delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
+  });
 
   it('rejects an interrogative before the LLM is even consulted', async () => {
     const result = await classifyContent('what claude recall memories do you have?');
@@ -111,11 +119,19 @@ describe('classifyContent backend precedence', () => {
     else process.env.CLAUDE_RECALL_PREFER_API_KEY = saved.preferKey;
   });
 
-  it('inline (no worker flag): uses the API key backend only — no CLI classifiers', async () => {
-    await classifyContent('always use tabs');
-    expect(mockClassifyWithLLM).toHaveBeenCalled();
+  it('inline (no worker flag): consults NO LLM backend — straight to regex', async () => {
+    const result = await classifyContent('always use tabs');
+    expect(mockClassifyWithLLM).not.toHaveBeenCalled();
     expect(mockClassifyWithKiro).not.toHaveBeenCalled();
     expect(mockClassifyWithClaudeCli).not.toHaveBeenCalled();
+    // The regex fallback still classifies it
+    expect(result?.type).toBe('preference');
+  });
+
+  it('inline + CLAUDE_RECALL_PREFER_API_KEY: the key backend is enabled', async () => {
+    process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
   });
 
   it('under Kiro: prefers the Kiro LLM over a stray API key', async () => {
@@ -126,13 +142,13 @@ describe('classifyContent backend precedence', () => {
     expect(mockClassifyWithLLM).not.toHaveBeenCalled();
   });
 
-  it('under Kiro: falls back to the API key when the Kiro LLM yields nothing', async () => {
+  it('under Kiro: does NOT fall back to a set API key — regex instead (opt-in policy)', async () => {
     process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = '1';
     mockClassifyWithKiro.mockResolvedValue(null);
     const result = await classifyContent('always use tabs');
     expect(mockClassifyWithKiro).toHaveBeenCalled();
-    expect(mockClassifyWithLLM).toHaveBeenCalled();
-    expect(result).toEqual(RULE);
+    expect(mockClassifyWithLLM).not.toHaveBeenCalled();
+    expect(result?.type).toBe('preference'); // regex fallback
   });
 
   it('CLAUDE_RECALL_PREFER_API_KEY flips the order back to key-first under Kiro', async () => {
@@ -151,13 +167,13 @@ describe('classifyContent backend precedence', () => {
     expect(mockClassifyWithLLM).not.toHaveBeenCalled();
   });
 
-  it('in the CC worker: falls back to the API key when claude -p yields nothing', async () => {
+  it('in the CC worker: does NOT fall back to a set API key — regex instead (opt-in policy)', async () => {
     process.env.CLAUDE_RECALL_CC_CLASSIFIER = '1';
     mockClassifyWithClaudeCli.mockResolvedValue(null);
     const result = await classifyContent('always use tabs');
     expect(mockClassifyWithClaudeCli).toHaveBeenCalled();
-    expect(mockClassifyWithLLM).toHaveBeenCalled();
-    expect(result).toEqual(RULE);
+    expect(mockClassifyWithLLM).not.toHaveBeenCalled();
+    expect(result?.type).toBe('preference'); // regex fallback
   });
 
   it('CLAUDE_RECALL_PREFER_API_KEY flips the order back to key-first in the CC worker', async () => {
