@@ -8,15 +8,21 @@
  * result whose extract still contains a '?' (a distilled rule is declarative).
  */
 
-// Mock the Haiku classifier so we can force a "the LLM said this is a rule"
-// result and prove the guards catch it regardless of what the model returns.
+// Mock both LLM backends so we can assert the guards AND the backend ordering
+// (which one gets consulted first) without any real API or kiro-cli call.
 const mockClassifyWithLLM = jest.fn();
+const mockClassifyWithKiro = jest.fn();
 jest.mock('../../src/hooks/llm-classifier', () => ({
   classifyWithLLM: (...args: any[]) => mockClassifyWithLLM(...args),
   classifyBatchWithLLM: jest.fn(),
 }));
+jest.mock('../../src/hooks/kiro-classifier', () => ({
+  classifyWithKiro: (...args: any[]) => mockClassifyWithKiro(...args),
+}));
 
 import { classifyContent, isConversationalNotRule } from '../../src/hooks/shared';
+
+const RULE = { type: 'preference', confidence: 0.9, extract: 'Use tabs' };
 
 describe('isConversationalNotRule', () => {
   it.each([
@@ -75,5 +81,55 @@ describe('classifyContent guards', () => {
       confidence: 0.9,
       extract: 'Favourite colour is green',
     });
+  });
+});
+
+describe('classifyContent backend precedence', () => {
+  const saved = {
+    kiro: process.env.CLAUDE_RECALL_KIRO_CLASSIFIER,
+    preferKey: process.env.CLAUDE_RECALL_PREFER_API_KEY,
+  };
+  beforeEach(() => {
+    mockClassifyWithLLM.mockReset().mockResolvedValue(RULE);
+    mockClassifyWithKiro.mockReset().mockResolvedValue(RULE);
+    delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+    delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
+  });
+  afterAll(() => {
+    if (saved.kiro === undefined) delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+    else process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = saved.kiro;
+    if (saved.preferKey === undefined) delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
+    else process.env.CLAUDE_RECALL_PREFER_API_KEY = saved.preferKey;
+  });
+
+  it('Claude Code (no Kiro flag): uses the API key backend, never Kiro', async () => {
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
+    expect(mockClassifyWithKiro).not.toHaveBeenCalled();
+  });
+
+  it('under Kiro: prefers the Kiro LLM over a stray API key', async () => {
+    process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = '1';
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithKiro).toHaveBeenCalled();
+    // Kiro returned a rule, so the API key backend is never consulted.
+    expect(mockClassifyWithLLM).not.toHaveBeenCalled();
+  });
+
+  it('under Kiro: falls back to the API key when the Kiro LLM yields nothing', async () => {
+    process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = '1';
+    mockClassifyWithKiro.mockResolvedValue(null);
+    const result = await classifyContent('always use tabs');
+    expect(mockClassifyWithKiro).toHaveBeenCalled();
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
+    expect(result).toEqual(RULE);
+  });
+
+  it('CLAUDE_RECALL_PREFER_API_KEY flips the order back to key-first under Kiro', async () => {
+    process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = '1';
+    process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
+    expect(mockClassifyWithKiro).not.toHaveBeenCalled();
   });
 });
