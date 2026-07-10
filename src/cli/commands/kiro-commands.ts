@@ -161,11 +161,37 @@ export class KiroCommands {
       preToolUse: 'kiro-rule-injector',
       postToolUse: 'kiro-tool-outcome',
     };
+    // Superseded claude-recall hooks to strip from an event before wiring the
+    // current one — prevents stacking when the handler for an event changes
+    // across versions. Pre-0.29 wired userPromptSubmit to `correction-detector`
+    // directly; 0.29 replaced it with `kiro-capture`. Leaving the old entry
+    // makes BOTH fire, double-capturing (often as near-duplicate memories).
+    // Only our own commands (containing 'claude-recall' / 'hook run') are
+    // touched — a user's unrelated hook on the same event is preserved.
+    const supersededMarkers: Record<string, string[]> = {
+      userPromptSubmit: ['correction-detector'],
+    };
+    const isOurCommand = (cmd: string) => cmd.includes('claude-recall') || cmd.includes('hook run');
+
     for (const [event, entries] of Object.entries(KiroCommands.buildHookEntries(hookCmd))) {
       if (!Array.isArray(config.hooks[event])) {
         config.hooks[event] = [];
       }
       const marker = handlerMarkers[event];
+
+      // Strip superseded entries first (but never the current marker).
+      for (const stale of supersededMarkers[event] ?? []) {
+        if (stale === marker) continue;
+        const before = config.hooks[event].length;
+        config.hooks[event] = config.hooks[event].filter(
+          (h: any) => !(typeof h?.command === 'string' && h.command.includes(stale) && isOurCommand(h.command)),
+        );
+        const removed = before - config.hooks[event].length;
+        if (removed > 0) {
+          changes.push(`hooks.${event}: removed ${removed} superseded ${stale} entr${removed === 1 ? 'y' : 'ies'}`);
+        }
+      }
+
       const alreadyWired = config.hooks[event].some(
         (h: any) => typeof h?.command === 'string' && h.command.includes(marker),
       );
