@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.1] - 2026-07-10
+
+### Fixed
+
+- **`kiro setup --merge-into` now strips the superseded `correction-detector` capture hook** from `userPromptSubmit` before wiring `kiro-capture`. Agents merged under a pre-0.29 version kept both entries, so every prompt ran capture twice — the old inline hook *and* the new background worker — doing redundant work (the second store was caught by dedup, but the double-processing re-introduced the inline latency the worker was meant to avoid). Re-run `claude-recall kiro setup --merge-into <agent>` once to clean it up; only claude-recall's own hooks are touched, any unrelated hook you have on that event is preserved.
+
 ## [0.29.0] - 2026-07-09
 
 ### Added

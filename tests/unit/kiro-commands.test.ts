@@ -214,6 +214,30 @@ describe('kiro setup --merge-into', () => {
     expect(merged.hooks.preToolUse.filter((h: any) => h.command.includes('kiro-rule-injector'))).toHaveLength(1);
   });
 
+  it('strips the superseded correction-detector capture hook when wiring kiro-capture', () => {
+    // Simulates an agent merged under a pre-0.29 version (userPromptSubmit
+    // wired directly to correction-detector) plus an unrelated user hook.
+    const agentPath = writeAgent('legacy', {
+      name: 'legacy',
+      hooks: {
+        userPromptSubmit: [
+          { command: 'claude-recall hook run correction-detector', timeout_ms: 8000 },
+          { command: 'my-own-linter', timeout_ms: 1000 },
+        ],
+      },
+    });
+
+    runMerge('legacy');
+
+    const merged = JSON.parse(fs.readFileSync(agentPath, 'utf8'));
+    const cmds = merged.hooks.userPromptSubmit.map((h: any) => h.command);
+    // Old claude-recall capture hook removed, new one wired, exactly once
+    expect(cmds).not.toContain('claude-recall hook run correction-detector');
+    expect(cmds.filter((c: string) => c.includes('kiro-capture'))).toHaveLength(1);
+    // The user's own unrelated hook is preserved
+    expect(cmds).toContain('my-own-linter');
+  });
+
   it('adds @claude-recall to an explicit tools list but leaves "*" and absent alone', () => {
     const explicitPath = writeAgent('explicit', { name: 'explicit', tools: ['read', '@jira'] });
     runMerge('explicit');
