@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Questions are no longer captured as preferences.** The interrogative/pleasantry guard that protected the regex classifier now runs on *every* path, so the LLM classifiers (Haiku and Kiro) can't store prompts like "what memories do you have?" as rules. Added a second path-independent guard that rejects any classification whose extract still contains a `?` — a distilled rule is declarative, so a question mark signals the model echoed conversation instead of extracting a directive.
+- **Running the test suite can no longer wipe the real database.** `tests/config/setup.ts` now redirects an unset `CLAUDE_RECALL_DB_PATH` to a throwaway temp directory before any test constructs a `ConfigService`, and hard-fails the run if the path ever resolves to the real `~/.claude-recall`. Previously, tests that used real storage without setting their own path defaulted to the production DB, and the several tests that clear memories would delete the developer's real memories.
+
 ## [0.29.1] - 2026-07-10
 
 ### Fixed

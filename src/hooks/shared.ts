@@ -47,6 +47,18 @@ const PREFERENCE_PATTERNS = [
 const INTERROGATIVE_START = /^(do|does|did|can|could|would|should|shall|is|are|was|were|will|have|has|what|why|how|when|where|who|which)\b/i;
 const PLEASANTRY_NO = /^no\s+(worries|problem|problems|prob|thanks|thank|rush|need|biggie|sweat|pressure)\b/i;
 
+/**
+ * True when a prompt reads as conversation rather than a storable rule: it ends
+ * with a question mark, opens with an interrogative, or is a "no worries"-style
+ * pleasantry. Applied to EVERY classifier path (regex, Haiku, Kiro) — the LLMs
+ * otherwise trust their own judgement and have stored questions like "what
+ * memories do you have?" as preferences.
+ */
+export function isConversationalNotRule(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.endsWith('?') || INTERROGATIVE_START.test(trimmed) || PLEASANTRY_NO.test(trimmed);
+}
+
 // Failure, devops, and project-knowledge patterns removed — single-keyword
 // matches ("error", "git", "build") are too broad for regex. These types
 // require context that only the LLM classifier can assess. When the LLM is
@@ -66,10 +78,8 @@ export function readStdin(): any {
  * Returns the highest-confidence match, prioritizing corrections > preferences.
  */
 export function classifyContentRegex(text: string): ClassifyResult | null {
-  const trimmed = text.trim();
-
   // Interrogatives and pleasantries are conversation, not rules
-  if (trimmed.endsWith('?') || INTERROGATIVE_START.test(trimmed) || PLEASANTRY_NO.test(trimmed)) {
+  if (isConversationalNotRule(text)) {
     return null;
   }
 
@@ -105,6 +115,22 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
  *   3. Regex patterns, if neither LLM path yields a result.
  */
 export async function classifyContent(text: string): Promise<ClassifyResult | null> {
+  // Guard the LLM paths the same way the regex path is guarded: a question or
+  // pleasantry is conversation, never a rule. Haiku/Kiro don't apply this on
+  // their own and have stored prompts like "what memories do you have?".
+  if (isConversationalNotRule(text)) return null;
+
+  const result = await classifyContentInner(text);
+
+  // Reject if the classifier echoed a question instead of distilling a rule:
+  // a stored directive is declarative, so a '?' in the extract signals a
+  // conversational false positive (e.g. an LLM regurgitating the prompt).
+  if (result && result.extract.includes('?')) return null;
+
+  return result;
+}
+
+async function classifyContentInner(text: string): Promise<ClassifyResult | null> {
   const llmResult = await classifyWithLLM(text);
   if (llmResult) return llmResult;
 
