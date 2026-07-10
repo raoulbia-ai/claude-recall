@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.3] - 2026-07-10
+
+### Documentation
+
+- **README Kiro section now sets expectations up front**, so the two things most likely to make Kiro users think capture is broken are addressed before they hit them: (1) the one-time "start a fresh conversation without `--resume`" rollover is now a prominent, can't-miss warning with the exact command and a `kiro doctor` confirmation step; (2) a new "what to expect from capture" note explains that capture is silent, asynchronous, best-effort, and lags ~3s — plus how to verify it worked, both from a second terminal (`search`, `kiro-classifier.log`) and from inside the Kiro session (ask the agent to recall it). Also makes the ~0.06-credits-per-prompt cost explicit for team budgeting.
+
 ## [0.30.2] - 2026-07-10
 
 ### Documentation

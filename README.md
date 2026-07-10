@@ -106,9 +106,38 @@ Already living in a custom agent of your own? Merge Claude Recall into it instea
 claude-recall kiro setup --merge-into <agent-name>
 ```
 
-> **⚠️ One-time rollover:** after `kiro setup` or `--merge-into`, start **one fresh conversation** (no `--resume`). Kiro snapshots the agent config when a conversation is *created*, so older conversations never see the new hooks — even resumed or after a restart. After that one fresh start, `--resume` works normally.
+> **⚠️ You must start ONE fresh conversation after setup — this is the most common reason "it does nothing."**
+>
+> After `kiro setup` or `--merge-into`, start **one new conversation without `--resume`**:
+>
+> ```bash
+> kiro-cli chat --agent recall        # or: --agent <your-agent> if you merged
+> ```
+>
+> Kiro snapshots the agent config at the moment a conversation is *created*. Any conversation that already existed — including one you reach with `--resume` or after restarting Kiro — was snapshotted **before** claude-recall was wired in, so it will **never** run the hooks and capture will silently do nothing. Once you've started that one fresh conversation, every conversation from then on carries the hooks and `--resume` works normally. This is a one-time rollover, once per project.
+>
+> Confirm the wiring is live before you rely on it:
+>
+> ```bash
+> claude-recall kiro doctor           # green checks = hooks are active for this project
+> ```
 
-Capture under Kiro runs on **Kiro's own LLM** — no `ANTHROPIC_API_KEY`, no personal Anthropic subscription. It uses a dedicated fixed classifier model (default `claude-haiku-4.5`, independent of your chat model), costs ~0.06 Kiro credits per prompt, and never blocks your turn. Verify with `claude-recall kiro doctor`.
+**Capture runs on Kiro's own LLM — no API key, no personal subscription.** It classifies each prompt with a dedicated fixed model (default `claude-haiku-4.5`, independent of your chat model) and costs **~0.06 Kiro credits per prompt** — cheap, but note it's *every* prompt, so budget accordingly across a team.
+
+**What to expect from capture — read this so it doesn't feel broken:**
+
+- **It's silent and asynchronous.** Capture runs in a background worker so it never blocks your turn — which also means there's **no "captured ✓" message** in the Kiro chat. Stating a preference and seeing nothing happen is normal.
+- **It's a best-effort LLM judgement, not a guarantee.** The classifier decides what's a durable rule vs. chit-chat; it won't catch every phrasing, and near-identical wording can occasionally be judged differently. State preferences plainly ("use pnpm here, not npm") for the best hit rate.
+- **There's a ~3s lag.** A preference you just stated isn't queryable for a couple of seconds while the worker finishes.
+
+**To verify capture actually worked** — from a second terminal (Kiro's chat can't shell out):
+
+```bash
+claude-recall search "pnpm"                             # did the rule land?
+tail -5 ~/.claude-recall/hook-logs/kiro-classifier.log  # what the classifier decided, and which model ran
+```
+
+Or, from **inside the Kiro session**, just ask the agent to recall it (*"what do you remember about my package manager?"*) — it reads the same DB and will surface the stored rule if capture succeeded.
 
 **Everything else Kiro** — MCP-only mode, project scoping and `--resume`, the classifier internals, enterprise-governance notes, troubleshooting: **[docs/kiro.md](docs/kiro.md)**.
 
