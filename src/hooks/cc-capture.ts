@@ -29,7 +29,11 @@ export async function handleCcCapture(input: any): Promise<void> {
   // Recursion guard: if we're already inside a classifier's nested headless
   // session (claude -p or kiro-cli fired hooks of its own), do NOT spawn
   // another worker — that would classify the classify prompt, forever.
-  if (process.env.CLAUDE_RECALL_CC_CLASSIFIER || process.env.CLAUDE_RECALL_KIRO_CLASSIFIER) {
+  if (
+    process.env.CLAUDE_RECALL_NESTED
+    || process.env.CLAUDE_RECALL_CC_CLASSIFIER
+    || process.env.CLAUDE_RECALL_KIRO_CLASSIFIER
+  ) {
     return;
   }
 

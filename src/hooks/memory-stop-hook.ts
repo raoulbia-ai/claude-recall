@@ -460,6 +460,10 @@ async function generateCandidateLessons(
 ): Promise<void> {
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
+    // Each hint is an LLM call (via the subscription CLI it can take seconds),
+    // and this loop runs INLINE in the Stop hook's ~40s budget — cap the LLM
+    // calls per run; failures past the cap keep the grounded generic lesson.
+    let hintBudget = 5;
     for (const f of failures) {
       if (f.confidence < 0.7) continue;
 
@@ -467,10 +471,10 @@ async function generateCandidateLessons(
       let lessonKind = 'failure_preventer';
       let appliesWhen = extractTagsFromContext(f.content.context);
 
-      const hint = await extractHindsightHint(
+      const hint = hintBudget-- > 0 ? await extractHindsightHint(
         `${f.content.what_failed}${f.content.why_failed ? ` — ${f.content.why_failed}` : ''}`,
         f.content.context || '',
-      );
+      ) : null;
       if (hint) {
         lessonText = hint.hint_text;
         if (VALID_LESSON_KINDS.has(hint.hint_kind)) {

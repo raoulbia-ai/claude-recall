@@ -16,9 +16,13 @@ describe('llm-classifier', () => {
 
   let mockCreate: jest.Mock;
   let constructorSpy: jest.Mock;
+  let mockCompleteCli: jest.Mock;
 
   /**
-   * Load a fresh copy of the classifier module with a mocked SDK.
+   * Load a fresh copy of the classifier module with a mocked SDK and a mocked
+   * subscription-CLI backend. The CLI mock resolves null by default (as if
+   * `claude` were not on PATH), so tests written against the API-key path keep
+   * exercising it; subscription-path tests override the mock's return value.
    * Env vars must be arranged BEFORE calling this (getClient reads them lazily,
    * but resetModules keeps things deterministic either way).
    */
@@ -26,12 +30,16 @@ describe('llm-classifier', () => {
     jest.resetModules();
     mockCreate = jest.fn();
     constructorSpy = jest.fn();
+    mockCompleteCli = jest.fn().mockResolvedValue(null);
     jest.doMock('@anthropic-ai/sdk', () => {
       return function MockAnthropic(this: any, options: any) {
         constructorSpy(options);
         this.messages = { create: mockCreate };
       };
     });
+    jest.doMock('../../src/hooks/cc-classifier', () => ({
+      completeWithClaudeCli: (...args: any[]) => mockCompleteCli(...args),
+    }));
     return require('../../src/hooks/llm-classifier') as Classifier;
   }
 
@@ -42,6 +50,8 @@ describe('llm-classifier', () => {
   beforeEach(() => {
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.CLAUDE_RECALL_LLM_TIMEOUT_MS;
+    delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
+    delete process.env.CLAUDE_RECALL_NESTED;
   });
 
   afterAll(() => {
@@ -477,6 +487,95 @@ describe('llm-classifier', () => {
       mockCreate.mockRejectedValue(new Error('boom'));
 
       expect(await classifier.extractHindsightHint('failure', 'context')).toBeNull();
+    });
+  });
+
+  describe('subscription CLI backend for secondary features', () => {
+    it('extractCheckpointWithLLM works with NO API key via claude -p', async () => {
+      const classifier = loadClassifier(); // no ANTHROPIC_API_KEY set
+      mockCompleteCli.mockResolvedValue(
+        '{"completed":"API layer","remaining":"wire the UI","blockers":"none"}'
+      );
+
+      const result = await classifier.extractCheckpointWithLLM(
+        'A long enough conversation summary about wiring the UI layer.'
+      );
+
+      expect(result).toEqual({ completed: 'API layer', remaining: 'wire the UI', blockers: 'none' });
+      expect(mockCreate).not.toHaveBeenCalled(); // SDK never touched
+    });
+
+    it('extractHindsightHint works with NO API key via claude -p (fenced output)', async () => {
+      const classifier = loadClassifier();
+      mockCompleteCli.mockResolvedValue(
+        '```json\n{"hint_text":"Pin the Node version in CI","hint_kind":"rule","applies_when":["ci"]}\n```'
+      );
+
+      const result = await classifier.extractHindsightHint('CI failed', 'node mismatch');
+      expect(result?.hint_text).toBe('Pin the Node version in CI');
+    });
+
+    it('classifyBatchWithLLM works with NO API key via claude -p', async () => {
+      const classifier = loadClassifier();
+      mockCompleteCli.mockResolvedValue(
+        '[{"type":"preference","confidence":0.9,"extract":"Use tabs"},{"type":"none","confidence":0,"extract":""}]'
+      );
+
+      const results = await classifier.classifyBatchWithLLM(['we use tabs', 'hello there']);
+      expect(results).toEqual([
+        { type: 'preference', confidence: 0.9, extract: 'Use tabs' },
+        null,
+      ]);
+    });
+
+    it('prefers the subscription CLI over a set API key by default', async () => {
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      const classifier = loadClassifier();
+      mockCompleteCli.mockResolvedValue('{"completed":"x","remaining":"","blockers":"none"}');
+
+      await classifier.extractCheckpointWithLLM('A long enough conversation summary for extraction.');
+
+      expect(mockCompleteCli).toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('CLAUDE_RECALL_PREFER_API_KEY flips to key-first', async () => {
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
+      const classifier = loadClassifier();
+      mockCreate.mockResolvedValue(textResponse('{"completed":"x","remaining":"","blockers":"none"}'));
+
+      await classifier.extractCheckpointWithLLM('A long enough conversation summary for extraction.');
+
+      expect(mockCreate).toHaveBeenCalled();
+      expect(mockCompleteCli).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the API key when the CLI yields nothing', async () => {
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      const classifier = loadClassifier(); // CLI mock resolves null by default
+      mockCreate.mockResolvedValue(textResponse('{"completed":"x","remaining":"","blockers":"none"}'));
+
+      const result = await classifier.extractCheckpointWithLLM(
+        'A long enough conversation summary for extraction.'
+      );
+
+      expect(mockCompleteCli).toHaveBeenCalled();
+      expect(mockCreate).toHaveBeenCalled();
+      expect(result?.completed).toBe('x');
+    });
+
+    it('never calls the CLI from inside a nested headless session (recursion guard)', async () => {
+      process.env.CLAUDE_RECALL_NESTED = '1';
+      const classifier = loadClassifier(); // no API key either
+      mockCompleteCli.mockResolvedValue('{"completed":"x","remaining":"","blockers":"none"}');
+
+      const result = await classifier.extractCheckpointWithLLM(
+        'A long enough conversation summary for extraction.'
+      );
+
+      expect(mockCompleteCli).not.toHaveBeenCalled();
+      expect(result).toBeNull();
     });
   });
 });
