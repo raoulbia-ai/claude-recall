@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Under Kiro, capture now prefers Kiro's included LLM over a stray `ANTHROPIC_API_KEY`.** Previously any key in the environment took precedence, so a Kiro user who had `ANTHROPIC_API_KEY` exported for other tools would unknowingly spend their own Anthropic credits on capture even though Kiro ships an LLM. The order under Kiro is now Kiro's LLM → `ANTHROPIC_API_KEY` (if present) → regex. Set `CLAUDE_RECALL_PREFER_API_KEY=1` to force the key first (e.g. to pay for a stronger model). Claude Code is unchanged — it has no Kiro backend and uses the key Claude Code provides to its hooks. Reinforces that **no API key is ever required**: each runtime brings its own LLM.
+
 ## [0.29.2] - 2026-07-10
 
 ### Fixed

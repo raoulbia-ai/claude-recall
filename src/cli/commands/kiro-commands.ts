@@ -496,7 +496,9 @@ export class KiroCommands {
       line('⚠', 'kiro-cli not on PATH — capture cannot reach Kiro\'s LLM and falls back to regex.');
     }
     if (process.env.ANTHROPIC_API_KEY) {
-      line('•', 'ANTHROPIC_API_KEY is set — it takes precedence over the Kiro LLM for capture.');
+      line('•', process.env.CLAUDE_RECALL_PREFER_API_KEY
+        ? 'ANTHROPIC_API_KEY set + CLAUDE_RECALL_PREFER_API_KEY — capture uses your key (your Anthropic credits) before the Kiro LLM.'
+        : 'ANTHROPIC_API_KEY is set but under Kiro the included LLM is used first, so it won\'t spend your Anthropic credits. Set CLAUDE_RECALL_PREFER_API_KEY to force the key.');
     }
 
     // --- Hook activity ---

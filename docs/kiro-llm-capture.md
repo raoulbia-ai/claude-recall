@@ -93,9 +93,13 @@ Kiro userPromptSubmit
         └─ regex fallback       (only if both above yield nothing)
 ```
 
-Capture precedence under Kiro becomes: **your own `ANTHROPIC_API_KEY` if you set
-one → Kiro's headless LLM → regex as a last resort.** In the governance-locked,
-no-key setup the Kiro LLM is the primary path and regex is just a safety net.
+Capture precedence under Kiro: **Kiro's included LLM → `ANTHROPIC_API_KEY` if
+present → regex as a last resort.** The Kiro LLM comes first *even when a key is
+set*, so a key exported for other tools never silently spends the user's
+Anthropic credits — Kiro already ships an LLM. `CLAUDE_RECALL_PREFER_API_KEY=1`
+flips the order back to key-first for anyone who deliberately wants to pay for a
+stronger model. (Under Claude Code there is no Kiro backend, so the key path is
+the only LLM classifier — Claude Code provides the key to its hooks.)
 
 ### Output parsing
 
@@ -112,6 +116,7 @@ returns `null`, degrading to regex — a hook must never throw.
 | `CLAUDE_RECALL_KIRO_CLASSIFIER` | *(set by the worker)* | Enables the Kiro-LLM path in `classifyContent`. Set automatically by `kiro-capture-worker`; never needed by hand. |
 | `CLAUDE_RECALL_KIRO_MODEL` | `claude-haiku-4.5` | Model for the classify call. Raise to `claude-sonnet-4.6` for steadier judgement at ~3× the credits. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS` | `30000` | Hard cap on the headless call before the worker gives up and falls back to regex. |
+| `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | Force `ANTHROPIC_API_KEY`-based classification ahead of Kiro's included LLM (opt-in; uses your Anthropic credits). |
 
 ## Caveats
 

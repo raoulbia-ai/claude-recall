@@ -105,14 +105,18 @@ export function classifyContentRegex(text: string): ClassifyResult | null {
 }
 
 /**
- * Classify text content — LLM-first, regex fallback.
+ * Classify text content — LLM-first, regex fallback. No API key is ever
+ * required: each runtime brings its own LLM.
+ *
  * Precedence:
- *   1. Claude Haiku via ANTHROPIC_API_KEY (Claude Code sets this automatically).
- *   2. Kiro's headless LLM (`kiro-cli chat --no-interactive`) when running under
- *      Kiro — no API key needed. Gated on CLAUDE_RECALL_KIRO_CLASSIFIER, which
- *      the kiro-capture-worker sets; the classify call is ~3s so it only runs
- *      from that detached worker, never inline. See docs/kiro-llm-capture.md.
- *   3. Regex patterns, if neither LLM path yields a result.
+ *   - Under Claude Code: Claude Haiku via ANTHROPIC_API_KEY (Claude Code
+ *     provides this to its hooks) → regex.
+ *   - Under Kiro (CLAUDE_RECALL_KIRO_CLASSIFIER set by the kiro-capture-worker):
+ *     Kiro's own headless LLM (`kiro-cli chat --no-interactive`) → ANTHROPIC_
+ *     API_KEY if present → regex. Kiro's included LLM is preferred so a stray
+ *     key doesn't spend the user's Anthropic credits; CLAUDE_RECALL_PREFER_API_
+ *     KEY flips the order. The Kiro call is ~3s, so it runs only from the
+ *     detached worker, never inline. See docs/kiro-llm-capture.md.
  */
 export async function classifyContent(text: string): Promise<ClassifyResult | null> {
   // Guard the LLM paths the same way the regex path is guarded: a question or
@@ -131,15 +135,32 @@ export async function classifyContent(text: string): Promise<ClassifyResult | nu
 }
 
 async function classifyContentInner(text: string): Promise<ClassifyResult | null> {
-  const llmResult = await classifyWithLLM(text);
-  if (llmResult) return llmResult;
+  const underKiro = !!process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+  const preferApiKey = !!process.env.CLAUDE_RECALL_PREFER_API_KEY;
 
-  if (process.env.CLAUDE_RECALL_KIRO_CLASSIFIER) {
-    // Dynamic import keeps kiro-classifier (and child_process) out of the
-    // module graph for every non-Kiro hook invocation.
-    const { classifyWithKiro } = await import('./kiro-classifier');
-    const kiroResult = await classifyWithKiro(text);
-    if (kiroResult) return kiroResult;
+  const tryApiKey = () => classifyWithLLM(text);
+  // Dynamic import keeps kiro-classifier (and child_process) out of the module
+  // graph for every non-Kiro hook invocation.
+  const tryKiro = async () => (await import('./kiro-classifier')).classifyWithKiro(text);
+
+  // Order the two LLM backends. Under Kiro, prefer Kiro's INCLUDED LLM over a
+  // stray ANTHROPIC_API_KEY: a key exported for other tools should not silently
+  // spend the user's Anthropic credits when Kiro already ships an LLM. Set
+  // CLAUDE_RECALL_PREFER_API_KEY to force the key first (e.g. to use a stronger
+  // model you pay for). Under Claude Code the Kiro backend isn't available, so
+  // the key path is the only LLM classifier.
+  const backends: Array<() => Promise<ClassifyResult | null>> = [];
+  if (underKiro && !preferApiKey) {
+    backends.push(tryKiro, tryApiKey);
+  } else if (underKiro) {
+    backends.push(tryApiKey, tryKiro);
+  } else {
+    backends.push(tryApiKey);
+  }
+
+  for (const backend of backends) {
+    const result = await backend();
+    if (result) return result;
   }
 
   return classifyContentRegex(text);
