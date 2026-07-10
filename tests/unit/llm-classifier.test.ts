@@ -219,6 +219,11 @@ describe('llm-classifier', () => {
   });
 
   describe('classifyBatchWithLLM', () => {
+    // These four features route through completeText(), where the API-key
+    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
+    // the SDK path.
+    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
+
     it('returns [] for an empty input without needing an API key', async () => {
       const classifier = loadClassifier();
 
@@ -313,6 +318,11 @@ describe('llm-classifier', () => {
   });
 
   describe('extractSessionLearningsWithLLM', () => {
+    // These four features route through completeText(), where the API-key
+    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
+    // the SDK path.
+    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
+
     it('returns null when ANTHROPIC_API_KEY is unset', async () => {
       const classifier = loadClassifier();
 
@@ -364,6 +374,11 @@ describe('llm-classifier', () => {
   });
 
   describe('extractCheckpointWithLLM', () => {
+    // These four features route through completeText(), where the API-key
+    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
+    // the SDK path.
+    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
+
     const LONG_SUMMARY = 'User asked to add a checkpoint feature; the agent implemented saveCheckpoint in storage.';
 
     it('returns null when ANTHROPIC_API_KEY is unset', async () => {
@@ -414,6 +429,11 @@ describe('llm-classifier', () => {
   });
 
   describe('extractHindsightHint', () => {
+    // These four features route through completeText(), where the API-key
+    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
+    // the SDK path.
+    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
+
     it('returns null when ANTHROPIC_API_KEY is unset', async () => {
       const classifier = loadClassifier();
 
@@ -551,7 +571,9 @@ describe('llm-classifier', () => {
       expect(mockCompleteCli).not.toHaveBeenCalled();
     });
 
-    it('falls back to the API key when the CLI yields nothing', async () => {
+    it('does NOT touch a set API key without the opt-in, even when the CLI yields nothing', async () => {
+      // The whole point of the opt-in policy: an exported key must never be
+      // spent silently — not even as a fallback when claude -p fails.
       process.env.ANTHROPIC_API_KEY = 'test-key';
       const classifier = loadClassifier(); // CLI mock resolves null by default
       mockCreate.mockResolvedValue(textResponse('{"completed":"x","remaining":"","blockers":"none"}'));
@@ -561,8 +583,8 @@ describe('llm-classifier', () => {
       );
 
       expect(mockCompleteCli).toHaveBeenCalled();
-      expect(mockCreate).toHaveBeenCalled();
-      expect(result?.completed).toBe('x');
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(result).toBeNull();
     });
 
     it('never calls the CLI from inside a nested headless session (recursion guard)', async () => {

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-07-10
+
+### Changed
+
+- **`ANTHROPIC_API_KEY` is now strictly opt-in — never a silent fallback.** The default LLM chains are now *included LLM → regex* on every runtime (Claude subscription via `claude -p` under Claude Code; Kiro credits via `kiro-cli` under Kiro): an exported key is never consulted, so claude-recall can never spend Anthropic API credits you didn't explicitly commit. `CLAUDE_RECALL_PREFER_API_KEY=1` is the single switch that enables (and prefers) the key backend — intended for Pi-only machines without the `claude` binary (where the key is how Pi itself runs) and for anyone deliberately paying for a stronger model. Applies uniformly to capture and the secondary features (checkpoints, hindsight hints, session lessons, batch classification). Rationale: claude-recall was built for runtimes that bring their own LLM; a second wallet should require a conscious decision, not an environment variable left over from another tool.
+
 ## [0.32.0] - 2026-07-10
 
 ### Added

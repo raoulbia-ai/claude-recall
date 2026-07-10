@@ -74,7 +74,7 @@ To decide what's worth remembering, the capture hook classifies each prompt via 
 
 **The classifier uses a dedicated, fixed model — not your chat model.** It always runs the model in `CLAUDE_RECALL_KIRO_MODEL` (default `claude-haiku-4.5`, chosen because classification is cheap and high-volume), **independent of your interactive Kiro chat model** (e.g. `auto`). This keeps classification cost predictable no matter what your chat is set to. Set `CLAUDE_RECALL_KIRO_MODEL` to any model from `kiro-cli chat --list-models` to change it. Every successful classification is logged to `~/.claude-recall/hook-logs/kiro-classifier.log` as `classified via kiro-cli (model=…, Kiro credits, no API key)`, so you can always see which model ran.
 
-**Under Kiro the included LLM is used first even if you happen to have `ANTHROPIC_API_KEY` set** — so a key exported for other tools won't quietly spend your Anthropic credits. Order: Kiro's LLM → `ANTHROPIC_API_KEY` (if present) → regex; set `CLAUDE_RECALL_PREFER_API_KEY=1` to force your key first (e.g. for a stronger model you pay for).
+**An exported `ANTHROPIC_API_KEY` is never touched** — a key exported for other tools won't quietly spend your Anthropic credits, not even as a fallback. Order: Kiro's LLM → regex. Setting `CLAUDE_RECALL_PREFER_API_KEY=1` is the one explicit switch that enables (and prefers) your key, e.g. for a stronger model you pay for.
 
 Design details, latency measurements, and output-parsing internals: [kiro-llm-capture.md](kiro-llm-capture.md).
 

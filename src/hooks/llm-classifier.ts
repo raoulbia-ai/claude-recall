@@ -4,10 +4,10 @@
  * Requires ANTHROPIC_API_KEY in the environment — a personal pay-as-you-go
  * API key the user exported themselves. Claude Code does NOT mint one from
  * the user's subscription (hooks just inherit the user's environment), which
- * is why this is a FALLBACK backend: the capture workers prefer each
- * runtime's included LLM (claude -p / kiro-cli — see cc-classifier.ts and
- * kiro-classifier.ts) and only land here when a key is present. Falls back
- * gracefully (returns null) when unavailable.
+ * is why this backend is STRICTLY OPT-IN (CLAUDE_RECALL_PREFER_API_KEY): the
+ * default chains use each runtime's included LLM only (claude -p / kiro-cli —
+ * see cc-classifier.ts and kiro-classifier.ts), and an exported key is never
+ * spent silently. Falls back gracefully (returns null) when unavailable.
  */
 
 import { ClassifyResult } from './shared';
@@ -146,11 +146,12 @@ function parseJSON(text: string): any {
  * extraction, checkpoint extraction, batch classification) and return raw
  * text, or null when no backend is available.
  *
- * Backend order matches capture: the user's Claude SUBSCRIPTION (headless
- * `claude -p`) before a personally-exported ANTHROPIC_API_KEY, flipped by
- * CLAUDE_RECALL_PREFER_API_KEY. So running out of Anthropic API credits — or
- * never having a key at all — does not disable these features on any machine
- * with the `claude` binary (Claude Code itself, or Pi running alongside it).
+ * Backend policy matches capture: the user's Claude SUBSCRIPTION (headless
+ * `claude -p`) is the only default backend — a personally-exported
+ * ANTHROPIC_API_KEY is STRICTLY OPT-IN via CLAUDE_RECALL_PREFER_API_KEY and
+ * never consulted otherwise, not even as a fallback. The opt-in exists for
+ * Pi-only users (no `claude` binary; their key is how they run Pi itself)
+ * and anyone deliberately paying for a stronger model.
  *
  * The CLI backend is skipped inside a nested headless session
  * (CLAUDE_RECALL_NESTED): if `claude -p` fires user-scope hooks of its own,
@@ -187,7 +188,7 @@ async function completeText(
 
   const backends = process.env.CLAUDE_RECALL_PREFER_API_KEY
     ? [viaApi, viaCli]
-    : [viaCli, viaApi];
+    : [viaCli];
 
   for (const backend of backends) {
     const text = await backend();

@@ -171,7 +171,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 
-Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with `ANTHROPIC_API_KEY` (if you exported one *and* opted in) and regex as fallbacks. No API key is ever required; no configuration needed.
+Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
 
 ```bash
 # Verify it's working
@@ -208,7 +208,7 @@ claude-recall checkpoint save --completed "API layer" --remaining "wire the UI" 
 claude-recall checkpoint load
 ```
 
-Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction runs on your **Claude subscription** (headless `claude -p`) — like capture, no API key needed; an exported `ANTHROPIC_API_KEY` is only a fallback. The same applies to the other background LLM features (failure hindsight hints, end-of-session lesson extraction). A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
+Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction runs on your **Claude subscription** (headless `claude -p`) — like capture, no API key needed and no key touched. The same applies to the other background LLM features (failure hindsight hints, end-of-session lesson extraction). Pi-only machines without the `claude` binary can opt in to an `ANTHROPIC_API_KEY` with `CLAUDE_RECALL_PREFER_API_KEY=1`. A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
 
 ### Troubleshooting
 
@@ -389,11 +389,11 @@ Defaults work out of the box; tune via environment variables as needed.
 | Variable                                 | Default | Effect                                                                                                   |
 | ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `CLAUDE_RECALL_DB_PATH`                  | `~/.claude-recall/` | Database directory.                                                                          |
-| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based LLM features. **Never required and never provided by Claude Code** — capture, checkpoint extraction, hindsight hints, and session lessons all use each runtime's own LLM first (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`). A key you exported is only consulted as a fallback, or first with `CLAUDE_RECALL_PREFER_API_KEY=1`. Regex is the final fallback. |
+| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based LLM features. **Never required, never provided by Claude Code, and never touched unless you opt in** with `CLAUDE_RECALL_PREFER_API_KEY=1` — capture, checkpoint extraction, hindsight hints, and session lessons all run on each runtime's own LLM (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`), with regex as the fallback. |
 | `CLAUDE_RECALL_CC_MODEL`                 | `haiku` | Dedicated model for capture classification under Claude Code (passed to `claude -p --model`) — independent of your interactive session model. |
 | `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS`        | `30000` | Hard cap on the headless `claude -p` classify call before the capture worker gives up and falls through. |
 | `CLAUDE_RECALL_KIRO_MODEL`               | `claude-haiku-4.5` | Dedicated model for Kiro-LLM capture classification — **independent of your interactive Kiro chat model**. Raise to `claude-sonnet-4.6` for steadier judgement at more credits. See [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md). |
-| `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | Force `ANTHROPIC_API_KEY`-based classification ahead of the runtime's included LLM (uses your Anthropic API credits — e.g. for a model you pay for). Applies under both Claude Code and Kiro. |
+| `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | **The only switch that enables the `ANTHROPIC_API_KEY` backend** (and prefers it first). For Pi-only machines without the `claude` binary, or a stronger model you deliberately pay for. Applies to all LLM features, under Claude Code, Kiro, and Pi. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS`      | `30000` | Hard cap on the headless `kiro-cli` classify call before the capture worker gives up and falls back to regex. |
 | `CLAUDE_RECALL_LOAD_BUDGET_TOKENS`       | `2000`  | Token budget for the `load_rules` payload. Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures) and dropped rules surface via `search_memory`. |
 | `CLAUDE_RECALL_AUTO_DEMOTE`              | `false` | When `true`, auto-demote rules on MCP boot where `load_count >= CLAUDE_RECALL_DEMOTE_MIN_LOADS`, `cite_count = 0`, and age `> CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`. Still reversible via `rules promote <id>`. |
