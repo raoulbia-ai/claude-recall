@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.0] - 2026-07-10
+
+### Added
+
+- **All remaining LLM features now run on your Claude subscription — the API key is fully optional everywhere.** 0.31.0 ported capture; this release ports the four secondary features that still knew only the `ANTHROPIC_API_KEY` path: **auto-checkpoint extraction** (session exit, Claude Code and Pi — Pi's main recovery path), **failure hindsight hints**, **end-of-session lesson extraction**, and **Stop-hook batch classification**. Each now tries headless `claude -p` (subscription) first, then an exported key, then degrades as before; `CLAUDE_RECALL_PREFER_API_KEY=1` flips the order. Under Pi this works wherever the `claude` binary is installed alongside.
+- Shared `completeWithClaudeCli()` primitive extracted from the capture classifier; secondary features cap CLI calls at 10s each (they run inline in the Stop hook's budget, unlike the detached capture worker).
+
+### Fixed
+
+- **Hindsight-hint generation is now budgeted** (max 5 LLM calls per Stop-hook run). The loop over detected failures was unbounded — with per-call LLM latency it could exceed the hook timeout on failure-heavy sessions. Failures past the cap keep the grounded generic lesson text.
+- Nested-session recursion guard hardened: `claude -p` children are marked with `CLAUDE_RECALL_NESTED`, and both the capture hook and the secondary-feature CLI backend refuse to spawn from inside one — covering the case where a user-scope hook fires inside the nested headless session.
+- `parseJSON` for LLM responses now tolerates prose/fence-wrapped JSON by slicing the first JSON region (claude -p output is less strictly formatted than the API).
+
 ## [0.31.0] - 2026-07-10
 
 ### Added

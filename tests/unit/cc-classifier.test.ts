@@ -67,6 +67,7 @@ describe('classifyWithClaudeCli', () => {
     expect(args[0]).toBe('-p');
     expect(opts.env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(opts.env.CLAUDE_RECALL_CC_CLASSIFIER).toBe('1');
+    expect(opts.env.CLAUDE_RECALL_NESTED).toBe('1');
   });
 
   it('returns null on a deliberate "none" verdict', async () => {

@@ -206,7 +206,7 @@ claude-recall checkpoint save --completed "API layer" --remaining "wire the UI" 
 claude-recall checkpoint load
 ```
 
-Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction uses Haiku via `ANTHROPIC_API_KEY`; without a key, only manual checkpoints work. A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
+Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction runs on your **Claude subscription** (headless `claude -p`) — like capture, no API key needed; an exported `ANTHROPIC_API_KEY` is only a fallback. The same applies to the other background LLM features (failure hindsight hints, end-of-session lesson extraction). A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
 
 ### Troubleshooting
 
@@ -387,7 +387,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | Variable                                 | Default | Effect                                                                                                   |
 | ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `CLAUDE_RECALL_DB_PATH`                  | `~/.claude-recall/` | Database directory.                                                                          |
-| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based classification. **Never required and never provided by Claude Code** — capture uses each runtime's own LLM first (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`). A key you exported is only consulted as a fallback, or first with `CLAUDE_RECALL_PREFER_API_KEY=1`. Regex is the final fallback. |
+| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based LLM features. **Never required and never provided by Claude Code** — capture, checkpoint extraction, hindsight hints, and session lessons all use each runtime's own LLM first (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`). A key you exported is only consulted as a fallback, or first with `CLAUDE_RECALL_PREFER_API_KEY=1`. Regex is the final fallback. |
 | `CLAUDE_RECALL_CC_MODEL`                 | `haiku` | Dedicated model for capture classification under Claude Code (passed to `claude -p --model`) — independent of your interactive session model. |
 | `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS`        | `30000` | Hard cap on the headless `claude -p` classify call before the capture worker gives up and falls through. |
 | `CLAUDE_RECALL_KIRO_MODEL`               | `claude-haiku-4.5` | Dedicated model for Kiro-LLM capture classification — **independent of your interactive Kiro chat model**. Raise to `claude-sonnet-4.6` for steadier judgement at more credits. See [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md). |

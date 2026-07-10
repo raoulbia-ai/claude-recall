@@ -11,11 +11,20 @@
  */
 
 import { ClassifyResult } from './shared';
+import { completeWithClaudeCli } from './cc-classifier';
 
 // Lazy singleton — avoid import cost when API key is absent
 let clientInstance: any | null | undefined; // undefined = not yet checked
 
 const MODEL = 'claude-haiku-4-5-20251001';
+
+/**
+ * Per-call cap for `claude -p` in these SECONDARY features. Unlike capture
+ * (detached worker, 30s budget), hindsight hints / session extraction / batch
+ * classification run INLINE in the Stop hook (~40s total budget, possibly
+ * several calls) — a hung CLI must not eat the whole hook.
+ */
+const SECONDARY_CLI_TIMEOUT_MS = 10000;
 
 const SYSTEM_PROMPT = `You are a memory classifier for a developer tool. Classify user text into one of these types:
 
@@ -114,11 +123,77 @@ function getClient(): any | null {
 }
 
 /**
- * Parse a JSON response, stripping markdown fences if present.
+ * Parse a JSON response, stripping markdown fences if present. Falls back to
+ * slicing the first balanced-looking JSON region — `claude -p` occasionally
+ * wraps output in prose or a trailing fence the strict strip misses.
  */
 function parseJSON(text: string): any {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    const starts = [cleaned.indexOf('{'), cleaned.indexOf('[')].filter((i) => i !== -1);
+    if (starts.length === 0) throw err;
+    const start = Math.min(...starts);
+    const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
+    if (end <= start) throw err;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  }
+}
+
+/**
+ * Run one completion for the SECONDARY LLM features (hindsight hints, session
+ * extraction, checkpoint extraction, batch classification) and return raw
+ * text, or null when no backend is available.
+ *
+ * Backend order matches capture: the user's Claude SUBSCRIPTION (headless
+ * `claude -p`) before a personally-exported ANTHROPIC_API_KEY, flipped by
+ * CLAUDE_RECALL_PREFER_API_KEY. So running out of Anthropic API credits — or
+ * never having a key at all — does not disable these features on any machine
+ * with the `claude` binary (Claude Code itself, or Pi running alongside it).
+ *
+ * The CLI backend is skipped inside a nested headless session
+ * (CLAUDE_RECALL_NESTED): if `claude -p` fires user-scope hooks of its own,
+ * those hooks must not spawn further `claude -p` calls.
+ */
+async function completeText(
+  systemPrompt: string,
+  userContent: string,
+  maxTokens: number,
+): Promise<string | null> {
+  const viaApi = async (): Promise<string | null> => {
+    const client = getClient();
+    if (!client) return null;
+    try {
+      const response = await client.messages.create({
+        model: MODEL,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userContent }],
+      });
+      const content = response.content?.[0];
+      return content?.type === 'text' ? content.text : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // `claude -p` takes a single argument (no system-prompt channel), so
+  // instruction and payload are combined — same shape as the Kiro backend.
+  const viaCli = (): Promise<string | null> =>
+    process.env.CLAUDE_RECALL_NESTED
+      ? Promise.resolve(null)
+      : completeWithClaudeCli(`${systemPrompt}\n\n${userContent}`, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS });
+
+  const backends = process.env.CLAUDE_RECALL_PREFER_API_KEY
+    ? [viaApi, viaCli]
+    : [viaCli, viaApi];
+
+  for (const backend of backends) {
+    const text = await backend();
+    if (text !== null && text.trim().length > 0) return text;
+  }
+  return null;
 }
 
 /**
@@ -167,21 +242,15 @@ export async function extractHindsightHint(
   failureDescription: string,
   context: string
 ): Promise<{ hint_text: string; hint_kind: string; applies_when: string[] } | null> {
-  const client = getClient();
-  if (!client) return null;
+  const text = await completeText(
+    'You extract actionable hindsight lessons from failures. Given a failure description and context, produce a JSON object with: hint_text (imperative rule to prevent recurrence), hint_kind (one of: rule, preference, anti_pattern, workflow, debug_fix, failure_preventer), applies_when (array of 1-3 situation tags). Respond with ONLY valid JSON.',
+    `Failure: ${failureDescription}\nContext: ${context}`,
+    300,
+  );
+  if (!text) return null;
 
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 300,
-      system: 'You extract actionable hindsight lessons from failures. Given a failure description and context, produce a JSON object with: hint_text (imperative rule to prevent recurrence), hint_kind (one of: rule, preference, anti_pattern, workflow, debug_fix, failure_preventer), applies_when (array of 1-3 situation tags). Respond with ONLY valid JSON.',
-      messages: [{ role: 'user', content: `Failure: ${failureDescription}\nContext: ${context}` }],
-    });
-
-    const content = response.content?.[0];
-    if (content?.type !== 'text') return null;
-
-    const result = parseJSON(content.text);
+    const result = parseJSON(text);
     if (!result.hint_text || !result.hint_kind) return null;
 
     return {
@@ -241,27 +310,17 @@ export async function extractSessionLearningsWithLLM(
   summary: string,
   existingMemories: string[],
 ): Promise<SessionLearning[] | null> {
-  const client = getClient();
-  if (!client) return null;
+  const memList = existingMemories.length > 0
+    ? existingMemories.map(m => `- ${m}`).join('\n')
+    : '(none)';
+
+  const systemPrompt = SESSION_EXTRACTION_PROMPT + `\n\nEXISTING MEMORIES (do not duplicate):\n${memList}`;
+
+  const text = await completeText(systemPrompt, summary, 1000);
+  if (!text) return null;
 
   try {
-    const memList = existingMemories.length > 0
-      ? existingMemories.map(m => `- ${m}`).join('\n')
-      : '(none)';
-
-    const systemPrompt = SESSION_EXTRACTION_PROMPT + `\n\nEXISTING MEMORIES (do not duplicate):\n${memList}`;
-
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: summary }],
-    });
-
-    const content = response.content?.[0];
-    if (content?.type !== 'text') return null;
-
-    const results: any[] = parseJSON(content.text);
+    const results: any[] = parseJSON(text);
     if (!Array.isArray(results)) return null;
 
     const validTypes = ['project-knowledge', 'preference', 'devops', 'failure'];
@@ -339,25 +398,15 @@ Examples of BAD output (DO NOT DO THIS):
 export async function extractCheckpointWithLLM(
   conversationSummary: string,
 ): Promise<CheckpointExtraction | null> {
-  const client = getClient();
-  if (!client) return null;
-
   if (!conversationSummary || conversationSummary.trim().length < 30) {
     return null;
   }
 
+  const text = await completeText(CHECKPOINT_EXTRACTION_PROMPT, conversationSummary, 600);
+  if (!text) return null;
+
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 600,
-      system: CHECKPOINT_EXTRACTION_PROMPT,
-      messages: [{ role: 'user', content: conversationSummary }],
-    });
-
-    const content = response.content?.[0];
-    if (content?.type !== 'text') return null;
-
-    const result = parseJSON(content.text);
+    const result = parseJSON(text);
     if (typeof result !== 'object' || result === null) return null;
 
     return {
@@ -375,27 +424,17 @@ export async function classifyBatchWithLLM(
 ): Promise<(ClassifyResult | null)[] | null> {
   if (texts.length === 0) return [];
 
-  const client = getClient();
-  if (!client) return null;
+  // JSON array, not delimiter-joined text: a user message that happened to
+  // contain the old "---ITEM---" marker desynced item counts and silently
+  // dropped the entire batch to the regex fallback. JSON boundaries can't
+  // be forged by content.
+  const joined = JSON.stringify(texts);
+
+  const text = await completeText(BATCH_SYSTEM_PROMPT, joined, texts.length * 200);
+  if (!text) return null;
 
   try {
-    // JSON array, not delimiter-joined text: a user message that happened to
-    // contain the old "---ITEM---" marker desynced item counts and silently
-    // dropped the entire batch to the regex fallback. JSON boundaries can't
-    // be forged by content.
-    const joined = JSON.stringify(texts);
-
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: texts.length * 200,
-      system: BATCH_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: joined }],
-    });
-
-    const content = response.content?.[0];
-    if (content?.type !== 'text') return null;
-
-    const results: any[] = parseJSON(content.text);
+    const results: any[] = parseJSON(text);
 
     if (!Array.isArray(results) || results.length !== texts.length) return null;
 
