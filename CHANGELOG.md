@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.2] - 2026-07-10
+
+### Documentation
+
+- **README restructured for readability.** A new "What it looks like in practice" section directly after the intro shows a concrete worked example — correct the agent once in plain language, see the auto-capture echo, watch a later session apply the rule, audit it with `claude-recall search`. The Kiro section is cut to the essentials (setup, merge, the one-time rollover warning, no-API-key capture note) with everything else — MCP-only mode, project scoping and `--resume`, classifier internals, enterprise-governance notes, upgrade template notes, troubleshooting — moved to a new **`docs/kiro.md`** guide. Install/upgrade edge cases (EACCES, `unknown command`, pre-0.27 `npx` registrations, WSL ELF errors) are collapsed into a single details block. No content removed, only relocated.
+
 ## [0.30.1] - 2026-07-10
 
 ### Added
