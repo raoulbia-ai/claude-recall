@@ -9,7 +9,7 @@ Claude Haiku through `ANTHROPIC_API_KEY` — a personal API key the user had
 exported themselves. (Claude Code does **not** mint a key from the user's
 subscription; hooks merely inherit the environment. The headless-CLI approach
 documented here was later applied back to Claude Code via `claude -p` on
-subscription auth — see `src/hooks/cc-classifier.ts`.)
+subscription auth — see [cc-llm-capture.md](cc-llm-capture.md).)
 
 Kiro CLI does **not** set `ANTHROPIC_API_KEY`. So under Kiro the classifier fell
 back to a conservative regex that only fires on explicit phrasings
@@ -102,7 +102,8 @@ set*, so a key exported for other tools never silently spends the user's
 Anthropic credits — Kiro already ships an LLM. `CLAUDE_RECALL_PREFER_API_KEY=1`
 flips the order back to key-first for anyone who deliberately wants to pay for a
 stronger model. (Under Claude Code the same pattern applies with `claude -p` on
-the user's subscription as the included LLM — see `src/hooks/cc-classifier.ts`.)
+the user's subscription as the included LLM — see
+[cc-llm-capture.md](cc-llm-capture.md).)
 
 ### Output parsing
 
