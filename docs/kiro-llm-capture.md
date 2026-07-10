@@ -114,7 +114,7 @@ returns `null`, degrading to regex — a hook must never throw.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `CLAUDE_RECALL_KIRO_CLASSIFIER` | *(set by the worker)* | Enables the Kiro-LLM path in `classifyContent`. Set automatically by `kiro-capture-worker`; never needed by hand. |
-| `CLAUDE_RECALL_KIRO_MODEL` | `claude-haiku-4.5` | Model for the classify call. Raise to `claude-sonnet-4.6` for steadier judgement at ~3× the credits. |
+| `CLAUDE_RECALL_KIRO_MODEL` | `claude-haiku-4.5` | Model for the classify call, passed explicitly as `--model`. This is a **dedicated classifier model, independent of the user's interactive Kiro chat model** (e.g. `auto`) — the headless call always uses this value. Raise to `claude-sonnet-4.6` for steadier judgement at ~3× the credits. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS` | `30000` | Hard cap on the headless call before the worker gives up and falls back to regex. |
 | `CLAUDE_RECALL_PREFER_API_KEY` | *(unset)* | Force `ANTHROPIC_API_KEY`-based classification ahead of Kiro's included LLM (opt-in; uses your Anthropic credits). |
 

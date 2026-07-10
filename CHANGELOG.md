@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.1] - 2026-07-10
+
+### Added
+
+- **Successful Kiro-LLM classifications are now logged.** `kiro-classifier.log` previously recorded only failures, so a successful classification was silent and indistinguishable from "the Kiro path never ran" — you couldn't tell from the log which backend classified a capture. Each success now writes `classified via kiro-cli (model=…, Kiro credits, no API key): <type> — <extract>`.
+
+### Documentation
+
+- Clarified that the capture classifier uses a **dedicated, fixed model** (`CLAUDE_RECALL_KIRO_MODEL`, default `claude-haiku-4.5`) **independent of your interactive Kiro chat model** (e.g. `auto`) — the headless `kiro-cli` call always passes an explicit `--model`. Updated the README Kiro section, the env-var table, and `docs/kiro-llm-capture.md`.
+
 ## [0.30.0] - 2026-07-10
 
 ### Changed
