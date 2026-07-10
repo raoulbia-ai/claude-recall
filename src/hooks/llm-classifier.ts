@@ -1,8 +1,13 @@
 /**
- * LLM-powered memory classification using Claude Haiku.
+ * LLM-powered memory classification using Claude Haiku via the Anthropic API.
  *
- * Picks up ANTHROPIC_API_KEY from the environment (Claude Code sets it
- * automatically for child processes). Falls back gracefully when unavailable.
+ * Requires ANTHROPIC_API_KEY in the environment — a personal pay-as-you-go
+ * API key the user exported themselves. Claude Code does NOT mint one from
+ * the user's subscription (hooks just inherit the user's environment), which
+ * is why this is a FALLBACK backend: the capture workers prefer each
+ * runtime's included LLM (claude -p / kiro-cli — see cc-classifier.ts and
+ * kiro-classifier.ts) and only land here when a key is present. Falls back
+ * gracefully (returns null) when unavailable.
  */
 
 import { ClassifyResult } from './shared';
@@ -14,46 +19,66 @@ const MODEL = 'claude-haiku-4-5-20251001';
 
 const SYSTEM_PROMPT = `You are a memory classifier for a developer tool. Classify user text into one of these types:
 
-- correction: User correcting a mistake ("no, use X not Y", "wrong, it should be...")
-- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation. NOT observations, complaints, questions, debugging statements, or one-off instructions like "fix this" or "tell me about X"
+- correction: User durably correcting how something should ALWAYS be done ("no, use X not Y", "wrong, it should be..."). Correcting a one-off action in the current task is NOT durable — only store it if the rule generalizes beyond this moment.
+- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation.
 - failure: Something broke or failed ("build failed", "error in deployment")
 - devops: CI/CD, deployment, Docker, git workflow patterns. ONLY durable rules — not transient operational events like "sandbox rebuilt" or "background task exited"
 - project-knowledge: Architecture, stack, database, API patterns
-- none: Casual conversation, questions, code snippets, or anything not worth remembering
+- none: Casual conversation, questions, code snippets, one-off task instructions, meta-conversation, sentence fragments, or anything not worth remembering across sessions
 
 Respond with ONLY valid JSON (no markdown fences). Format:
 {"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>"}
 
+THE STANDALONE TEST — apply this BEFORE classifying anything as correction/preference/devops:
+A durable rule must make complete sense on its own, read cold in a future session with NO knowledge of this conversation. If the text needs the surrounding chat to be understood, it is "none".
+- Reject text that references the current task or moment with no concrete standalone subject: "this", "that", "the sentence", "here", "it", "again", "first", "now".
+- Reject one-off imperatives aimed at the task in progress ("fix the sentence", "change that", "add a line", "do X first") — even when phrased forcefully. A preference describes what the user ALWAYS wants, not what to do right now.
+- Reject sentence fragments and mid-thought clauses (e.g. "is used in practice", "then run the setup command"). A rule is a complete directive, not a snippet.
+- Reject meta-conversation about this tool, this chat, or what to write/say/do next.
+
 Rules:
 - Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
 - Questions, observations, complaints, task instructions, and sentence fragments are "none" — not preferences
-- If the text doesn't make sense as a standalone rule or directive, classify as "none"
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
-- extract should be a clean, imperative statement of the rule/fact (e.g. "Use tabs for indentation")
-- If the text is a question, greeting, or code block, classify as "none"`;
+- extract should be a clean, imperative statement of the rule/fact, understandable standalone (e.g. "Use tabs for indentation")
+- If the text is a question, greeting, or code block, classify as "none"
+
+Examples:
+- "we use pnpm here, not npm" → {"type":"preference","confidence":0.9,"extract":"Use pnpm, not npm"}
+- "always run tests before pushing" → {"type":"preference","confidence":0.85,"extract":"Run tests before pushing"}
+- "first fix the sentence" → {"type":"none","confidence":0.0,"extract":""}
+- "is used in practice" → {"type":"none","confidence":0.0,"extract":""}
+- "then run claude-recall kiro setup" → {"type":"none","confidence":0.0,"extract":""}
+- "what memories do you have?" → {"type":"none","confidence":0.0,"extract":""}`;
 
 const BATCH_SYSTEM_PROMPT = `You are a memory classifier for a developer tool. You will receive a JSON array of texts. Classify each into one of these types:
 
-- correction: User correcting a mistake ("no, use X not Y", "wrong, it should be...")
-- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation. NOT observations, complaints, questions, debugging statements, or one-off instructions like "fix this" or "tell me about X"
+- correction: User durably correcting how something should ALWAYS be done ("no, use X not Y", "wrong, it should be..."). Correcting a one-off action in the current task is NOT durable — only store it if the rule generalizes beyond this moment.
+- preference: User stating a clear, reusable directive about how they want things done going forward ("we use tabs", "always use TypeScript", "I prefer X"). Must be a rule that applies beyond this conversation.
 - failure: Something broke or failed ("build failed", "error in deployment")
 - devops: CI/CD, deployment, Docker, git workflow patterns. ONLY durable rules — not transient operational events like "sandbox rebuilt" or "background task exited"
 - project-knowledge: Architecture, stack, database, API patterns
-- none: Casual conversation, questions, code snippets, or anything not worth remembering
+- none: Casual conversation, questions, code snippets, one-off task instructions, meta-conversation, sentence fragments, or anything not worth remembering across sessions
 
 Respond with ONLY a valid JSON array (no markdown fences). One object per input text, in order:
 [{"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>"}, ...]
 
+THE STANDALONE TEST — apply this BEFORE classifying anything as correction/preference/devops:
+A durable rule must make complete sense on its own, read cold in a future session with NO knowledge of this conversation. If a text needs the surrounding chat to be understood, it is "none".
+- Reject text that references the current task or moment with no concrete standalone subject: "this", "that", "the sentence", "here", "it", "again", "first", "now".
+- Reject one-off imperatives aimed at the task in progress ("fix the sentence", "change that", "add a line", "do X first") — even when phrased forcefully.
+- Reject sentence fragments and mid-thought clauses (e.g. "is used in practice", "then run the setup command").
+- Reject meta-conversation about this tool, this chat, or what to write/say/do next.
+
 Rules:
 - Be very conservative — when in doubt, classify as "none". Only store things worth remembering across sessions
 - Questions, observations, complaints, task instructions, and sentence fragments are "none" — not preferences
-- If the text doesn't make sense as a standalone rule or directive, classify as "none"
 - confidence >= 0.7 for corrections and preferences
 - confidence >= 0.6 for other types
 - "none" type should have confidence 0.0
-- extract should be a clean, imperative statement of the rule/fact
+- extract should be a clean, imperative statement of the rule/fact, understandable standalone
 - If a text is a question, greeting, or code block, classify as "none"`;
 
 /**

@@ -8,16 +8,20 @@
  * result whose extract still contains a '?' (a distilled rule is declarative).
  */
 
-// Mock both LLM backends so we can assert the guards AND the backend ordering
-// (which one gets consulted first) without any real API or kiro-cli call.
+// Mock all three LLM backends so we can assert the guards AND the backend
+// ordering (which one gets consulted first) without any real API or CLI call.
 const mockClassifyWithLLM = jest.fn();
 const mockClassifyWithKiro = jest.fn();
+const mockClassifyWithClaudeCli = jest.fn();
 jest.mock('../../src/hooks/llm-classifier', () => ({
   classifyWithLLM: (...args: any[]) => mockClassifyWithLLM(...args),
   classifyBatchWithLLM: jest.fn(),
 }));
 jest.mock('../../src/hooks/kiro-classifier', () => ({
   classifyWithKiro: (...args: any[]) => mockClassifyWithKiro(...args),
+}));
+jest.mock('../../src/hooks/cc-classifier', () => ({
+  classifyWithClaudeCli: (...args: any[]) => mockClassifyWithClaudeCli(...args),
 }));
 
 import { classifyContent, isConversationalNotRule } from '../../src/hooks/shared';
@@ -87,25 +91,31 @@ describe('classifyContent guards', () => {
 describe('classifyContent backend precedence', () => {
   const saved = {
     kiro: process.env.CLAUDE_RECALL_KIRO_CLASSIFIER,
+    cc: process.env.CLAUDE_RECALL_CC_CLASSIFIER,
     preferKey: process.env.CLAUDE_RECALL_PREFER_API_KEY,
   };
   beforeEach(() => {
     mockClassifyWithLLM.mockReset().mockResolvedValue(RULE);
     mockClassifyWithKiro.mockReset().mockResolvedValue(RULE);
+    mockClassifyWithClaudeCli.mockReset().mockResolvedValue(RULE);
     delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+    delete process.env.CLAUDE_RECALL_CC_CLASSIFIER;
     delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
   });
   afterAll(() => {
     if (saved.kiro === undefined) delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
     else process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = saved.kiro;
+    if (saved.cc === undefined) delete process.env.CLAUDE_RECALL_CC_CLASSIFIER;
+    else process.env.CLAUDE_RECALL_CC_CLASSIFIER = saved.cc;
     if (saved.preferKey === undefined) delete process.env.CLAUDE_RECALL_PREFER_API_KEY;
     else process.env.CLAUDE_RECALL_PREFER_API_KEY = saved.preferKey;
   });
 
-  it('Claude Code (no Kiro flag): uses the API key backend, never Kiro', async () => {
+  it('inline (no worker flag): uses the API key backend only — no CLI classifiers', async () => {
     await classifyContent('always use tabs');
     expect(mockClassifyWithLLM).toHaveBeenCalled();
     expect(mockClassifyWithKiro).not.toHaveBeenCalled();
+    expect(mockClassifyWithClaudeCli).not.toHaveBeenCalled();
   });
 
   it('under Kiro: prefers the Kiro LLM over a stray API key', async () => {
@@ -131,5 +141,30 @@ describe('classifyContent backend precedence', () => {
     await classifyContent('always use tabs');
     expect(mockClassifyWithLLM).toHaveBeenCalled();
     expect(mockClassifyWithKiro).not.toHaveBeenCalled();
+  });
+
+  it('in the CC worker: prefers the Claude subscription CLI over a stray API key', async () => {
+    process.env.CLAUDE_RECALL_CC_CLASSIFIER = '1';
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithClaudeCli).toHaveBeenCalled();
+    // The CLI returned a rule, so the API key backend is never consulted.
+    expect(mockClassifyWithLLM).not.toHaveBeenCalled();
+  });
+
+  it('in the CC worker: falls back to the API key when claude -p yields nothing', async () => {
+    process.env.CLAUDE_RECALL_CC_CLASSIFIER = '1';
+    mockClassifyWithClaudeCli.mockResolvedValue(null);
+    const result = await classifyContent('always use tabs');
+    expect(mockClassifyWithClaudeCli).toHaveBeenCalled();
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
+    expect(result).toEqual(RULE);
+  });
+
+  it('CLAUDE_RECALL_PREFER_API_KEY flips the order back to key-first in the CC worker', async () => {
+    process.env.CLAUDE_RECALL_CC_CLASSIFIER = '1';
+    process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
+    await classifyContent('always use tabs');
+    expect(mockClassifyWithLLM).toHaveBeenCalled();
+    expect(mockClassifyWithClaudeCli).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { readStdin, hookLog, safeErrorMessage } from '../../hooks/shared';
 
 const AVAILABLE_HOOKS = [
   'correction-detector',
+  'cc-capture-worker',
   'memory-stop',
   'memory-sync',
   'precompact-preserve',
@@ -37,8 +38,17 @@ export class HookCommands {
   private static async runOne(name: string, input: any): Promise<void> {
     switch (name) {
       case 'correction-detector': {
-        const { handleCorrectionDetector } = await import('../../hooks/correction-detector');
-        await handleCorrectionDetector(input);
+        // Kept as the registered name in every existing settings.json, but
+        // capture no longer classifies inline: the handler spawns a detached
+        // cc-capture-worker so the ~4s `claude -p` subscription classifier
+        // never blocks the user's turn. See src/hooks/cc-capture.ts.
+        const { handleCcCapture } = await import('../../hooks/cc-capture');
+        await handleCcCapture(input);
+        break;
+      }
+      case 'cc-capture-worker': {
+        const { handleCcCaptureWorker } = await import('../../hooks/cc-capture');
+        await handleCcCaptureWorker(input);
         break;
       }
       case 'memory-stop': {
@@ -108,7 +118,7 @@ export class HookCommands {
         break;
       }
       // Kiro CLI adapters — see src/hooks/kiro-hooks.ts. Kiro's
-      // userPromptSubmit needs no adapter: wire `correction-detector` directly.
+      // userPromptSubmit wires `kiro-capture` (detached-worker capture).
       case 'kiro-agent-spawn': {
         const { handleKiroAgentSpawn } = await import('../../hooks/kiro-hooks');
         await handleKiroAgentSpawn(input);

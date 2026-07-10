@@ -92,5 +92,40 @@ describe('classifyContentRegex', () => {
       expect(classifyContentRegex('I use the terminal for most things')).toBeNull();
       expect(classifyContentRegex('actually let me look at the other file first')).toBeNull();
     });
+
+    // Regression: four real junk memories stored in one session of talking
+    // ABOUT claude-recall — each traced to a specific over-broad pattern.
+    it('does not fire "recall" inside the product name claude-recall / claude recall', () => {
+      // Stored "is used in practice" (from "how claude recall is used in practice")
+      expect(classifyContentRegex(
+        'there should be a worked example that illustrates how claude recall is used in practice'
+      )).toBeNull();
+      // Stored "→ then claude-recall kiro setup." (from a pasted install line)
+      expect(classifyContentRegex(
+        'Install: npm install -g claude-recall → then claude-recall kiro setup.'
+      )).toBeNull();
+    });
+
+    it('does not fire "never" mid-clause on quoted/pasted text', () => {
+      // Stored "touches your token allowance..." as a correction
+      expect(classifyContentRegex(
+        'bit of a contradiction here: it uses the included model, so it never touches your token allowance. The only cost is 0.06 credits'
+      )).toBeNull();
+      // But sentence-initial "never" still works, including after a full stop
+      expect(classifyContentRegex('That was wrong of me. Never commit directly to main')?.type).toBe('correction');
+    });
+
+    it('does not classify "no <one-off task imperative>" as a correction', () => {
+      // Stored "first fix the sentence" as a correction
+      expect(classifyContentRegex('no first fix the sentence')).toBeNull();
+      // But "no, ..." with a durable-rule signal still classifies
+      expect(classifyContentRegex('no, use helm not kubectl for deploys')?.type).toBe('correction');
+    });
+
+    it('does not fire imperative "recall" when it reads as a noun/subject', () => {
+      expect(classifyContentRegex('please note the recall is broken again today')).toBeNull();
+      // Imperative "recall X" still works
+      expect(classifyContentRegex('recall the deploy pipeline uses helm')?.type).toBe('preference');
+    });
   });
 });

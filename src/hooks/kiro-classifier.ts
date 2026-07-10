@@ -37,22 +37,33 @@ const VALID_TYPES = new Set([
  * single INPUT argument (no separate system prompt), so instruction + payload
  * are combined. Mirrors the contract of llm-classifier's SYSTEM_PROMPT so
  * downstream thresholds/dedup behave identically regardless of which LLM ran.
+ *
+ * Exported for cc-classifier: `claude -p` is the same single-argument headless
+ * shape, so both CLI backends share one prompt (and one parser, below).
  */
-function buildPrompt(text: string): string {
+export function buildClassifyPrompt(text: string): string {
   return (
     'You are a memory classifier for a developer tool. Classify the USER MESSAGE ' +
     'into exactly one type and respond with ONLY minified JSON — no markdown, no ' +
     'prose, no code fence:\n' +
     '{"type":"correction|preference|failure|devops|project-knowledge|none","confidence":0.0-1.0,"extract":"<concise imperative rule to remember, or empty>"}\n\n' +
     'Types:\n' +
-    '- correction: user correcting a mistake ("no, use X not Y")\n' +
+    '- correction: user durably correcting how something should ALWAYS be done ("no, use X not Y"). Correcting a one-off action in the current task is NOT durable.\n' +
     '- preference: a reusable directive about how the user wants things done ("I prefer X", "we use tabs", "my favourite color is green"). Must apply beyond this one message.\n' +
     '- failure: something broke ("build failed")\n' +
     '- devops: durable CI/CD, git, deployment, or Docker rules\n' +
     '- project-knowledge: architecture, stack, database, or API facts\n' +
-    '- none: questions, chitchat, task instructions, observations, or anything not worth remembering across sessions\n\n' +
+    '- none: questions, chitchat, task instructions, meta-conversation, sentence fragments, observations, or anything not worth remembering across sessions\n\n' +
+    'THE STANDALONE TEST — apply before choosing correction/preference/devops: a durable rule must make complete sense on its own, read cold in a future session with no knowledge of this chat. If the message needs the surrounding conversation to be understood, use "none".\n' +
+    '- Reject text referencing the current moment with no standalone subject ("this", "that", "the sentence", "here", "it", "first", "now").\n' +
+    '- Reject one-off imperatives aimed at the task in progress ("fix the sentence", "change that", "do X first") even when forceful.\n' +
+    '- Reject sentence fragments and mid-thought clauses ("is used in practice", "then run the setup command").\n' +
+    '- Reject meta-conversation about this tool or what to write/do next.\n\n' +
     'Be conservative: when in doubt use "none" with confidence 0. Use confidence >= 0.75 for correction/preference/devops. ' +
     'extract must be a clean standalone rule (e.g. "Favourite colour is green"), or empty when type is none.\n\n' +
+    'Examples: "we use pnpm, not npm" → {"type":"preference","confidence":0.9,"extract":"Use pnpm, not npm"}; ' +
+    '"first fix the sentence" → {"type":"none","confidence":0,"extract":""}; ' +
+    '"then run claude-recall kiro setup" → {"type":"none","confidence":0,"extract":""}.\n\n' +
     'USER MESSAGE: ' + text
   );
 }
@@ -126,7 +137,7 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
           '--no-interactive',
           '--agent', CLASSIFIER_AGENT,
           '--model', model,
-          buildPrompt(text),
+          buildClassifyPrompt(text),
         ],
         { stdio: ['ignore', 'pipe', 'ignore'] },
       );
@@ -160,7 +171,12 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
       }
       const result = extractClassification(stdout);
       if (!result) {
-        hookLog('kiro-classifier', 'no parseable classification in kiro-cli output');
+        // Distinguish a deliberate "none" verdict from unparseable output —
+        // "the model said not a rule" and "the call broke" are different
+        // diagnoses when reading the log.
+        hookLog('kiro-classifier', /"type"\s*:\s*"none"/.test(stdout)
+          ? 'classified as none (not a durable rule)'
+          : 'no parseable classification in kiro-cli output');
       } else {
         // Log success too, not just failures — otherwise a successful Kiro
         // classification is silent and indistinguishable from "never ran",
