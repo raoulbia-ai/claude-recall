@@ -92,6 +92,8 @@ tail -5 ~/.claude-recall/hook-logs/cc-classifier.log   # which model ran, what w
 claude-recall search "something you said"
 ```
 
+Design details (the `claude -p` key-precedence gotcha, recursion guards, which features run on the subscription): [docs/cc-llm-capture.md](docs/cc-llm-capture.md).
+
 ### Pi
 
 ```bash
