@@ -26,17 +26,15 @@ describe('KiroCommands.buildAgentConfig', () => {
     expect(config.allowedTools).not.toContain('@claude-recall/delete_memory');
   });
 
-  it('wires all four lifecycle hooks with timeouts', () => {
+  it('wires the three lifecycle hooks with timeouts', () => {
     expect(config.hooks.agentSpawn[0].command).toBe('claude-recall hook run kiro-agent-spawn');
     expect(config.hooks.userPromptSubmit[0].command).toBe('claude-recall hook run kiro-capture');
-    expect(config.hooks.preToolUse[0]).toMatchObject({
-      matcher: '*',
-      command: 'claude-recall hook run kiro-rule-injector',
-    });
     expect(config.hooks.postToolUse[0]).toMatchObject({
       matcher: '*',
       command: 'claude-recall hook run kiro-tool-outcome',
     });
+    // Kiro ignores preToolUse stdout, so no rule injector is wired there
+    expect(config.hooks.preToolUse).toBeUndefined();
     for (const entries of Object.values(config.hooks) as any[]) {
       for (const h of entries) {
         expect(h.timeout_ms).toBeGreaterThan(0);
@@ -183,8 +181,9 @@ describe('kiro setup --merge-into', () => {
     expect(merged.allowedTools).toContain('@claude-recall/load_rules');
     expect(merged.hooks.agentSpawn.some((h: any) => h.command.includes('kiro-agent-spawn'))).toBe(true);
     expect(merged.hooks.userPromptSubmit.some((h: any) => h.command.includes('kiro-capture'))).toBe(true);
-    expect(merged.hooks.preToolUse.some((h: any) => h.command.includes('kiro-rule-injector'))).toBe(true);
     expect(merged.hooks.postToolUse.some((h: any) => h.command.includes('kiro-tool-outcome'))).toBe(true);
+    // No preToolUse array is invented for a config that never had one
+    expect(merged.hooks.preToolUse).toBeUndefined();
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 
@@ -211,7 +210,7 @@ describe('kiro setup --merge-into', () => {
     expect(fs.readdirSync(dir).filter(f => f.startsWith('a2.json.bak.'))).toHaveLength(1);
     // No duplicate hooks
     const merged = JSON.parse(afterFirst);
-    expect(merged.hooks.preToolUse.filter((h: any) => h.command.includes('kiro-rule-injector'))).toHaveLength(1);
+    expect(merged.hooks.userPromptSubmit.filter((h: any) => h.command.includes('kiro-capture'))).toHaveLength(1);
   });
 
   it('strips the superseded correction-detector capture hook when wiring kiro-capture', () => {
@@ -236,6 +235,27 @@ describe('kiro setup --merge-into', () => {
     expect(cmds.filter((c: string) => c.includes('kiro-capture'))).toHaveLength(1);
     // The user's own unrelated hook is preserved
     expect(cmds).toContain('my-own-linter');
+  });
+
+  it('strips the deprecated kiro-rule-injector from preToolUse, preserving user hooks', () => {
+    // Simulates an agent wired by ≤0.33, when kiro setup added a preToolUse
+    // rule injector whose stdout Kiro never actually injected into context.
+    const agentPath = writeAgent('injector-legacy', {
+      name: 'injector-legacy',
+      hooks: {
+        preToolUse: [
+          { matcher: '*', command: 'claude-recall hook run kiro-rule-injector', timeout_ms: 5000 },
+          { matcher: '*', command: 'my-own-guard', timeout_ms: 1000 },
+        ],
+      },
+    });
+
+    runMerge('injector-legacy');
+
+    const merged = JSON.parse(fs.readFileSync(agentPath, 'utf8'));
+    const cmds = merged.hooks.preToolUse.map((h: any) => h.command);
+    expect(cmds).not.toContain('claude-recall hook run kiro-rule-injector');
+    expect(cmds).toContain('my-own-guard'); // unrelated user hook preserved
   });
 
   it('adds @claude-recall to an explicit tools list but leaves "*" and absent alone', () => {

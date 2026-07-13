@@ -1,6 +1,6 @@
 /**
  * Kiro CLI adapter tests — payload normalization, agentSpawn context
- * injection, plain-text rule injection, and outcome delegation.
+ * injection, the mid-session rule refresh, and outcome delegation.
  */
 
 const mockLoadActiveRules = jest.fn();
@@ -26,11 +26,6 @@ jest.mock('../../src/services/config', () => ({
   },
 }));
 
-const mockComputeInjection = jest.fn();
-jest.mock('../../src/hooks/rule-injector', () => ({
-  computeInjection: mockComputeInjection,
-}));
-
 const mockToolOutcomeWatcher = jest.fn();
 jest.mock('../../src/hooks/tool-outcome-watcher', () => ({
   handleToolOutcomeWatcher: mockToolOutcomeWatcher,
@@ -44,6 +39,7 @@ import {
   handleKiroAgentSpawn,
   handleKiroRuleInjector,
   handleKiroToolOutcome,
+  handleKiroCapture,
 } from '../../src/hooks/kiro-hooks';
 
 // hookLog writes under CLAUDE_RECALL_DB_PATH (claudeRecallDir) — isolate it so
@@ -184,38 +180,124 @@ describe('handleKiroAgentSpawn', () => {
   });
 });
 
-describe('handleKiroRuleInjector', () => {
+describe('handleKiroRuleInjector (deprecated)', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('emits plain text (no hookSpecificOutput envelope) with normalized tool name', async () => {
-    mockComputeInjection.mockResolvedValue('<recalled-memory>rule text</recalled-memory>');
-
+  // Kiro ignores preToolUse stdout (exit codes gate the tool; only exit-2
+  // stderr reaches the LLM), so the injector must be a silent no-op — any
+  // stdout would be wasted, and any injection recorded would be false data.
+  it('emits nothing and never throws', async () => {
     const cap = captureStdout();
     try {
       await handleKiroRuleInjector({ tool_name: 'execute_bash', tool_input: { command: 'npm test' } });
-    } finally {
-      cap.restore();
-    }
-
-    expect(mockComputeInjection).toHaveBeenCalledWith('Bash', { command: 'npm test' }, '');
-    expect(cap.out()).toContain('<recalled-memory>rule text</recalled-memory>');
-    expect(cap.out()).not.toContain('hookSpecificOutput');
-  });
-
-  it('emits nothing when there is no injection', async () => {
-    mockComputeInjection.mockResolvedValue(null);
-    const cap = captureStdout();
-    try {
-      await handleKiroRuleInjector({ tool_name: 'fs_read', tool_input: { path: '/x' } });
+      await handleKiroRuleInjector(null);
     } finally {
       cap.restore();
     }
     expect(cap.out()).toBe('');
   });
+});
 
-  it('never throws when the core errors', async () => {
-    mockComputeInjection.mockRejectedValue(new Error('boom'));
-    await expect(handleKiroRuleInjector({ tool_name: 'execute_bash' })).resolves.toBeUndefined();
+describe('mid-session rule refresh (handleKiroCapture)', () => {
+  const RULES = {
+    preferences: [{ value: { content: 'always run the linter before committing' } }],
+    corrections: [],
+    failures: [],
+    devops: [],
+    summary: '',
+  };
+  const NO_RULES = { preferences: [], corrections: [], failures: [], devops: [], summary: '' };
+
+  // Short prompt (<20 chars) so the capture path never spawns a worker —
+  // these tests exercise ONLY the refresh side of the handler.
+  const PROMPT = 'hi';
+
+  function stateDir(): string {
+    return pathMod.join(LOG_TMP, 'hook-state');
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadActiveRules.mockReturnValue(RULES);
+    fs.rmSync(stateDir(), { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_RECALL_REFRESH_INTERVAL;
+  });
+
+  async function promptOnce(sessionId: string): Promise<string> {
+    const cap = captureStdout();
+    try {
+      await handleKiroCapture({ prompt: PROMPT, session_id: sessionId, cwd: '/p' });
+    } finally {
+      cap.restore();
+    }
+    return cap.out();
+  }
+
+  it('re-injects the active rules every Nth prompt and stays silent otherwise', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = '3';
+
+    expect(await promptOnce('s-interval')).toBe('');
+    expect(await promptOnce('s-interval')).toBe('');
+
+    const third = await promptOnce('s-interval');
+    expect(third).toContain('🔄 Recall: periodic rule refresh');
+    expect(third).toContain('## Preferences');
+    expect(third).toContain('always run the linter before committing');
+
+    // Counter keeps going: next emission at prompt 6, not 4
+    expect(await promptOnce('s-interval')).toBe('');
+    expect(await promptOnce('s-interval')).toBe('');
+    expect(await promptOnce('s-interval')).toContain('periodic rule refresh');
+  });
+
+  it('counts prompts per session independently', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = '2';
+
+    expect(await promptOnce('session-a')).toBe('');
+    expect(await promptOnce('session-b')).toBe('');
+    expect(await promptOnce('session-a')).toContain('periodic rule refresh'); // a's 2nd
+    expect(await promptOnce('session-b')).toContain('periodic rule refresh'); // b's 2nd
+  });
+
+  it('is disabled entirely when the interval is 0', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = '0';
+    for (let i = 0; i < 4; i++) {
+      expect(await promptOnce('s-off')).toBe('');
+    }
+    expect(fs.existsSync(stateDir()) && fs.readdirSync(stateDir()).length > 0).toBe(false);
+  });
+
+  it('emits nothing on the interval prompt when there are no rules', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = '2';
+    mockLoadActiveRules.mockReturnValue(NO_RULES);
+
+    await promptOnce('s-empty');
+    expect(await promptOnce('s-empty')).toBe('');
+  });
+
+  it('defaults to interval 15 when the env var is unset', async () => {
+    for (let i = 1; i <= 14; i++) {
+      expect(await promptOnce('s-default')).toBe('');
+    }
+    expect(await promptOnce('s-default')).toContain('periodic rule refresh');
+  });
+
+  it('falls back to the default on a malformed interval value', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = 'often';
+    // Malformed must NOT disable the refresh — prompt 15 still fires
+    for (let i = 1; i <= 14; i++) {
+      expect(await promptOnce('s-malformed')).toBe('');
+    }
+    expect(await promptOnce('s-malformed')).toContain('periodic rule refresh');
+  });
+
+  it('never lets a refresh failure break the capture path', async () => {
+    process.env.CLAUDE_RECALL_REFRESH_INTERVAL = '1';
+    mockLoadActiveRules.mockImplementation(() => { throw new Error('db locked'); });
+    await expect(promptOnce('s-error')).resolves.toBe('');
   });
 });
 
