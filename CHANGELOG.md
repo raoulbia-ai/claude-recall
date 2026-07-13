@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`claude-recall upgrade` can no longer report a false success.** Observed live on the 0.34.0 release: run within npm's publish-propagation window, `npm install -g claude-recall@latest` silently reinstalled the OLD version (the dist-tag replica lagged the metadata endpoint `npm view` had read) and exited 0, so the command printed "✓ Upgraded to 0.34.0" while 0.33.0 stayed installed. The install is now pinned to the exact version the registry reported, the installed version is verified after the install before any success message, an ETARGET hint covers the propagation case, and the registry version string is sanity-checked before being used as an npm argument.
+
 ## [0.34.0] - 2026-07-13
 
 ### Added
