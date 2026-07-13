@@ -30,7 +30,7 @@ and inside the Kiro chat, switch to the agent:
 /agent swap recall
 ```
 
-You get: active rules injected into context automatically at agent start (no tool call needed), just-in-time rule injection before each tool call, automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (read-only tools pre-approved).
+You get: active rules injected into context automatically at agent start (no tool call needed), a periodic mid-session rule refresh (see below), automatic capture of corrections/preferences from your prompts, tool-outcome tracking with Bash fix-pairing, and the full MCP tool surface (read-only tools pre-approved).
 
 ### Merging into an agent you already use
 
@@ -40,7 +40,13 @@ Don't want to swap agents? Merge Claude Recall into your own:
 claude-recall kiro setup --merge-into <agent-name>
 ```
 
-This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the four hooks — while leaving your own config untouched. It only rewrites claude-recall's own entries: superseded ones from an older version are swapped for the current wiring (any unrelated hook you have on the same event is preserved). Idempotent: on an already-current agent, re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
+This finds the agent config (workspace `.kiro/agents/` first, then `~/.kiro/agents/`; `--global` to target the global one directly), writes a timestamped backup, and appends the claude-recall pieces — MCP server, pre-approved read-only tools, and the three hooks (`agentSpawn`, `userPromptSubmit`, `postToolUse`) — while leaving your own config untouched. It only rewrites claude-recall's own entries: superseded ones from an older version are swapped for the current wiring (any unrelated hook you have on the same event is preserved). Idempotent: on an already-current agent, re-running changes nothing. If the agent restricts tools with an explicit list, `@claude-recall` is added to it.
+
+### Mid-session rule refresh (long sessions)
+
+Rules enter context once, at agent start. In a long session Kiro eventually compacts or rolls the conversation and the rules silently vanish — Kiro exposes no post-compaction event to re-inject them (Claude Code has one, and claude-recall uses it there). So under Kiro, claude-recall re-injects the active rules **every 15 prompts** via the `userPromptSubmit` hook, whose stdout Kiro adds directly to context. Tune or disable with `CLAUDE_RECALL_REFRESH_INTERVAL` (`0` = off).
+
+> **Note for configs wired by ≤0.33:** older versions also added a `preToolUse` rule injector. Kiro ignores `preToolUse` stdout — exit codes gate the tool call, and only exit-2 stderr reaches the model ([kiro.dev/docs/cli/hooks](https://kiro.dev/docs/cli/hooks)) — so that hook never actually injected anything. It is now a harmless no-op; re-run `claude-recall kiro setup --merge-into <agent>` once and the stale entry is stripped automatically.
 
 ---
 

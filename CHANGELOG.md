@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Kiro: periodic mid-session rule refresh.** Rules used to enter context only once, at `agentSpawn` — a long Kiro session that compacts or rolls its conversation silently lost them, with no post-compaction event to re-inject (Claude Code has one; Kiro doesn't). The `userPromptSubmit` hook (whose stdout Kiro adds to context same-turn — verified empirically and per kiro.dev/docs/cli/hooks) now re-emits the active rules every 15 prompts. Tune or disable with `CLAUDE_RECALL_REFRESH_INTERVAL` (`0` = off). Per-session prompt counters live in `~/.claude-recall/hook-state/` and stale ones self-prune after 7 days.
+
+### Fixed
+
+- **Kiro: the `preToolUse` just-in-time rule injector never worked — removed.** Kiro ignores `preToolUse` stdout (exit codes gate the tool call; only exit-2 stderr reaches the model), so everything `kiro-rule-injector` emitted since 0.28 went nowhere while being recorded as injections (polluting per-rule effectiveness data). The handler is now a no-op kept only so old configs don't error; `kiro setup` no longer wires it and `--merge-into` strips the stale entry on re-run. Mid-session injection now rides the userPromptSubmit refresh above. README/docs corrected accordingly.
+
 ## [0.33.0] - 2026-07-10
 
 ### Changed

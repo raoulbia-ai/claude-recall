@@ -13,7 +13,7 @@ import { resolveOnPath } from './repair';
  * `claude-recall kiro setup` writes a Kiro custom agent config
  * (.kiro/agents/recall.json) wiring the same shared memory database into
  * Kiro CLI: MCP tools, rules auto-loaded into context at agentSpawn,
- * just-in-time rule injection on preToolUse, user-prompt capture, and tool
+ * user-prompt capture with a periodic mid-session rule refresh, and tool
  * outcome tracking. See src/hooks/kiro-hooks.ts for the adapter details and
  * kiro.dev/docs/cli/custom-agents for the config format.
  */
@@ -67,22 +67,30 @@ export class KiroCommands {
     return p;
   }
 
-  /** The four lifecycle hook entries (shared by fresh config and merge). */
+  /**
+   * The lifecycle hook entries (shared by fresh config and merge).
+   *
+   * No preToolUse entry: Kiro ignores preToolUse stdout (exit codes gate the
+   * tool; only exit-2 stderr reaches the LLM — kiro.dev/docs/cli/hooks), so
+   * the kiro-rule-injector wired there by versions ≤0.33 never reached the
+   * model. Mid-session injection rides userPromptSubmit instead (the periodic
+   * rule refresh inside kiro-capture); stale kiro-rule-injector entries are
+   * stripped on merge.
+   */
   static buildHookEntries(hookCmd: string): Record<string, Array<Record<string, unknown>>> {
     return {
       // stdout of agentSpawn is added to context → rules present from turn one
       agentSpawn: [
         { command: `${hookCmd} kiro-agent-spawn`, timeout_ms: 10000 },
       ],
-      // Capture. kiro-capture spawns a detached worker that classifies the
-      // prompt via Kiro's own headless LLM (no ANTHROPIC_API_KEY needed) and
-      // stores in the background — see src/hooks/kiro-classifier.ts. The hook
-      // itself returns in milliseconds, so the short timeout is ample.
+      // Capture + periodic rule refresh. kiro-capture spawns a detached worker
+      // that classifies the prompt via Kiro's own headless LLM (no
+      // ANTHROPIC_API_KEY needed) and stores in the background — see
+      // src/hooks/kiro-classifier.ts. The hook itself returns in milliseconds,
+      // so the short timeout is ample. Its stdout is added to context, which
+      // also carries the every-N-prompts rule re-injection for long sessions.
       userPromptSubmit: [
         { command: `${hookCmd} kiro-capture`, timeout_ms: 8000 },
-      ],
-      preToolUse: [
-        { matcher: '*', command: `${hookCmd} kiro-rule-injector`, timeout_ms: 5000 },
       ],
       postToolUse: [
         { matcher: '*', command: `${hookCmd} kiro-tool-outcome`, timeout_ms: 5000 },
@@ -93,7 +101,7 @@ export class KiroCommands {
   static buildAgentConfig(hookCmd: string, mcpCommand: string, mcpArgs: string[]): Record<string, unknown> {
     return {
       name: 'recall',
-      description: 'Kiro agent with Claude Recall persistent memory: rules auto-loaded at start, just-in-time injection per tool call, automatic capture of corrections and outcomes.',
+      description: 'Kiro agent with Claude Recall persistent memory: rules auto-loaded at start, periodic mid-session rule refresh, automatic capture of corrections and outcomes.',
       // Also load any servers the user configured in .kiro/settings/mcp.json
       includeMcpJson: true,
       mcpServers: {
@@ -158,7 +166,6 @@ export class KiroCommands {
     const handlerMarkers: Record<string, string> = {
       agentSpawn: 'kiro-agent-spawn',
       userPromptSubmit: 'kiro-capture',
-      preToolUse: 'kiro-rule-injector',
       postToolUse: 'kiro-tool-outcome',
     };
     // Superseded claude-recall hooks to strip from an event before wiring the
@@ -166,30 +173,44 @@ export class KiroCommands {
     // across versions. Pre-0.29 wired userPromptSubmit to `correction-detector`
     // directly; 0.29 replaced it with `kiro-capture`. Leaving the old entry
     // makes BOTH fire, double-capturing (often as near-duplicate memories).
+    // Versions ≤0.33 wired preToolUse to `kiro-rule-injector`, whose stdout
+    // Kiro never adds to context — a per-tool-call no-op, removed entirely.
     // Only our own commands (containing 'claude-recall' / 'hook run') are
     // touched — a user's unrelated hook on the same event is preserved.
     const supersededMarkers: Record<string, string[]> = {
       userPromptSubmit: ['correction-detector'],
+      preToolUse: ['kiro-rule-injector'],
     };
     const isOurCommand = (cmd: string) => cmd.includes('claude-recall') || cmd.includes('hook run');
 
-    for (const [event, entries] of Object.entries(KiroCommands.buildHookEntries(hookCmd))) {
-      if (!Array.isArray(config.hooks[event])) {
-        config.hooks[event] = [];
-      }
+    const entriesByEvent = KiroCommands.buildHookEntries(hookCmd);
+    // Visit superseded-only events too (e.g. preToolUse, which we no longer
+    // wire but must still clean up), without inventing empty hook arrays in
+    // configs that never had them.
+    const allEvents = new Set([...Object.keys(entriesByEvent), ...Object.keys(supersededMarkers)]);
+
+    for (const event of allEvents) {
+      const entries = entriesByEvent[event] ?? [];
       const marker = handlerMarkers[event];
 
       // Strip superseded entries first (but never the current marker).
-      for (const stale of supersededMarkers[event] ?? []) {
-        if (stale === marker) continue;
-        const before = config.hooks[event].length;
-        config.hooks[event] = config.hooks[event].filter(
-          (h: any) => !(typeof h?.command === 'string' && h.command.includes(stale) && isOurCommand(h.command)),
-        );
-        const removed = before - config.hooks[event].length;
-        if (removed > 0) {
-          changes.push(`hooks.${event}: removed ${removed} superseded ${stale} entr${removed === 1 ? 'y' : 'ies'}`);
+      if (Array.isArray(config.hooks[event])) {
+        for (const stale of supersededMarkers[event] ?? []) {
+          if (stale === marker) continue;
+          const before = config.hooks[event].length;
+          config.hooks[event] = config.hooks[event].filter(
+            (h: any) => !(typeof h?.command === 'string' && h.command.includes(stale) && isOurCommand(h.command)),
+          );
+          const removed = before - config.hooks[event].length;
+          if (removed > 0) {
+            changes.push(`hooks.${event}: removed ${removed} superseded ${stale} entr${removed === 1 ? 'y' : 'ies'}`);
+          }
         }
+      }
+
+      if (entries.length === 0) continue;
+      if (!Array.isArray(config.hooks[event])) {
+        config.hooks[event] = [];
       }
 
       const alreadyWired = config.hooks[event].some(

@@ -11,11 +11,15 @@
  *      understand. fs_write inputs use `path`, mapped to `file_path`.
  *   2. PostToolUse carries `tool_response` (an object), not a `tool_output`
  *      string.
- *   3. Hook stdout is added directly to the agent's context — no
- *      hookSpecificOutput JSON envelope — and the agentSpawn event gives a
- *      context slot at session start, which we use to load active rules
- *      up front (Claude Code needs the search-enforcer dance for this;
- *      Kiro gets it for free).
+ *   3. Hook stdout reaches the model's context ONLY on agentSpawn and
+ *      userPromptSubmit (no hookSpecificOutput JSON envelope). preToolUse
+ *      stdout is IGNORED — exit codes gate the tool call, and only exit-2
+ *      stderr is shown to the LLM; postToolUse stdout is ignored too
+ *      (kiro.dev/docs/cli/hooks, verified empirically 2026-07-13). So all
+ *      context injection rides agentSpawn (rules up front at session start)
+ *      and userPromptSubmit (periodic mid-session refresh, see
+ *      emitRuleRefresh). Claude Code needs the search-enforcer dance for
+ *      this; Kiro gets it for free.
  *
  * userPromptSubmit needs no adapter: Kiro sends { prompt, session_id, cwd },
  * exactly what correction-detector expects — wire it directly.
@@ -27,11 +31,12 @@
  */
 
 import { spawn } from 'child_process';
-import { hookLog, safeErrorMessage } from './shared';
+import * as fs from 'fs';
+import * as path from 'path';
+import { hookLog, safeErrorMessage, hookStateDir } from './shared';
 import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
-import { computeInjection } from './rule-injector';
 import { handleToolOutcomeWatcher } from './tool-outcome-watcher';
 import { handleCorrectionDetector } from './correction-detector';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
@@ -103,7 +108,7 @@ function formatRulesForContext(): { body: string; total: number } {
  * Standing instruction so the agent KNOWS it has persistent memory — and,
  * critically, that capture happens via BACKGROUND HOOKS independent of the MCP
  * tools. Under enterprise Kiro governance the claude-recall MCP server is
- * dropped from the toolset, but the userPromptSubmit/preToolUse/postToolUse
+ * dropped from the toolset, but the agentSpawn/userPromptSubmit/postToolUse
  * hooks still write to and read from the local DB. Without the "even without
  * the tools" clause the agent answers "I can't store that, I have no memory
  * tools" — technically true of the TOOL, but false of the system, since the
@@ -165,25 +170,18 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
 }
 
 /**
- * preToolUse — just-in-time rule injection. Same ranking/recording core as
- * the Claude Code rule-injector, but emits plain text: Kiro adds hook stdout
- * to context directly (no hookSpecificOutput envelope).
+ * preToolUse — DEPRECATED no-op. This used to emit just-in-time rule
+ * injections, on the assumption that Kiro adds preToolUse stdout to context.
+ * It does not: preToolUse stdout is ignored — exit codes gate the tool call
+ * and only exit-2 stderr reaches the LLM (kiro.dev/docs/cli/hooks, verified
+ * empirically 2026-07-13) — so nothing this handler printed ever reached the
+ * model, while every emission was falsely recorded as an injection. Mid-session
+ * injection now rides userPromptSubmit (emitRuleRefresh). The handler stays
+ * registered so agent configs wired by older versions keep exiting 0;
+ * `kiro setup` no longer wires it and strips stale entries on re-run.
  */
-export async function handleKiroRuleInjector(input: any): Promise<void> {
-  try {
-    const normalized = normalizeKiroInput(input);
-    const context = await computeInjection(
-      normalized?.tool_name ?? '',
-      normalized?.tool_input ?? {},
-      '', // Kiro provides no tool_use_id
-    );
-    if (context) {
-      process.stdout.write(context + '\n');
-    }
-  } catch (err) {
-    // Best-effort — never block the tool call
-    hookLog(HOOK_NAME, `rule-injector error: ${safeErrorMessage(err)}`);
-  }
+export async function handleKiroRuleInjector(_input: any): Promise<void> {
+  hookLog(HOOK_NAME, 'kiro-rule-injector is deprecated (Kiro ignores preToolUse stdout) — no-op; re-run `claude-recall kiro setup` to unwire it');
 }
 
 /**
@@ -199,6 +197,84 @@ export async function handleKiroToolOutcome(input: any): Promise<void> {
 }
 
 /**
+ * Mid-session rule refresh — the Kiro answer to long-session context loss.
+ * Rules enter context once at agentSpawn; when Kiro later compacts or rolls
+ * the conversation, they silently vanish and nothing re-injects them (Kiro has
+ * no post-compaction event, and preToolUse stdout is ignored — see
+ * handleKiroRuleInjector). userPromptSubmit stdout IS added to context
+ * same-turn, so every CLAUDE_RECALL_REFRESH_INTERVAL prompts (default 15,
+ * 0 disables) we re-emit the active rules from here.
+ *
+ * The prompt counter is per-session (keyed by session_id) in hook-state/;
+ * stale counter files are pruned on each session's first prompt.
+ */
+const DEFAULT_REFRESH_INTERVAL = 15;
+const REFRESH_STATE_PREFIX = 'kiro-refresh-';
+const REFRESH_STATE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function refreshInterval(): number {
+  const raw = process.env.CLAUDE_RECALL_REFRESH_INTERVAL;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_REFRESH_INTERVAL;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return DEFAULT_REFRESH_INTERVAL;
+  return n > 0 ? n : 0;
+}
+
+/** Increment the per-session prompt counter and return the new count. */
+function bumpPromptCount(sessionId: string): number {
+  const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
+  const file = path.join(hookStateDir(), `${REFRESH_STATE_PREFIX}${safeId}.json`);
+
+  let count = 0;
+  try {
+    count = JSON.parse(fs.readFileSync(file, 'utf8')).count ?? 0;
+  } catch { /* first prompt of the session, or unreadable — start fresh */ }
+
+  count++;
+  fs.writeFileSync(file, JSON.stringify({ count, updated: Date.now() }));
+  if (count === 1) pruneStaleRefreshState();
+  return count;
+}
+
+/** Best-effort removal of counter files from long-dead sessions. */
+function pruneStaleRefreshState(): void {
+  try {
+    const dir = hookStateDir();
+    const cutoff = Date.now() - REFRESH_STATE_MAX_AGE_MS;
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.startsWith(REFRESH_STATE_PREFIX)) continue;
+      const p = path.join(dir, name);
+      try {
+        if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p);
+      } catch { /* another process won the race — fine */ }
+    }
+  } catch { /* pruning is housekeeping, never let it interfere */ }
+}
+
+function emitRuleRefresh(input: any): void {
+  try {
+    const interval = refreshInterval();
+    if (interval === 0) return;
+
+    const count = bumpPromptCount(String(input?.session_id ?? 'default'));
+    if (count % interval !== 0) return;
+
+    const rules = formatRulesForContext();
+    if (!rules.body) return;
+
+    process.stdout.write(
+      `🔄 Recall: periodic rule refresh (prompt ${count} this session). ` +
+      'Earlier rule injections may have been compacted out of your context — continue applying these:\n\n' +
+      rules.body + '\n',
+    );
+    hookLog(HOOK_NAME, `refresh: re-injected ${rules.total} rule(s) at prompt ${count} (interval ${interval})`);
+  } catch (err) {
+    // The refresh is an enhancement — never let it break capture
+    hookLog(HOOK_NAME, `refresh error: ${safeErrorMessage(err)}`);
+  }
+}
+
+/**
  * userPromptSubmit — the synchronous gate Kiro waits on. Under Kiro there is no
  * ANTHROPIC_API_KEY, so classification uses Kiro's own headless LLM
  * (`kiro-cli chat --no-interactive`), which cold-boots in ~3–15s — too slow to
@@ -209,8 +285,13 @@ export async function handleKiroToolOutcome(input: any): Promise<void> {
  * it over stdin, and returns in milliseconds. The worker performs the slow Kiro
  * classify call and stores the memory in the background. Same pattern as
  * session-end-checkpoint. See docs/kiro-llm-capture.md.
+ *
+ * It also owns the mid-session rule refresh (emitRuleRefresh above): the
+ * refresh must count EVERY prompt, so it runs before the capture pre-checks.
  */
 export async function handleKiroCapture(input: any): Promise<void> {
+  emitRuleRefresh(input);
+
   const prompt: string = input?.prompt ?? '';
   // Cheap pre-checks mirror correction-detector so we don't spawn a worker (and
   // spend Kiro credits) on input that could never be stored.

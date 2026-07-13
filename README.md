@@ -45,7 +45,7 @@ $ claude-recall search "pnpm"
 ## Features
 
 - **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts, running on **the agent's own LLM** (Claude subscription / Kiro credits — never a separate API key), with regex fallback when no LLM is available
-- **Applied where it counts** — rules load at session start *and* are re-surfaced just-in-time before each tool call
+- **Applied where it counts** — rules load at session start and are re-surfaced mid-session: just-in-time before each tool call (Claude Code, Pi) or as a periodic refresh every N prompts (Kiro)
 - **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
 - **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
 - **Outcome-aware** — tracks whether rules actually help (tool results, test cycles, re-asks) and promotes validated lessons into active rules
@@ -162,7 +162,8 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 |---|---|:-:|:-:|:-:|
 | **Session start** | Active rules are injected into the agent's context | ✓ | ✓ | ✓ |
 | **As you type** | Prompts are classified; durable preferences/corrections are stored | ✓ | ✓ | ✓ |
-| **Before each tool call** | Relevant rules are re-surfaced next to the action (just-in-time injection) | ✓ | ✓ | ✓ |
+| **Before each tool call** | Relevant rules are re-surfaced next to the action (just-in-time injection) | ✓ | ✓ |  |
+| **Every 15 prompts** | Active rules are re-injected so long sessions can't silently lose them (interval configurable) |  |  | ✓ |
 | **Tool outcomes** | Failures are recorded; Bash failures are paired with their eventual fix | ✓ | ✓ | ✓ |
 | **Re-ask detection** | Frustration signals (*"still broken"*) are recorded as outcome events | ✓ | ✓ | ✓ |
 | **Before context compression** | Important context is captured before the window shrinks | ✓ | ✓ |  |
@@ -395,6 +396,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_KIRO_MODEL`               | `claude-haiku-4.5` | Dedicated model for Kiro-LLM capture classification — **independent of your interactive Kiro chat model**. Raise to `claude-sonnet-4.6` for steadier judgement at more credits. See [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md). |
 | `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | **The only switch that enables the `ANTHROPIC_API_KEY` backend** (and prefers it first). For Pi-only machines without the `claude` binary, or a stronger model you deliberately pay for. Applies to all LLM features, under Claude Code, Kiro, and Pi. |
 | `CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS`      | `30000` | Hard cap on the headless `kiro-cli` classify call before the capture worker gives up and falls back to regex. |
+| `CLAUDE_RECALL_REFRESH_INTERVAL`         | `15`    | **Kiro only.** Re-inject the active rules into context every N prompts, so marathon sessions can't silently lose them to context rollover (Kiro has no post-compaction event). `0` disables. |
 | `CLAUDE_RECALL_LOAD_BUDGET_TOKENS`       | `2000`  | Token budget for the `load_rules` payload. Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures) and dropped rules surface via `search_memory`. |
 | `CLAUDE_RECALL_AUTO_DEMOTE`              | `false` | When `true`, auto-demote rules on MCP boot where `load_count >= CLAUDE_RECALL_DEMOTE_MIN_LOADS`, `cite_count = 0`, and age `> CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`. Still reversible via `rules promote <id>`. |
 | `CLAUDE_RECALL_DEMOTE_MIN_LOADS`         | `20`    | Minimum load count before a rule qualifies for auto-demotion.                                            |
