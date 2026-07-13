@@ -407,6 +407,13 @@ class ClaudeRecallCLI {
       process.exit(1);
     }
 
+    // `latest` is interpolated into an npm argument (via a shell on Windows) —
+    // accept only a plausible semver string from the registry response.
+    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(latest)) {
+      console.error(`❌ Unexpected version string from the registry: "${latest}"`);
+      process.exit(1);
+    }
+
     console.log(`Installed: ${current}`);
     console.log(`Latest:    ${latest}`);
 
@@ -417,7 +424,11 @@ class ClaudeRecallCLI {
 
       // Run npm install -g, streaming output so the user sees progress / errors live.
       // shell: true on Windows — npm is npm.cmd there and a bare spawnSync ENOENTs.
-      const install = spawnSync('npm', ['install', '-g', 'claude-recall@latest'], {
+      // Pin the exact version `npm view` just resolved instead of `@latest`:
+      // right after a publish, the dist-tag replica npm installs from can lag
+      // the metadata endpoint `npm view` read — `@latest` then silently
+      // reinstalls the OLD version with exit 0 (observed live on 0.34.0).
+      const install = spawnSync('npm', ['install', '-g', `claude-recall@${latest}`], {
         stdio: 'inherit',
         shell: process.platform === 'win32',
       });
@@ -435,7 +446,9 @@ class ClaudeRecallCLI {
       if (install.status !== 0) {
         // npm prints its own error — add the practical remediation on top
         console.error('\n❌ Install failed.');
-        console.error('\nMost common cause: your global npm prefix is owned by root (EACCES).');
+        console.error(`\nIf npm said it can't find claude-recall@${latest} (ETARGET): the release`);
+        console.error('is minutes old and the registry is still propagating — wait a minute and re-run.');
+        console.error('\nMost common cause otherwise: your global npm prefix is owned by root (EACCES).');
         console.error('\nQuick fix:');
         console.error('  sudo npm install -g claude-recall');
         console.error('\nPermanent fix (no more sudo for any global install on this machine):');
@@ -445,6 +458,27 @@ class ClaudeRecallCLI {
         console.error('  source ~/.bashrc');
         console.error('\nThen re-run: claude-recall upgrade');
         process.exit(install.status ?? 1);
+      }
+
+      // Trust but verify: confirm the globally installed version actually IS
+      // `latest` before claiming success. The success message used to report
+      // intent, not fact — a propagation race left 0.33.0 installed while the
+      // command printed "✓ Upgraded to 0.34.0".
+      let installedNow = '';
+      try {
+        const ls = JSON.parse(execSync('npm ls -g claude-recall --json', {
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }));
+        installedNow = ls?.dependencies?.['claude-recall']?.version ?? '';
+      } catch { /* verification is best-effort; fall through to the mismatch path */ }
+
+      if (installedNow !== latest) {
+        console.error(`\n❌ Install reported success but the global version is ${installedNow || 'unreadable'}, not ${latest}.`);
+        console.error('   This usually means the npm registry is still propagating a very recent');
+        console.error('   release. Wait a minute, then re-run: claude-recall upgrade');
+        console.error(`   Or install the exact version directly: npm install -g claude-recall@${latest}`);
+        process.exit(1);
       }
 
       // Kill any running MCP servers so Claude Code respawns them with the new binary
