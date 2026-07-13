@@ -28,7 +28,7 @@ That's the whole workflow. A background hook classified your prompt with an LLM 
 >
 > **Agent:** Installing vitest with **pnpm** *(applied from memory: "Use pnpm, not npm")* …
 
-Your rules are injected at session start and again right before each relevant tool call — at the moment of decision, not 50,000 tokens upstream. This works across agents too: correct Claude Code on Tuesday, and Kiro applies it on Friday.
+Your rules are injected at session start and kept alive mid-session — just-in-time before each relevant tool call (Claude Code, Pi), or as a periodic refresh (Kiro) — at the moment of decision, not 50,000 tokens upstream. This works across agents too: correct Claude Code on Tuesday, and Kiro applies it on Friday.
 
 **And you can audit what it knows at any time:**
 
@@ -326,7 +326,7 @@ action → outcome event → episode → candidate lesson → promotion → acti
                                                     outcome resolved per injected rule
 ```
 
-Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
+Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection (Claude Code, Pi) is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
 
 ---
 
