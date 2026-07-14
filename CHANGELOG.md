@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.2] - 2026-07-14
+
+### Changed
+
+- **Docs-only release** so the npm page picks up the latest README: a Kiro-section tip on wording rules precisely (Kiro has no per-tool-call injection channel — rules act from session start + the periodic refresh, so name the trigger and the concrete pattern; includes a live ✗/✓ example), plus the earlier accuracy pass scoping just-in-time injection claims to Claude Code and Pi. No code changes.
+
 ## [0.34.1] - 2026-07-14
 
 ### Fixed
