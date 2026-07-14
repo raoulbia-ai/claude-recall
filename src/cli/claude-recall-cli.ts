@@ -26,7 +26,16 @@ import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 const program = new Command();
 
 class ClaudeRecallCLI {
-  private memoryService = MemoryService.getInstance();
+  // Lazy on purpose: MemoryService opens the SQLite DB, which loads
+  // better-sqlite3's native binding. Commands that don't need memory —
+  // upgrade, doctor, --version — must keep working when that binding is
+  // broken (missing .node file, WSL/Windows arch mismatch), because
+  // `upgrade` IS the repair path for exactly that state. Eager init here
+  // once bricked `upgrade` on a machine with a missing binding.
+  private _memoryService?: MemoryService;
+  private get memoryService(): MemoryService {
+    return (this._memoryService ??= MemoryService.getInstance());
+  }
   private config = ConfigService.getInstance();
   private logger = LoggingService.getInstance();
   private patternService = PatternService.getInstance();

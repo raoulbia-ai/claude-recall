@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.34.3] - 2026-07-14
+
+### Fixed
+
+- **A broken native module can no longer brick `claude-recall upgrade`.** The CLI eagerly opened the SQLite database (loading better-sqlite3's native binding) for every command — so a missing/mismatched `better_sqlite3.node` (observed live after back-to-back global installs; also the classic WSL↔Windows binary conflict) crashed even `upgrade`, the very command meant to repair the install. The database connection is now lazy: commands that don't touch memory (`upgrade`, `doctor`, `--version`) run without loading the binding. Verified by deleting the binding and running `upgrade` (works) vs `stats` (fails, as it genuinely needs the DB).
+
 ## [0.34.2] - 2026-07-14
 
 ### Changed
