@@ -141,6 +141,11 @@ claude-recall kiro setup --merge-into <agent-name>
 - **It's a best-effort LLM judgement, not a guarantee.** The classifier decides what's a durable rule vs. chit-chat; it won't catch every phrasing, and near-identical wording can occasionally be judged differently. State preferences plainly ("use pnpm here, not npm") for the best hit rate.
 - **There's a ~3s lag.** A preference you just stated isn't queryable for a couple of seconds while the worker finishes.
 
+**Word your rules precisely — under Kiro this matters more.** Claude Code and Pi re-surface relevant rules right beside each tool call; Kiro has no channel for that, so rules act from a distance (session start + a refresh every 15 prompts). A vague rule tends to get overlooked mid-task; one that names the **trigger** and the **concrete pattern** gets applied. Real example, same session:
+
+- ✗ *"name docs so they sort together in the file explorer"* → agent created `dummy_email.txt` anyway
+- ✓ *"when creating a new file, match the naming prefix of similar files — email files are `email_*.txt`"* → agent named it correctly and cited the rule while doing it
+
 **To verify capture actually worked** — from a second terminal (Kiro's chat can't shell out):
 
 ```bash
