@@ -28,7 +28,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { hookLog, hookStateDir, safeErrorMessage, storeMemory } from './shared';
+import { hookLog, hookStateDir, jaccardSimilarity, safeErrorMessage, storeMemory } from './shared';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
@@ -142,17 +142,23 @@ export function maybeSpawnJanitor(input: any, runtime: 'cc' | 'kiro'): void {
   }
 }
 
+/** Threshold above which a rewrite is judged cosmetic and dropped. */
+const REWRITE_MIN_CHANGE_SIMILARITY = 0.8;
+
+/** Extract a rule's display text from its stored value. */
+function ruleText(rule: { value: string }): string {
+  try {
+    return formatRuleValue(JSON.parse(rule.value));
+  } catch {
+    return String(rule.value);
+  }
+}
+
 /** Render one rule for the review prompt — id, type, counters, age, text. */
 function renderRuleForReview(
   rule: { id: number; type: string; value: string; load_count: number; cite_count: number; timestamp: number },
   nowMs: number,
 ): string {
-  let text: string;
-  try {
-    text = formatRuleValue(JSON.parse(rule.value));
-  } catch {
-    text = String(rule.value);
-  }
   const ageDays = Math.max(0, Math.round((nowMs - rule.timestamp) / 86400000));
   return JSON.stringify({
     id: rule.id,
@@ -160,7 +166,30 @@ function renderRuleForReview(
     loads: rule.load_count,
     cites: rule.cite_count,
     age_days: ageDays,
-    text: text.slice(0, 400),
+    text: ruleText(rule).slice(0, 400),
+  });
+}
+
+/**
+ * Deterministic backstop against cosmetic rewrites: whatever the LLM claims,
+ * a rewrite whose replacement is near-identical to the original changes
+ * nothing at decision time and just churns the row. Observed live on the
+ * first wild run ("already specific and actionable; minor clarification
+ * only" — and it rewrote anyway).
+ */
+export function dropCosmeticRewrites(
+  actions: JanitorAction[],
+  textById: Map<number, string>,
+): JanitorAction[] {
+  return actions.filter((a) => {
+    if (a.action !== 'rewrite') return true;
+    const original = textById.get(a.ids[0]) ?? '';
+    const similarity = jaccardSimilarity(original, a.replacement ?? '');
+    if (similarity >= REWRITE_MIN_CHANGE_SIMILARITY) {
+      hookLog(HOOK_NAME, `dropped cosmetic rewrite [${a.ids[0]}] (similarity=${similarity.toFixed(2)})`);
+      return false;
+    }
+    return true;
   });
 }
 
@@ -184,6 +213,9 @@ export function buildJanitorPrompt(ruleLines: string[]): string {
     'the naming prefix of similar files — email files are email_*.txt".\n\n' +
     'Be conservative:\n' +
     '- When unsure, DO NOTHING with that rule. An empty actions array is a valid answer.\n' +
+    '- If a rule is ALREADY precise, do not rewrite it. A cosmetic rephrasing or ' +
+    '"minor clarification" is not an action — rewrite ONLY when the current wording ' +
+    'would fail to trigger at the moment of decision.\n' +
     '- Never rewrite meaning — only clarity. Never merge rules that differ in substance.\n' +
     '- Specific, actionable rules are valuable even if rarely used. Low usage counters alone are NOT grounds to demote.\n' +
     '- Do not demote failure lessons that name a specific command, file, or error.\n\n' +
@@ -322,7 +354,8 @@ export async function handleMemoryJanitorWorker(
     }
 
     const validIds = new Set(reviewable.map(r => r.id));
-    const actions = parseJanitorActions(raw, validIds);
+    const textById = new Map(reviewable.map(r => [r.id, ruleText(r)]));
+    const actions = dropCosmeticRewrites(parseJanitorActions(raw, validIds), textById);
     hookLog(HOOK_NAME, `reviewed ${reviewable.length} rules → ${actions.length} action(s)${opts.dryRun ? ' (dry-run)' : ''}`);
 
     const rulesById = new Map(reviewable.map(r => [r.id, { id: r.id, type: r.type }]));
