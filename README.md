@@ -42,6 +42,20 @@ $ claude-recall search "pnpm"
 
 ---
 
+## Why not just steering files or CLAUDE.md?
+
+Use them! They're the right tool for **team standards you already know** — written by hand, reviewed in PRs, shipped with the repo. Claude Recall covers what they structurally can't:
+
+- **Nobody writes it down.** Steering files hold what you remembered to document. Recall captures rules *in the flow of work* — you correct the agent once, mid-session, and it's stored. The stuff that burns you repeatedly is exactly the stuff too small to feel worth documenting.
+- **They can't learn from failure.** There's no steering-file mechanism for *tool failure → lesson → rule*. "Exit code 0 doesn't mean the tests passed" enters Recall because the agent got burned — not because someone wrote a postmortem.
+- **One memory, every agent.** Steering is Kiro-only, CLAUDE.md is Claude-Code-only. Recall is one local DB behind Claude Code, Kiro, and Pi — correct one agent, all of them know.
+- **They rot.** Nobody prunes a rules file. Recall tracks whether rules are actually used, demotes dead ones, and a daily LLM janitor merges duplicates and cleans noise.
+- **Personal ≠ repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Recall is per-developer and never touches your repo.
+
+In short: steering files are documentation — what your team decided. Claude Recall is memory — what your sessions taught.
+
+---
+
 ## Features
 
 - **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts, running on **the agent's own LLM** (Claude subscription / Kiro credits — never a separate API key), with regex fallback when no LLM is available
