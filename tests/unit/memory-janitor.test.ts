@@ -69,6 +69,7 @@ import {
   maybeSpawnJanitor,
   parseJanitorActions,
   applyJanitorActions,
+  dropCosmeticRewrites,
   handleMemoryJanitorWorker,
   buildJanitorPrompt,
 } from '../../src/hooks/memory-janitor';
@@ -380,5 +381,46 @@ describe('buildJanitorPrompt', () => {
     expect(prompt).toContain('{"id":1}');
     expect(prompt).toContain('{"id":2}');
     expect(prompt).toContain('empty actions array is a valid answer');
+  });
+
+  it('forbids cosmetic rewrites of already-precise rules', () => {
+    const prompt = buildJanitorPrompt(['{"id":1}']);
+    expect(prompt).toContain('ALREADY precise, do not rewrite');
+    expect(prompt).toContain('not an action');
+  });
+});
+
+describe('dropCosmeticRewrites', () => {
+  const textById = new Map([
+    [1, 'When creating email text files, name them with the email_ prefix'],
+    [2, 'name docs so they sort together'],
+  ]);
+
+  it('drops a rewrite that only shuffles the original wording', () => {
+    const actions = dropCosmeticRewrites([{
+      action: 'rewrite' as const,
+      ids: [1],
+      replacement: 'When creating email text files, name them with the email_ prefix always',
+      reason: 'minor clarification only',
+    }], textById);
+    expect(actions).toHaveLength(0);
+  });
+
+  it('keeps a rewrite that genuinely changes the rule text', () => {
+    const actions = dropCosmeticRewrites([{
+      action: 'rewrite' as const,
+      ids: [2],
+      replacement: 'When creating a new doc file, match the naming prefix of similar files — email files are email_*.txt',
+      reason: 'vague, no trigger',
+    }], textById);
+    expect(actions).toHaveLength(1);
+  });
+
+  it('never touches demote or merge actions', () => {
+    const actions = dropCosmeticRewrites([
+      { action: 'demote' as const, ids: [1], reason: 'noise' },
+      { action: 'merge' as const, ids: [1, 2], replacement: 'merged rule text here', reason: 'dups' },
+    ], textById);
+    expect(actions).toHaveLength(2);
   });
 });
