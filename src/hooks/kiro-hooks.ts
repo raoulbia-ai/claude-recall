@@ -39,7 +39,7 @@ import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { handleToolOutcomeWatcher } from './tool-outcome-watcher';
 import { handleCorrectionDetector } from './correction-detector';
-import { formatRuleValue } from '../mcp/tools/memory-tools';
+import { formatRuleValue, precisionNudge } from '../mcp/tools/memory-tools';
 
 const HOOK_NAME = 'kiro';
 
@@ -88,7 +88,7 @@ function formatRulesForContext(): { body: string; total: number } {
 
   const section = (title: string, items: Array<{ value: any }>): string | null => {
     if (items.length === 0) return null;
-    return `## ${title}\n` + items.map(m => `- ${formatRuleValue(m.value)}`).join('\n');
+    return `## ${title}\n` + items.map(m => `- ${formatRuleValue(m.value)}${precisionNudge(m.value)}`).join('\n');
   };
 
   const sections = [

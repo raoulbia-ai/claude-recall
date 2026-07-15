@@ -99,7 +99,7 @@ export class MemoryService {
   /**
    * Store a memory with proper context and logging
    */
-  store(request: MemoryStoreRequest): void {
+  store(request: MemoryStoreRequest, opts?: { fuzzyNewestWins?: boolean }): void {
     try {
       // Write-time guard: silently drop values matching known test-fixture patterns
       // (Test preference 177…, Session test preference …, Memory with complex metadata,
@@ -139,8 +139,8 @@ export class MemoryService {
         is_active: true
       };
 
-      this.storage.save(memory);
-      
+      this.storage.save(memory, opts);
+
       this.logger.logMemoryOperation('STORE', {
         key: request.key,
         type: request.type,

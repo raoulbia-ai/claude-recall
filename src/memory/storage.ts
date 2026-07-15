@@ -400,7 +400,7 @@ export class MemoryStorage {
     return union === 0 ? 0 : intersection / union;
   }
 
-  save(memory: Memory): void {
+  save(memory: Memory, opts?: { fuzzyNewestWins?: boolean }): void {
     const contentHash = this.computeContentHash(memory.value, memory.type);
 
     // Write-time dedup: identical content already stored under a different key.
@@ -454,12 +454,25 @@ export class MemoryStorage {
     const fuzzyMatch = MemoryStorage.RULE_TYPES.includes(memory.type)
       ? this.findFuzzyDuplicate(memory)
       : null;
-    if (fuzzyMatch) {
+    if (fuzzyMatch && !opts?.fuzzyNewestWins) {
       this.db.prepare(
         'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
       ).run(Date.now(), fuzzyMatch);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
+    }
+    // Newest-wins supersession (opt-in, user-prompt captures and janitor
+    // replacements): a user restating a rule in different words is a
+    // deliberate refinement — the NEW phrasing must win, not be absorbed into
+    // the old row (which is what the bump above does, and which silently
+    // discarded precise re-teaches of vague rules). The new row is inserted
+    // below; the old row is superseded BY KEY (not a hygiene sentinel), so it
+    // is not revivable — it was replaced, not judged noise. Compliance
+    // counters carry over so demotion/ranking history isn't reset by a
+    // rewording.
+    let fuzzySupersede: { key: string } | null = null;
+    if (fuzzyMatch && opts?.fuzzyNewestWins && fuzzyMatch !== memory.key) {
+      fuzzySupersede = { key: fuzzyMatch };
     }
 
     // Upsert instead of INSERT OR REPLACE: OR REPLACE deletes and reinserts,
@@ -507,6 +520,22 @@ export class MemoryStorage {
       memory.scope || null,
       contentHash
     );
+
+    // Newest-wins: retire the fuzzy-matched old row in favor of the row just
+    // written, carrying its compliance counters over.
+    if (fuzzySupersede) {
+      const old = this.db.prepare(
+        'SELECT load_count, cite_count FROM memories WHERE key = ?'
+      ).get(fuzzySupersede.key) as { load_count: number; cite_count: number } | undefined;
+      this.db.prepare(
+        `UPDATE memories SET is_active = 0, superseded_by = ?, superseded_at = ? WHERE key = ?`
+      ).run(memory.key, Date.now(), fuzzySupersede.key);
+      if (old) {
+        this.db.prepare(
+          'UPDATE memories SET load_count = ?, cite_count = ? WHERE key = ?'
+        ).run(old.load_count || 0, old.cite_count || 0, memory.key);
+      }
+    }
 
     // Force a WAL checkpoint to ensure the data is written to the main database file
     // This ensures that other processes (like CLI) can see the changes immediately

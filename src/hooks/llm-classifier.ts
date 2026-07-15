@@ -36,7 +36,9 @@ const SYSTEM_PROMPT = `You are a memory classifier for a developer tool. Classif
 - none: Casual conversation, questions, code snippets, one-off task instructions, meta-conversation, sentence fragments, or anything not worth remembering across sessions
 
 Respond with ONLY valid JSON (no markdown fences). Format:
-{"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>"}
+{"type":"<type>","confidence":<0.0-1.0>,"extract":"<the key fact to remember, concise>","precision":"precise|vague"}
+
+PRECISION — a rule is applied at a future moment of decision, so make the extract as precise as the text allows: name the TRIGGER (when it applies) and the CONCRETE pattern (what exactly to do), e.g. "email files must start with email" → "When creating an email text file, name it email_*.txt". Never invent details the text does not contain. Set "precision":"vague" when the rule is durable but its trigger or concrete pattern is missing and cannot be inferred; otherwise "precision":"precise".
 
 THE STANDALONE TEST — apply this BEFORE classifying anything as correction/preference/devops:
 A durable rule must make complete sense on its own, read cold in a future session with NO knowledge of this conversation. If the text needs the surrounding chat to be understood, it is "none".
@@ -228,6 +230,9 @@ export async function classifyWithLLM(text: string): Promise<ClassifyResult | nu
       type: result.type,
       confidence: result.confidence,
       extract: result.extract,
+      ...(result.precision === 'vague' || result.precision === 'precise'
+        ? { precision: result.precision }
+        : {}),
     };
   } catch {
     return null;

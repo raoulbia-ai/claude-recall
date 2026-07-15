@@ -25,6 +25,18 @@ import { LOAD_RULES_DIRECTIVE } from '../../shared/directives';
  *
  * Exported for direct unit testing in tests/unit/format-rule-value.test.ts.
  */
+/**
+ * Injection-time nudge for rules the capture classifier graded as vague
+ * (needs_precision in the stored value). Hooks have no interactive channel to
+ * the user, but the AGENT does — the marker instructs it to ask for a precise
+ * restatement, whose capture then supersedes this row via fuzzy newest-wins.
+ */
+export function precisionNudge(value: unknown): string {
+  return value && typeof value === 'object' && (value as any).needs_precision === true
+    ? ' ⚠️ [vague — ask the user to restate this rule with its trigger and concrete pattern, e.g. "when X, do Y"]'
+    : '';
+}
+
 export function formatRuleValue(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
@@ -364,7 +376,7 @@ export class MemoryTools {
 
       if (keptPreferences.length > 0) {
         sections.push('## Preferences\n' + keptPreferences.map(m => {
-          const val = formatRuleValue(m.value);
+          const val = formatRuleValue(m.value) + precisionNudge(m.value);
           const key = m.preference_key || m.key || '';
           const isAutoKey = key.startsWith('memory_') || key.startsWith('auto_') || key.startsWith('pref_');
           return isAutoKey ? `- ${val}` : `- ${key}: ${val}`;
@@ -373,7 +385,7 @@ export class MemoryTools {
 
       if (keptCorrections.length > 0) {
         sections.push('## Corrections\n' + keptCorrections.map(m => {
-          const val = formatRuleValue(m.value);
+          const val = formatRuleValue(m.value) + precisionNudge(m.value);
           const isPromoted = m.key.startsWith('promoted_') || (m.value as any)?.source === 'promotion-engine';
           const evidence = isPromoted && (m.value as any)?.evidence_count ? ` (learned from ${(m.value as any).evidence_count} observations)` : '';
           return isPromoted ? `- [promoted lesson] ${val}${evidence}` : `- ${val}`;
@@ -402,7 +414,7 @@ export class MemoryTools {
 
       if (keptDevops.length > 0) {
         sections.push('## DevOps Rules\n' + keptDevops.map(m => {
-          const val = formatRuleValue(m.value);
+          const val = formatRuleValue(m.value) + precisionNudge(m.value);
           return `- ${val}`;
         }).join('\n'));
       }

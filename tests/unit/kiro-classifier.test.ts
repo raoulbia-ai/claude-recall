@@ -57,6 +57,20 @@ describe('extractClassification', () => {
     });
   });
 
+  it('passes through a valid precision grade', () => {
+    const out = '> {"type":"preference","confidence":0.8,"extract":"Name documents so they sort together","precision":"vague"}';
+    expect(extractClassification(out)).toMatchObject({ precision: 'vague' });
+    const precise = '> {"type":"preference","confidence":0.9,"extract":"Use pnpm, not npm","precision":"precise"}';
+    expect(extractClassification(precise)).toMatchObject({ precision: 'precise' });
+  });
+
+  it('omits precision when absent or invalid (older prompts, model drift)', () => {
+    const absent = extractClassification('> {"type":"preference","confidence":0.9,"extract":"Use pnpm"}');
+    expect(absent).not.toHaveProperty('precision');
+    const invalid = extractClassification('> {"type":"preference","confidence":0.9,"extract":"Use pnpm","precision":"fuzzy"}');
+    expect(invalid).not.toHaveProperty('precision');
+  });
+
   it('returns null for type "none"', () => {
     expect(extractClassification('> {"type":"none","confidence":0,"extract":""}')).toBeNull();
   });

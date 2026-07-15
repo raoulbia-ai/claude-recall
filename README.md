@@ -180,6 +180,8 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 
 Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
 
+Captured rules are kept **precise and current**: the classifier phrases each rule as *trigger + concrete pattern* where your message allows ("email files must start with email" → *"When creating an email text file, name it `email_*.txt`"*); a rule too vague to act on is stored but flagged, and the agent is nudged at injection time to ask you for a precise restatement. When you restate an existing rule in new words, the **new phrasing supersedes the old row** (counters carry over) instead of creating a duplicate or being swallowed by the old wording.
+
 ```bash
 # Verify it's working
 claude-recall stats
