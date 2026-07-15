@@ -22,6 +22,7 @@ const AVAILABLE_HOOKS = [
   'kiro-tool-outcome',
   'kiro-capture',
   'kiro-capture-worker',
+  'memory-janitor-worker',
 ] as const;
 
 /**
@@ -142,6 +143,11 @@ export class HookCommands {
       case 'kiro-capture-worker': {
         const { handleKiroCaptureWorker } = await import('../../hooks/kiro-hooks');
         await handleKiroCaptureWorker(input);
+        break;
+      }
+      case 'memory-janitor-worker': {
+        const { handleMemoryJanitorWorker } = await import('../../hooks/memory-janitor');
+        await handleMemoryJanitorWorker(input);
         break;
       }
       default:

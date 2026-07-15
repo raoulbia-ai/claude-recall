@@ -47,9 +47,15 @@ import {
 const LOG_TMP = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'kiro-hooks-logs-'));
 let originalDbPath: string | undefined;
 
+let originalJanitor: string | undefined;
+
 beforeAll(() => {
   originalDbPath = process.env.CLAUDE_RECALL_DB_PATH;
   process.env.CLAUDE_RECALL_DB_PATH = LOG_TMP;
+  // agentSpawn also triggers the memory janitor (real detached spawn) —
+  // keep these tests about the Kiro adapter; janitor has its own suite.
+  originalJanitor = process.env.CLAUDE_RECALL_JANITOR;
+  process.env.CLAUDE_RECALL_JANITOR = 'off';
 });
 
 afterAll(() => {
@@ -57,6 +63,11 @@ afterAll(() => {
     delete process.env.CLAUDE_RECALL_DB_PATH;
   } else {
     process.env.CLAUDE_RECALL_DB_PATH = originalDbPath;
+  }
+  if (originalJanitor === undefined) {
+    delete process.env.CLAUDE_RECALL_JANITOR;
+  } else {
+    process.env.CLAUDE_RECALL_JANITOR = originalJanitor;
   }
   fs.rmSync(LOG_TMP, { recursive: true, force: true });
 });

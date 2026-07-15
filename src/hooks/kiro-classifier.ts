@@ -109,18 +109,24 @@ export function extractClassification(raw: string): ClassifyResult | null {
 }
 
 /**
- * Classify a prompt by invoking Kiro's headless LLM. Returns null on any
- * failure (kiro-cli absent, timeout, non-zero exit, unparseable output) so the
- * caller falls back to regex. Never throws.
+ * Run one headless kiro-cli completion and return raw stdout, or null on any
+ * failure (kiro-cli absent, timeout, non-zero exit). Never throws. This is
+ * the generic primitive: capture classification wraps it below, and the
+ * memory janitor routes its review pass through it — the same role
+ * completeWithClaudeCli plays for the Claude Code runtime.
  */
-export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
+export function completeWithKiroCli(
+  prompt: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<string | null> {
   const model = process.env.CLAUDE_RECALL_KIRO_MODEL || DEFAULT_MODEL;
-  const timeoutMs = parseInt(process.env.CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS || '', 10);
-  const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
+  const envTimeout = parseInt(process.env.CLAUDE_RECALL_KIRO_LLM_TIMEOUT_MS || '', 10);
+  const timeout = opts.timeoutMs
+    ?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_TIMEOUT_MS);
 
   return new Promise((resolve) => {
     let settled = false;
-    const done = (result: ClassifyResult | null) => {
+    const done = (result: string | null) => {
       if (settled) return;
       settled = true;
       resolve(result);
@@ -128,7 +134,7 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
 
     let child;
     try {
-      // args array (no shell) — the user's text is passed as a single argv
+      // args array (no shell) — the prompt is passed as a single argv
       // entry, so no shell escaping or injection is possible.
       child = spawn(
         'kiro-cli',
@@ -137,7 +143,7 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
           '--no-interactive',
           '--agent', CLASSIFIER_AGENT,
           '--model', model,
-          buildClassifyPrompt(text),
+          prompt,
         ],
         { stdio: ['ignore', 'pipe', 'ignore'] },
       );
@@ -169,24 +175,37 @@ export function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
         hookLog('kiro-classifier', `kiro-cli exited ${code}`);
         return done(null);
       }
-      const result = extractClassification(stdout);
-      if (!result) {
-        // Distinguish a deliberate "none" verdict from unparseable output —
-        // "the model said not a rule" and "the call broke" are different
-        // diagnoses when reading the log.
-        hookLog('kiro-classifier', /"type"\s*:\s*"none"/.test(stdout)
-          ? 'classified as none (not a durable rule)'
-          : 'no parseable classification in kiro-cli output');
-      } else {
-        // Log success too, not just failures — otherwise a successful Kiro
-        // classification is silent and indistinguishable from "never ran",
-        // which makes "did the Kiro LLM handle this?" impossible to answer
-        // from the log. Spell out that this ran on Kiro credits (not the
-        // ANTHROPIC_API_KEY) using a dedicated classifier model — the `model`
-        // is CLAUDE_RECALL_KIRO_MODEL, independent of the interactive chat model.
-        hookLog('kiro-classifier', `classified via kiro-cli (model=${model}, Kiro credits, no API key): ${result.type} — ${result.extract.slice(0, 60)}`);
-      }
-      done(result);
+      done(stdout);
     });
   });
+}
+
+/**
+ * Classify a prompt by invoking Kiro's headless LLM. Returns null on any
+ * failure (kiro-cli absent, timeout, non-zero exit, unparseable output) so the
+ * caller falls back to regex. Never throws.
+ */
+export async function classifyWithKiro(text: string): Promise<ClassifyResult | null> {
+  const model = process.env.CLAUDE_RECALL_KIRO_MODEL || DEFAULT_MODEL;
+  const stdout = await completeWithKiroCli(buildClassifyPrompt(text));
+  if (stdout === null) return null;
+
+  const result = extractClassification(stdout);
+  if (!result) {
+    // Distinguish a deliberate "none" verdict from unparseable output —
+    // "the model said not a rule" and "the call broke" are different
+    // diagnoses when reading the log.
+    hookLog('kiro-classifier', /"type"\s*:\s*"none"/.test(stdout)
+      ? 'classified as none (not a durable rule)'
+      : 'no parseable classification in kiro-cli output');
+  } else {
+    // Log success too, not just failures — otherwise a successful Kiro
+    // classification is silent and indistinguishable from "never ran",
+    // which makes "did the Kiro LLM handle this?" impossible to answer
+    // from the log. Spell out that this ran on Kiro credits (not the
+    // ANTHROPIC_API_KEY) using a dedicated classifier model — the `model`
+    // is CLAUDE_RECALL_KIRO_MODEL, independent of the interactive chat model.
+    hookLog('kiro-classifier', `classified via kiro-cli (model=${model}, Kiro credits, no API key): ${result.type} — ${result.extract.slice(0, 60)}`);
+  }
+  return result;
 }

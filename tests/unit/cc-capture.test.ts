@@ -28,6 +28,7 @@ describe('handleCcCapture', () => {
   const saved = {
     cc: process.env.CLAUDE_RECALL_CC_CLASSIFIER,
     kiro: process.env.CLAUDE_RECALL_KIRO_CLASSIFIER,
+    janitor: process.env.CLAUDE_RECALL_JANITOR,
   };
   const PROMPT = { prompt: 'we use pnpm here, not npm — always' };
 
@@ -35,12 +36,17 @@ describe('handleCcCapture', () => {
     mockSpawn.mockReset().mockReturnValue(fakeChild());
     delete process.env.CLAUDE_RECALL_CC_CLASSIFIER;
     delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
+    // The janitor rides on this hook (own spawn + state file); keep these
+    // tests about the CAPTURE spawn only — janitor has its own suite.
+    process.env.CLAUDE_RECALL_JANITOR = 'off';
   });
   afterAll(() => {
     if (saved.cc === undefined) delete process.env.CLAUDE_RECALL_CC_CLASSIFIER;
     else process.env.CLAUDE_RECALL_CC_CLASSIFIER = saved.cc;
     if (saved.kiro === undefined) delete process.env.CLAUDE_RECALL_KIRO_CLASSIFIER;
     else process.env.CLAUDE_RECALL_KIRO_CLASSIFIER = saved.kiro;
+    if (saved.janitor === undefined) delete process.env.CLAUDE_RECALL_JANITOR;
+    else process.env.CLAUDE_RECALL_JANITOR = saved.janitor;
   });
 
   it('spawns a detached cc-capture-worker and pipes the payload over stdin', async () => {
