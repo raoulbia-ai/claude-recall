@@ -51,6 +51,7 @@ Use them! They're the right tool for **team standards you already know** — wri
 - **One memory, every agent.** Steering is Kiro-only, CLAUDE.md is Claude-Code-only. Recall is one local DB behind Claude Code, Kiro, and Pi — correct one agent, all of them know.
 - **They rot.** Nobody prunes a rules file. Recall tracks whether rules are actually used, demotes dead ones, and a daily LLM janitor merges duplicates and cleans noise.
 - **Personal ≠ repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Recall is per-developer and never touches your repo.
+- **They bloat context.** An always-included steering file ships its full text into every interaction, relevant or not, and only ever grows. Recall's injection is token-budgeted, surfaces rules relevant to the action at hand, and the corpus self-prunes — the context cost stays bounded as the memory grows.
 
 In short: steering files are documentation — what your team decided. Claude Recall is memory — what your sessions taught.
 
