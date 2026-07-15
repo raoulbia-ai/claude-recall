@@ -163,6 +163,15 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
 
     process.stdout.write(parts.join('\n\n') + '\n');
     hookLog(HOOK_NAME, `agentSpawn: injected memory directive + ${total} rule(s) into Kiro context`);
+
+    // Session start is also the janitor's trigger: at most one detached
+    // hygiene pass per 24h, never blocking startup (returns in ms).
+    try {
+      const { maybeSpawnJanitor } = await import('./memory-janitor');
+      maybeSpawnJanitor(_input, 'kiro');
+    } catch (err) {
+      hookLog(HOOK_NAME, `janitor spawn skipped: ${safeErrorMessage(err)}`);
+    }
   } catch (err) {
     // Never block agent startup
     hookLog(HOOK_NAME, `agentSpawn error: ${safeErrorMessage(err)}`);

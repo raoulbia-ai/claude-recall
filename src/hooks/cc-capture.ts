@@ -37,6 +37,16 @@ export async function handleCcCapture(input: any): Promise<void> {
     return;
   }
 
+  // Janitor trigger rides on the first eligible prompt of the day — BEFORE
+  // the length pre-checks, since hygiene doesn't care whether this particular
+  // prompt is storable. Rate-limited internally (one run per 24h), detached.
+  try {
+    const { maybeSpawnJanitor } = await import('./memory-janitor');
+    maybeSpawnJanitor(input, 'cc');
+  } catch (err) {
+    hookLog(HOOK_NAME, `janitor spawn skipped: ${safeErrorMessage(err)}`);
+  }
+
   const prompt: string = input?.prompt ?? '';
   if (prompt.length < 20 || prompt.length > 2000) return;
   if (prompt.startsWith('```') || prompt.startsWith('{')) return;

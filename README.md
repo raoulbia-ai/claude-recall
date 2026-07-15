@@ -176,6 +176,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Sub-agent spawned** | Rules are injected into the sub-agent; its outcome is captured | ✓ |  |  |
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
+| **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules ([details](#memory-janitor)) | ✓ |  | ✓ |
 
 Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
 
@@ -333,6 +334,24 @@ action → outcome event → episode → candidate lesson → promotion → acti
 
 Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection (Claude Code, Pi) is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
 
+### Memory janitor
+
+Automatic capture inevitably stores some noise — a conversational fragment misfiled as a preference, the same lesson in five wordings, a rule too vague to act on. Counters can flag *unused* rules (`CLAUDE_RECALL_AUTO_DEMOTE`), but they can't tell a rarely-cited gem from junk. Once a day, the **memory janitor** has the runtime's own LLM (same backend policy as capture — your Claude subscription or Kiro credits, never an API key unless you opted in) review the stored rules and:
+
+- **demote** noise — misfiled conversation, malformed junk, zero-content platitudes
+- **merge** duplicates into the single best phrasing
+- **rewrite** vague rules into precise trigger-plus-pattern form
+
+Guardrails: nothing is ever deleted (demotions are reversible via `rules promote <id>`, and re-teaching a demoted rule revives it); memories younger than 24h are never reviewed; at most 10 actions per run; malformed LLM output does nothing.
+
+```bash
+claude-recall janitor --dry-run   # preview what it would do
+claude-recall janitor             # run it now
+claude-recall janitor --status    # see the last automatic run
+```
+
+Disable with `CLAUDE_RECALL_JANITOR=off`.
+
 ---
 
 ## Upgrading
@@ -404,6 +423,9 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_REFRESH_INTERVAL`         | `15`    | **Kiro only.** Re-inject the active rules into context every N prompts, so marathon sessions can't silently lose them to context rollover (Kiro has no post-compaction event). `0` disables. |
 | `CLAUDE_RECALL_LOAD_BUDGET_TOKENS`       | `2000`  | Token budget for the `load_rules` payload. Rules are emitted in priority order (corrections → preferences by citation → devops by citation → failures) and dropped rules surface via `search_memory`. |
 | `CLAUDE_RECALL_AUTO_DEMOTE`              | `false` | When `true`, auto-demote rules on MCP boot where `load_count >= CLAUDE_RECALL_DEMOTE_MIN_LOADS`, `cite_count = 0`, and age `> CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`. Still reversible via `rules promote <id>`. |
+| `CLAUDE_RECALL_JANITOR`                  | `on`    | Set to `off` to disable the daily memory-janitor pass (LLM review of stored rules — see [Memory janitor](#memory-janitor)). |
+| `CLAUDE_RECALL_JANITOR_INTERVAL_HOURS`   | `24`    | Minimum hours between automatic janitor runs.                                                            |
+| `CLAUDE_RECALL_JANITOR_GRACE_HOURS`      | `24`    | Memories younger than this are excluded from janitor review — a fresh learning can't be judged noise the day it was taught. |
 | `CLAUDE_RECALL_DEMOTE_MIN_LOADS`         | `20`    | Minimum load count before a rule qualifies for auto-demotion.                                            |
 | `CLAUDE_RECALL_DEMOTE_MIN_AGE_DAYS`      | `7`     | Minimum rule age before auto-demotion can fire (avoids demoting brand-new rules).                        |
 | `CLAUDE_RECALL_AUTO_CLEANUP`             | `false` | Auto-kill stale MCP processes on start (otherwise reports and exits).                                    |

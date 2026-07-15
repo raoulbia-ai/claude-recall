@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Memory janitor: daily LLM review of the stored rule corpus.** Automatic capture inevitably stores noise — conversational fragments misfiled as preferences, the same lesson in five wordings, rules too vague to act on. The deterministic hygiene passes judge by counters (loads/cites) and can't tell a rarely-cited gem from junk; the janitor gives that judgment to the runtime's own LLM (same backend policy as capture: `claude -p` on your subscription under Claude Code, `kiro-cli` on Kiro credits under Kiro, never an exported API key unless opted in). Once per 24h a detached worker reviews rules past a 24h grace period and may **demote** noise, **merge** duplicates, or **rewrite** vague rules into trigger-plus-pattern form. Guardrails: never deletes (demotions carry the `janitor` sentinel — reversible via `rules promote <id>`, and re-teaching identical content revives the row), max 10 actions per run, malformed LLM output is a no-op. Rides on existing session hooks — no config change needed. New CLI: `claude-recall janitor [--dry-run|--status]`; disable with `CLAUDE_RECALL_JANITOR=off`, tune with `CLAUDE_RECALL_JANITOR_INTERVAL_HOURS` / `CLAUDE_RECALL_JANITOR_GRACE_HOURS`. First live run on the development corpus correctly demoted both noise memories and left the one genuine (but never-cited) preference untouched — the exact false positive the counter-based pass would have committed.
+- **`completeWithKiroCli()` — generic headless Kiro completion primitive**, extracted from the capture classifier so any feature can route through Kiro's LLM (the same role `completeWithClaudeCli` plays for Claude Code).
+
 ## [0.34.3] - 2026-07-14
 
 ### Fixed

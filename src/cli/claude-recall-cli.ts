@@ -2079,10 +2079,55 @@ async function main() {
 
   rulesCmd
     .command('promote <id>')
-    .description('Restore a previously auto-demoted or auto-deduped rule (safety valve)')
+    .description('Restore a previously auto-demoted, auto-deduped, or janitor-demoted rule (safety valve)')
     .action((id) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.promoteRule(parseInt(id));
+      process.exit(0);
+    });
+
+  // Janitor: LLM-driven hygiene pass (the judgment layer above rules demote/dedup)
+  program
+    .command('janitor')
+    .description('Review stored rules with the runtime LLM: demote noise, merge duplicates, rewrite vague rules')
+    .option('--dry-run', 'Preview actions without mutating', false)
+    .option('--runtime <cc|kiro>', 'Which LLM backend to use (claude -p or kiro-cli)', 'cc')
+    .option('--status', 'Show the last janitor report instead of running', false)
+    .action(async (options) => {
+      const { handleMemoryJanitorWorker, readLastJanitorReport } = await import('../hooks/memory-janitor');
+      if (options.status) {
+        const last = readLastJanitorReport();
+        if (!last) {
+          console.log('No janitor run recorded yet.');
+        } else {
+          console.log(`Last run: ${new Date(last.timestamp).toLocaleString()} (runtime=${last.runtime}${last.dryRun ? ', dry-run' : ''})`);
+          console.log(`Reviewed ${last.reviewed} rules, ${last.actions.length} action(s):`);
+          for (const a of last.actions) {
+            console.log(`  ${a.applied ? '✓' : '✗'} ${a.action} [${a.ids.join(',')}]${a.replacement ? ` → "${a.replacement}"` : ''} — ${a.reason}`);
+          }
+        }
+        process.exit(0);
+      }
+      if (options.runtime !== 'cc' && options.runtime !== 'kiro') {
+        console.error(`Invalid --runtime "${options.runtime}" (expected cc or kiro)`);
+        process.exit(1);
+      }
+      console.log(`Running janitor review (runtime=${options.runtime}${options.dryRun ? ', dry-run' : ''})...`);
+      const report = await handleMemoryJanitorWorker({}, { dryRun: options.dryRun, runtime: options.runtime });
+      if (!report) {
+        console.log('Nothing to review (fewer than 2 rules past the grace period), or no LLM backend available.');
+        console.log('Check ~/.claude-recall/hook-logs/memory-janitor.log for details.');
+        process.exit(0);
+      }
+      console.log(`Reviewed ${report.reviewed} rules, ${report.actions.length} action(s)${report.dryRun ? ' (dry-run — nothing mutated)' : ''}:`);
+      for (const a of report.actions) {
+        console.log(`  ${a.applied ? '✓' : '✗'} ${a.action} [${a.ids.join(',')}]${a.replacement ? ` → "${a.replacement}"` : ''} — ${a.reason}`);
+      }
+      if (report.actions.length === 0) {
+        console.log('  (the LLM judged the corpus clean)');
+      } else if (!report.dryRun) {
+        console.log('\nDemotions are reversible: `claude-recall rules promote <id>`.');
+      }
       process.exit(0);
     });
 

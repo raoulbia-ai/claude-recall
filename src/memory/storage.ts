@@ -303,6 +303,14 @@ export class MemoryStorage {
   private static readonly RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge'];
 
   /**
+   * Supersession sentinels written by automatic hygiene passes (as opposed to
+   * a USER preference override, where superseded_by names the winning key).
+   * Rows carrying one of these are revivable: by content-hash re-teach in
+   * save() and individually via promoteRule().
+   */
+  private static readonly REVIVABLE_SENTINELS = ['auto-demote', 'auto-dedup', 'janitor'];
+
+  /**
    * Find a same-type memory whose text content is a near-duplicate (Jaccard >= 0.65).
    * Only ACTIVE rows are considered — matching a demoted/superseded row would
    * absorb the new write into a rule that loadActiveRules never returns.
@@ -420,12 +428,14 @@ export class MemoryStorage {
       return;
     }
 
-    // Re-teaching an auto-demoted/auto-deduped rule revives it — otherwise the
-    // dedup hit would bump a dead row that loadActiveRules never returns and
-    // the rule would be unrecoverable through normal use. Rows superseded by a
-    // USER override are deliberately not revived (mirrors promoteRule).
+    // Re-teaching an auto-demoted/auto-deduped/janitor-demoted rule revives it
+    // — otherwise the dedup hit would bump a dead row that loadActiveRules
+    // never returns and the rule would be unrecoverable through normal use.
+    // Deliberate re-teaching outranks the janitor's noise verdict. Rows
+    // superseded by a USER override are deliberately not revived (mirrors
+    // promoteRule).
     const autoDemotedMatch = hashMatches.find(
-      m => m.is_active !== 1 && (m.superseded_by === 'auto-demote' || m.superseded_by === 'auto-dedup')
+      m => m.is_active !== 1 && MemoryStorage.REVIVABLE_SENTINELS.includes(m.superseded_by ?? '')
     );
     if (autoDemotedMatch) {
       this.db.prepare(
@@ -991,6 +1001,44 @@ export class MemoryStorage {
   }
 
   /**
+   * All active rule-type rows, for the memory janitor's review pass.
+   * Scoped like loadActiveRules: the given project, universal, or unscoped.
+   */
+  getActiveRules(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}> {
+    const typePlaceholders = MemoryStorage.RULE_TYPES.map(() => '?').join(',');
+    const params: any[] = [...MemoryStorage.RULE_TYPES];
+    let scopeClause = `AND (project_id IS NULL OR project_id = '' OR scope = 'universal')`;
+    if (projectId) {
+      scopeClause = `AND (project_id = ? OR project_id IS NULL OR project_id = '' OR scope = 'universal')`;
+      params.push(projectId);
+    }
+    return this.db.prepare(`
+      SELECT id, key, type, value, load_count, cite_count, timestamp
+      FROM memories
+      WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
+      ORDER BY timestamp ASC
+    `).all(...params) as Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}>;
+  }
+
+  /**
+   * Demote specific rows by id with a hygiene sentinel (default 'janitor').
+   * Reversible via promoteRule(); re-teaching identical content revives too.
+   * Returns the number of rows flipped.
+   */
+  demoteRulesByIds(ids: number[], sentinel: string = 'janitor'): number {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db.prepare(
+      `UPDATE memories SET is_active = 0, superseded_at = ?, superseded_by = ?
+       WHERE id IN (${placeholders}) AND is_active = 1`
+    ).run(Date.now(), sentinel, ...ids);
+    if (result.changes > 0) {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return result.changes;
+  }
+
+  /**
    * Delete rows whose stored value matches legacy test-fixture patterns.
    * Matches against json_extract(value, '$.content') OR the raw value (covers both
    * structured and legacy string payloads). Returns rows that were (or would be,
@@ -1128,16 +1176,17 @@ export class MemoryStorage {
   }
 
   /**
-   * Restore a previously auto-demoted or auto-deduped rule. Only flips rows where
-   * superseded_by IN ('auto-demote', 'auto-dedup') — refuses to touch rules
-   * superseded by preference override logic (where superseded_by points at another key).
-   * Returns true if a row was restored.
+   * Restore a previously auto-demoted, auto-deduped, or janitor-demoted rule.
+   * Only flips rows whose superseded_by is a hygiene sentinel — refuses to touch
+   * rules superseded by preference override logic (where superseded_by points at
+   * another key). Returns true if a row was restored.
    */
   promoteRule(id: number): boolean {
+    const placeholders = MemoryStorage.REVIVABLE_SENTINELS.map(() => '?').join(',');
     const result = this.db.prepare(
       `UPDATE memories SET is_active = 1, superseded_at = NULL, superseded_by = NULL
-       WHERE id = ? AND is_active = 0 AND superseded_by IN ('auto-demote', 'auto-dedup')`
-    ).run(id);
+       WHERE id = ? AND is_active = 0 AND superseded_by IN (${placeholders})`
+    ).run(id, ...MemoryStorage.REVIVABLE_SENTINELS);
     if (result.changes > 0) {
       this.db.pragma('wal_checkpoint(TRUNCATE)');
     }
