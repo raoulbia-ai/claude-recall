@@ -151,6 +151,30 @@ describe('handleKiroAgentSpawn', () => {
     expect(out).toContain('never push directly to main');
   });
 
+  it('marks needs_precision rules with the restate nudge', async () => {
+    mockLoadActiveRules.mockReturnValue({
+      preferences: [
+        { value: { content: 'Name documents so they sort together', needs_precision: true } },
+        { value: { content: 'Use pnpm, not npm' } },
+      ],
+      corrections: [], failures: [], devops: [],
+      summary: '',
+    });
+
+    const cap = captureStdout();
+    try {
+      await handleKiroAgentSpawn({ hook_event_name: 'agentSpawn', session_id: 's1', cwd: '/p' });
+    } finally {
+      cap.restore();
+    }
+
+    const out = cap.out();
+    expect(out).toContain('Name documents so they sort together ⚠️ [vague — ask the user to restate');
+    // the precise rule carries no nudge
+    expect(out).toContain('- Use pnpm, not npm\n');
+    expect(out).not.toContain('Use pnpm, not npm ⚠️');
+  });
+
   it('emits the memory-capability directive even with no rules and no checkpoint', async () => {
     // Regression: on a fresh database the agent previously received NOTHING,
     // answered "I have no persistent memory", and never called store_memory

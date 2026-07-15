@@ -276,7 +276,20 @@ describe('applyJanitorActions', () => {
       rulesById,
     );
     expect(order).toEqual(['store', 'demote']);
-    expect(mockStoreMemory).toHaveBeenCalledWith('One consolidated failure lesson', 'failure', undefined, 0.9);
+    // fuzzyNewestWins: the replacement must supersede a similar still-active
+    // source instead of being absorbed into it (then destroyed by the demote).
+    expect(mockStoreMemory).toHaveBeenCalledWith(
+      'One consolidated failure lesson', 'failure', undefined, 0.9, { fuzzyNewestWins: true },
+    );
+  });
+
+  it('reports merge/rewrite as applied even when newest-wins already retired the source (demote changes=0)', () => {
+    mockDemoteByIds.mockReturnValue(0);
+    const results = applyJanitorActions(
+      [{ action: 'rewrite', ids: [1], replacement: 'A precise version of the rule', reason: 'vague' }],
+      rulesById,
+    );
+    expect(results[0].applied).toBe(true);
   });
 
   it('a failing store leaves the originals untouched', () => {

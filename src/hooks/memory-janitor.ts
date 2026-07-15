@@ -293,9 +293,16 @@ export function applyJanitorActions(
       if (!opts.dryRun) {
         if (action.action === 'merge' || action.action === 'rewrite') {
           const type = action.type ?? rulesById.get(action.ids[0])?.type ?? 'preference';
-          storeMemory(action.replacement!, type, undefined, 0.9);
+          // fuzzyNewestWins: without it, a replacement similar to the rule it
+          // replaces gets absorbed into that still-active row by fuzzy dedup —
+          // then the demote below would destroy both versions.
+          storeMemory(action.replacement!, type, undefined, 0.9, { fuzzyNewestWins: true });
         }
-        applied = storage.demoteRulesByIds(action.ids, 'janitor') > 0;
+        const demoted = storage.demoteRulesByIds(action.ids, 'janitor');
+        // For merge/rewrite the store above already succeeded (no throw), and
+        // newest-wins supersession may have retired the source row before the
+        // demote ran (changes=0) — the action still applied.
+        applied = action.action === 'demote' ? demoted > 0 : true;
       } else {
         applied = true; // would apply
       }

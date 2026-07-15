@@ -46,7 +46,7 @@ export function buildClassifyPrompt(text: string): string {
     'You are a memory classifier for a developer tool. Classify the USER MESSAGE ' +
     'into exactly one type and respond with ONLY minified JSON — no markdown, no ' +
     'prose, no code fence:\n' +
-    '{"type":"correction|preference|failure|devops|project-knowledge|none","confidence":0.0-1.0,"extract":"<concise imperative rule to remember, or empty>"}\n\n' +
+    '{"type":"correction|preference|failure|devops|project-knowledge|none","confidence":0.0-1.0,"extract":"<concise imperative rule to remember, or empty>","precision":"precise|vague"}\n\n' +
     'Types:\n' +
     '- correction: user durably correcting how something should ALWAYS be done ("no, use X not Y"). Correcting a one-off action in the current task is NOT durable.\n' +
     '- preference: a reusable directive about how the user wants things done ("I prefer X", "we use tabs", "my favourite color is green"). Must apply beyond this one message.\n' +
@@ -61,7 +61,14 @@ export function buildClassifyPrompt(text: string): string {
     '- Reject meta-conversation about this tool or what to write/do next.\n\n' +
     'Be conservative: when in doubt use "none" with confidence 0. Use confidence >= 0.75 for correction/preference/devops. ' +
     'extract must be a clean standalone rule (e.g. "Favourite colour is green"), or empty when type is none.\n\n' +
-    'Examples: "we use pnpm, not npm" → {"type":"preference","confidence":0.9,"extract":"Use pnpm, not npm"}; ' +
+    'PRECISION — a rule is applied at a future moment of decision, so make the extract as precise as the message allows: ' +
+    'name the TRIGGER (when it applies) and the CONCRETE pattern (what exactly to do), e.g. ' +
+    '"email files must start with email" → "When creating an email text file, name it email_*.txt". ' +
+    'Never invent details the message does not contain. Add "precision":"vague" when the rule is durable but its ' +
+    'trigger or concrete pattern is missing and cannot be inferred (e.g. "name docs so they sort together" — sort by what?); ' +
+    'otherwise "precision":"precise".\n\n' +
+    'Examples: "we use pnpm, not npm" → {"type":"preference","confidence":0.9,"extract":"Use pnpm, not npm","precision":"precise"}; ' +
+    '"name docs so they sort together" → {"type":"preference","confidence":0.8,"extract":"Name documents so they sort together in the file explorer","precision":"vague"}; ' +
     '"first fix the sentence" → {"type":"none","confidence":0,"extract":""}; ' +
     '"then run claude-recall kiro setup" → {"type":"none","confidence":0,"extract":""}.\n\n' +
     'USER MESSAGE: ' + text
@@ -105,6 +112,9 @@ export function extractClassification(raw: string): ClassifyResult | null {
     type: parsed.type,
     confidence,
     extract: parsed.extract.trim(),
+    ...(parsed.precision === 'vague' || parsed.precision === 'precise'
+      ? { precision: parsed.precision }
+      : {}),
   };
 }
 

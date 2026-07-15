@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Capture-time precision.** A rule is applied at a future moment of decision, so the capture classifier now phrases every extract as *trigger + concrete pattern* where the user's message allows ("email files must start with email" → "When creating an email text file, name it `email_*.txt`"). When a rule is durable but its trigger/pattern genuinely can't be inferred, it is stored anyway (losing what the user said is worse) but flagged `needs_precision` — and every injection surface (load_rules, Kiro agentSpawn/refresh) marks it with a nudge instructing the **agent** to ask the user for a precise restatement. Hooks have no interactive channel; the agent is the one that does.
+- **Newest-wins supersession for re-taught rules.** Previously, restating an existing rule in different words hit write-time fuzzy dedup *backwards*: the old wording was kept and the new phrasing silently discarded — a precise re-teach could be swallowed by the vague rule it was meant to replace. User-prompt captures and janitor replacements now supersede the fuzzy-matched old row with the new text (compliance counters carry over; the old row is superseded by key, i.e. replaced, not revivable as if it were mis-judged noise). Lesson promotion and other automated writes keep the old bump behavior — repeated failure lessons must not churn their wording. This also fixes a latent janitor hazard where a rewrite's replacement could be absorbed into the very row about to be demoted, destroying both versions.
+
+### Fixed
+
+- **Janitor: no more cosmetic rewrites.** Observed on the first wild run: the LLM rewrote a rule while its own reason admitted "already specific and actionable; minor clarification only". The review prompt now states an already-precise rule must be left alone, and a deterministic backstop drops any rewrite whose replacement is ≥ 0.8 Jaccard-similar to the original, regardless of what the LLM claims.
+
 ## [0.35.0] - 2026-07-15
 
 ### Added

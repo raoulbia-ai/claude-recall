@@ -10,6 +10,14 @@ export interface ClassifyResult {
   type: string;
   confidence: number;
   extract: string;
+  /**
+   * LLM-graded precision of the extract. 'vague' = durable rule whose wording
+   * lacks a concrete trigger/pattern that could not be inferred from the
+   * message — stored anyway (losing what the user said is worse), but flagged
+   * so injection can nudge the agent to ask the user for a precise
+   * restatement. Absent on the regex path (no judgment available).
+   */
+  precision?: 'precise' | 'vague';
 }
 
 // NOTE on confidence calibration: consumers (correction-detector, memory-stop,
@@ -251,6 +259,7 @@ export function storeMemory(
   type: string,
   projectId?: string,
   confidence: number = 0.8,
+  opts?: { needsPrecision?: boolean; fuzzyNewestWins?: boolean },
 ): void {
   const memoryService = MemoryService.getInstance();
   const key = `hook_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -262,6 +271,9 @@ export function storeMemory(
       confidence,
       source: 'hook-auto-capture',
       timestamp: Date.now(),
+      // Vague-but-durable rule: injection nudges the agent to ask the user
+      // for a precise restatement (trigger + concrete pattern).
+      ...(opts?.needsPrecision ? { needs_precision: true } : {}),
     },
     type,
     context: {
@@ -269,7 +281,7 @@ export function storeMemory(
       timestamp: Date.now(),
     },
     relevanceScore: confidence,
-  });
+  }, { fuzzyNewestWins: opts?.fuzzyNewestWins });
 }
 
 /**

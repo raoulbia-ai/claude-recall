@@ -73,7 +73,15 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
     return;
   }
 
-  storeMemory(result.extract, result.type, undefined, result.confidence);
+  // fuzzyNewestWins: a user restating an existing rule in new words is a
+  // deliberate refinement — the new phrasing supersedes the old row instead
+  // of being absorbed into it. needsPrecision: vague-but-durable rules are
+  // stored (losing what the user said is worse) but flagged so injection
+  // nudges the agent to ask for a precise restatement.
+  storeMemory(result.extract, result.type, undefined, result.confidence, {
+    needsPrecision: result.precision === 'vague',
+    fuzzyNewestWins: true,
+  });
 
   const summary = result.extract.length > 60
     ? result.extract.substring(0, 60) + '...'
