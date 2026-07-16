@@ -102,7 +102,7 @@
     "typescript-eslint": "^8.63.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
+    "@anthropic-ai/sdk": "^0.111.0",
     "better-sqlite3": "^12.2.0",
     "chalk": "^5.5.0",
     "commander": "^14.0.3"
