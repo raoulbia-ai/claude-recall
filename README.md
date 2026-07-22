@@ -191,6 +191,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Sub-agent spawned** | Rules are injected into the sub-agent; its outcome is captured | ✓ |  |  |
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
+| **Hard-won success** | A goal that failed repeatedly then finally worked is captured as a reusable `solution` ([details](#success-capture)) | ✓ | ✓ |  |
 | **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules ([details](#memory-janitor)) | ✓ |  | ✓ |
 
 Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
@@ -277,7 +278,7 @@ claude-recall stats                      # Memory statistics (--global for all p
 claude-recall list                       # List memories, newest first (-t <type>, --all, --json, --global)
 claude-recall search "query"             # Search memories (--global, --json, --project <id>)
 claude-recall store "content"            # Store memory directly
-claude-recall store "content" -t <type>  # Type: preference, correction, failure, devops, project-knowledge
+claude-recall store "content" -t <type>  # Type: preference, correction, failure, devops, project-knowledge, solution
 claude-recall export backup.json         # Export current project (--global for all)
 claude-recall import backup.json         # Import memories from JSON
 claude-recall delete <key>               # Delete one memory by key (get keys from `search`)
@@ -352,6 +353,15 @@ action → outcome event → episode → candidate lesson → promotion → acti
 ```
 
 Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection (Claude Code, Pi) is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
+
+### Success capture
+
+Auto-capture is failure-biased by design — it learns from what breaks. But a hard-won *success* is just as reusable: the command, flag, or sequence you finally landed after several dead ends. Claude Recall captures those as a first-class `solution` memory, two ways:
+
+- **Automatically**, when a session shows a goal that failed **repeatedly** (≥2 distinct failed attempts) and then finally worked — it stores the reusable technique, generalized away from the one-off task. The multi-failure gate is deliberate: a first-try success or an unresolved struggle captures nothing, so routine wins don't become noise.
+- **Deliberately**, when you (or the agent) call `store_memory` with `type: "solution"` — the intended home for "I cracked this, don't make me re-derive it."
+
+A solution is active immediately (no wait for a second occurrence — you rarely crack the same hard thing twice), injected at every surface alongside your other rules, and ranked just below explicit corrections. List them with `claude-recall list --type solution`. Unlike other rules, solutions are exempt from the never-cited auto-demote sweep, so a rarely-needed-but-valuable win isn't retired.
 
 ### Memory janitor
 

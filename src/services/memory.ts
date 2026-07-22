@@ -23,6 +23,7 @@ export interface ActiveRules {
   corrections: Memory[];
   failures: Memory[];
   devops: Memory[];
+  solutions: Memory[];
   summary: string;
 }
 
@@ -580,11 +581,19 @@ export class MemoryService {
       // DevOps: all active rules
       const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' }).filter(isActive);
 
+      // Solutions: hard-won reusable resolutions, top 5 by timestamp
+      const allSolutions = this.storage.searchByContext({ ...searchContext, type: 'solution' });
+      const solutions = allSolutions
+        .filter(isActive)
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 5);
+
       const counts = [
         preferences.length && `${preferences.length} preferences`,
         corrections.length && `${corrections.length} corrections`,
         failures.length && `${failures.length} failures`,
         devops.length && `${devops.length} devops rules`,
+        solutions.length && `${solutions.length} solutions`,
       ].filter(Boolean);
 
       const summary = counts.length > 0
@@ -595,16 +604,16 @@ export class MemoryService {
 
       // Increment load_count for all returned rules
       const allIds = [
-        ...preferences, ...corrections, ...failures, ...devops
+        ...preferences, ...corrections, ...failures, ...devops, ...solutions
       ].map(m => m.id).filter((id): id is number => id !== undefined);
       if (allIds.length > 0) {
         this.storage.incrementLoadCounts(allIds);
       }
 
-      return { preferences, corrections, failures, devops, summary };
+      return { preferences, corrections, failures, devops, solutions, summary };
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'loadActiveRules', error as Error);
-      return { preferences: [], corrections: [], failures: [], devops: [], summary: 'Error loading rules' };
+      return { preferences: [], corrections: [], failures: [], devops: [], solutions: [], summary: 'Error loading rules' };
     }
   }
 

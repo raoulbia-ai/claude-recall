@@ -130,6 +130,7 @@ export class MemoryRetrieval {
 
   private static readonly TYPE_PRIORITY: Record<string, number> = {
     'correction': 6,
+    'solution': 5.5,       // hard-won reusable solutions — high signal, rank just below corrections
     'project-knowledge': 5,
     'preference': 4,
     'devops': 3,

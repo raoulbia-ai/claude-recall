@@ -272,7 +272,7 @@ export async function extractHindsightHint(
 // --- Session Extraction ---
 
 export interface SessionLearning {
-  type: 'project-knowledge' | 'preference' | 'devops' | 'failure';
+  type: 'project-knowledge' | 'preference' | 'devops' | 'failure' | 'solution';
   content: string;
   confidence: number;
 }
@@ -280,6 +280,11 @@ export interface SessionLearning {
 const SESSION_EXTRACTION_PROMPT = `You are analyzing a coding session transcript to extract durable lessons.
 
 The transcript shows tool calls (Bash, Edit, Read, Grep, etc.) and their results, plus user and assistant messages. Your primary job is to identify CAUSE-AND-EFFECT patterns — what failed, why, and what fixed it.
+
+PRIORITY 0 — Hard-won solutions (type "solution"):
+The MOST valuable thing to capture. Look for a goal the agent attempted, FAILED at REPEATEDLY (two or more distinct failed attempts, errors, wrong approaches, or retries on the same objective), and then FINALLY got working. Capture the reusable technique that cracked it — the command, config, flag, sequence, or approach that worked — phrased so a FUTURE session facing the same goal can apply it directly.
+STRICT gate: only emit a "solution" when there is clear evidence of (a) multiple failed attempts AND (b) an eventual success on that same goal. A task that worked first try, or that never resolved, is NOT a solution — skip it.
+Generalize away the one-off specifics (this repo's file names, this task's data) but KEEP the reusable mechanism. Example: after several failed attempts, "To submit to a Kaggle competition programmatically, use \`kaggle competitions submit -c <slug> -f <file> -m <msg>\` after \`kaggle config set -n competition -v <slug>\` — the web-form flow can't be scripted."
 
 PRIORITY 1 — Failure → Fix sequences:
 Look for tool calls that failed (errors, timeouts, non-zero exits) followed by a different approach that succeeded. Extract the lesson as an imperative rule.
@@ -304,7 +309,7 @@ Do NOT extract:
 - Anything in the EXISTING MEMORIES list below
 
 Respond with ONLY valid JSON (no markdown fences):
-[{"type":"project-knowledge|preference|devops|failure","content":"<imperative statement>","confidence":0.0-1.0}]
+[{"type":"solution|project-knowledge|preference|devops|failure","content":"<imperative statement>","confidence":0.0-1.0}]
 
 Return [] if nothing durable was learned. Max 10 items. Each content should be a concise, actionable rule (e.g. "Pipe 'y' to scripts/upgrade-sandbox.sh — it has an interactive confirmation prompt").`;
 
@@ -329,7 +334,7 @@ export async function extractSessionLearningsWithLLM(
     const results: any[] = parseJSON(text);
     if (!Array.isArray(results)) return null;
 
-    const validTypes = ['project-knowledge', 'preference', 'devops', 'failure'];
+    const validTypes = ['project-knowledge', 'preference', 'devops', 'failure', 'solution'];
     return results
       .filter((r: any) => r && validTypes.includes(r.type) && typeof r.content === 'string' && r.content.length > 5)
       .map((r: any) => ({
