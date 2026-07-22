@@ -794,6 +794,96 @@ class ClaudeRecallCLI {
   }
 
   /**
+   * List (enumerate) stored memories — no query, no ranking, no relevance cap.
+   *
+   * Fills the gap between `search` (needs a query, returns ranked top-N) and
+   * `stats` (counts only, no content). Backed by getAllByProject/getAllMemories
+   * so it returns EVERYTHING in scope, newest first. Shows the numeric id and
+   * key so rows can be fed to `delete <key>` / `rules promote <id>`.
+   */
+  listMemories(options: {
+    type?: string;
+    limit?: number;
+    all?: boolean;
+    project?: string;
+    global?: boolean;
+    json?: boolean;
+  }): void {
+    // Scope resolution mirrors search(): current project (+ universal/unscoped)
+    // by default, a named project, or every project with --global.
+    let memories: any[];
+    let scopeLabel: string;
+    if (options.global) {
+      memories = this.memoryService.getAllMemories();
+      scopeLabel = 'all projects';
+    } else {
+      const projectId = options.project || ConfigService.getInstance().getProjectId();
+      memories = this.memoryService.getAllByProject(projectId);
+      scopeLabel = `project: ${projectId}`;
+    }
+
+    if (options.type) {
+      memories = memories.filter(m => m.type === options.type);
+    }
+
+    // Newest first — most recently learned memory at the top.
+    memories.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    const total = memories.length;
+    const limit = options.all ? total : parsePositiveInt(options.limit, 'limit', 20);
+    const shown = memories.slice(0, limit);
+
+    if (options.json) {
+      console.log(JSON.stringify(shown.map(m => ({
+        id: m.id,
+        key: m.key,
+        type: m.type,
+        value: m.value,
+        project_id: m.project_id,
+        scope: m.scope,
+        is_active: m.is_active,
+        timestamp: m.timestamp,
+      })), null, 2));
+      return;
+    }
+
+    const typeFilter = options.type ? ` of type "${options.type}"` : '';
+    console.log(`\n🧠 Memories (${scopeLabel})\n`);
+    console.log(`${total} memor${total === 1 ? 'y' : 'ies'}${typeFilter}${total > shown.length ? ` — showing ${shown.length} (use --all or --limit)` : ''}\n`);
+
+    if (shown.length === 0) {
+      console.log('No memories found.\n');
+      return;
+    }
+
+    for (const m of shown) {
+      const inactive = m.is_active === false ? ' 💤 inactive' : '';
+      const when = m.timestamp ? new Date(m.timestamp).toLocaleString() : 'unknown time';
+      console.log(`[${m.id ?? '?'}] ${m.type}${inactive} · ${when}`);
+      console.log(`   ${this.truncateContent(this.extractContent(m.value))}`);
+      console.log(`   key: ${m.key}`);
+      console.log('');
+    }
+
+    this.logger.info('CLI', 'List completed', { scope: scopeLabel, total, shown: shown.length });
+  }
+
+  /**
+   * Pull the human-readable text out of a memory value, whether it's a raw
+   * string, a JSON string, or a structured object with a content/value field.
+   */
+  private extractContent(value: any): string {
+    let v = value;
+    if (typeof v === 'string') {
+      try { v = JSON.parse(v); } catch { return value; }
+    }
+    if (v && typeof v === 'object') {
+      return String(v.content ?? v.value ?? v.text ?? JSON.stringify(v));
+    }
+    return String(v);
+  }
+
+  /**
    * Export memories to a file
    */
   async export(outputPath: string, options: { format?: string; global?: boolean }): Promise<void> {
@@ -2007,6 +2097,29 @@ async function main() {
         json: options.json,
         project: options.project,
         global: options.global
+      });
+      process.exit(0);
+    });
+
+  // List command — enumerate memories (no query, unlike `search`)
+  program
+    .command('list')
+    .description('List stored memories (no query needed; newest first)')
+    .option('-t, --type <type>', 'Filter by memory type (preference, failure, devops, ...)')
+    .option('-l, --limit <number>', 'Maximum memories to show', '20')
+    .option('--all', 'Show every memory in scope (ignores --limit)')
+    .option('--project <id>', 'List a specific project (includes universal memories)')
+    .option('--global', 'List memories across all projects')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.listMemories({
+        type: options.type,
+        limit: parsePositiveInt(options.limit, 'limit', 20),
+        all: options.all,
+        project: options.project,
+        global: options.global,
+        json: options.json,
       });
       process.exit(0);
     });
