@@ -87,6 +87,30 @@ describe('list CLI (integration)', () => {
     }
   });
 
+  itIfBuilt('renders failure objects as a readable gist, not [object Object]', () => {
+    const home = mkTmp();
+    const proj = mkTmp('list-cli-fail-');
+    try {
+      // Failure memories store a structured object (often as a JSON string)
+      // under `content` — a naive String() renders "[object Object]".
+      const failurePayload = JSON.stringify({
+        what_failed: 'boom happened',
+        why_failed: 'exit code 1',
+        what_should_do: 'do X instead',
+      });
+      expect(runCli(['store', failurePayload, '-t', 'failure'], proj, home).status).toBe(0);
+
+      const res = runCli(['list', '--type', 'failure'], proj, home);
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain('[object Object]');
+      expect(res.stdout).toContain('boom happened');
+      expect(res.stdout).toContain('do X instead');
+    } finally {
+      rmTmp(home);
+      rmTmp(proj);
+    }
+  });
+
   itIfBuilt('reports an empty scope cleanly', () => {
     const home = mkTmp();
     const proj = mkTmp('list-cli-empty-');
