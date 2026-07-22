@@ -211,6 +211,7 @@ claude-recall search "preference"
 claude-recall status                     # Installation health: hooks, MCP, DB path, project ID
 claude-recall stats                      # What's in the DB for this project (--global for all)
 
+claude-recall list                       # List all memories, newest first (-t <type>, --all, --json, --global)
 claude-recall search "query"             # Search this project's memories (--global, --json, --project <id>)
 claude-recall failures                   # What broke and what fixed it
 claude-recall outcomes                   # Outcome-aware learning status
@@ -273,6 +274,7 @@ claude-recall hooks test-enforcement     # Test if search enforcer hook works
 
 # ── Memory ───────────────────────────────────────────────────────────
 claude-recall stats                      # Memory statistics (--global for all projects)
+claude-recall list                       # List memories, newest first (-t <type>, --all, --json, --global)
 claude-recall search "query"             # Search memories (--global, --json, --project <id>)
 claude-recall store "content"            # Store memory directly
 claude-recall store "content" -t <type>  # Type: preference, correction, failure, devops, project-knowledge
