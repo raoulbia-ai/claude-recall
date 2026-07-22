@@ -119,7 +119,7 @@ export class MemoryTools {
       },
       {
         name: 'store_memory',
-        description: 'Store a rule or learning. Use for: corrections, preferences, devops rules, failures. The stored rule is immediately active in this conversation.',
+        description: 'Store a rule or learning. Use for: corrections, preferences, devops rules, failures, and solutions. IMPORTANT: when you crack a hard problem after real trial-and-error (a working command, config, or sequence you had to discover), store it with type "solution" — auto-capture only learns from failures, never from your wins, so a hard-won success is lost unless you save it here. The stored rule is immediately active in this conversation.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -129,7 +129,7 @@ export class MemoryTools {
             },
             metadata: {
               type: 'object',
-              description: 'Optional metadata. Set "type" to one of: preference, correction, devops, failure'
+              description: 'Optional metadata. Set "type" to one of: preference, correction, devops, failure, solution (use "solution" for a hard-won working fix you discovered through trial-and-error)'
             },
             scope: {
               type: 'string',
@@ -157,7 +157,7 @@ export class MemoryTools {
             },
             type: {
               type: 'string',
-              description: 'Filter by memory type: preference, correction, devops, failure, project-knowledge'
+              description: 'Filter by memory type: preference, correction, devops, failure, project-knowledge, solution'
             },
             projectId: {
               type: 'string',
@@ -236,7 +236,7 @@ export class MemoryTools {
       }
 
       // Use metadata.type as the memory type so it appears in future load_rules calls
-      const validTypes = ['preference', 'correction', 'devops', 'failure', 'project-knowledge', 'tool-use'];
+      const validTypes = ['preference', 'correction', 'devops', 'failure', 'project-knowledge', 'solution', 'tool-use'];
       const detectedType = (metadata?.type && validTypes.includes(metadata.type))
         ? metadata.type
         : 'preference';
@@ -365,8 +365,9 @@ export class MemoryTools {
         return kept;
       };
 
-      // Allocate in priority order (corrections first to protect high-signal items).
+      // Allocate in priority order (corrections + solutions first to protect high-signal items).
       const keptCorrections = takeBounded(rules.corrections);
+      const keptSolutions = takeBounded([...(rules.solutions ?? [])].sort(byCiteThenFresh));
       const keptPreferences = takeBounded([...rules.preferences].sort(byCiteThenFresh));
       const keptDevops = takeBounded([...rules.devops].sort(byCiteThenFresh));
       const keptFailures = takeBounded(rules.failures, 3);
@@ -412,6 +413,13 @@ export class MemoryTools {
         }
       }
 
+      if (keptSolutions.length > 0) {
+        sections.push('## Solutions (hard-won — reuse these before re-deriving)\n' + keptSolutions.map(m => {
+          const val = formatRuleValue(m.value) + precisionNudge(m.value);
+          return `- ${val}`;
+        }).join('\n'));
+      }
+
       if (keptDevops.length > 0) {
         sections.push('## DevOps Rules\n' + keptDevops.map(m => {
           const val = formatRuleValue(m.value) + precisionNudge(m.value);
@@ -426,9 +434,9 @@ export class MemoryTools {
       }
 
       const totalRules = keptPreferences.length + keptCorrections.length +
-        keptFailures.length + keptDevops.length;
+        keptFailures.length + keptDevops.length + keptSolutions.length;
 
-      const keptAll = [...keptPreferences, ...keptCorrections, ...keptFailures, ...keptDevops];
+      const keptAll = [...keptPreferences, ...keptCorrections, ...keptFailures, ...keptDevops, ...keptSolutions];
       const resultTokens = this.estimateTokens(keptAll);
 
       // Record to SearchMonitor so monitoring/stats still work
@@ -483,6 +491,7 @@ export class MemoryTools {
           corrections: keptCorrections.length,
           failures: keptFailures.length,
           devops: keptDevops.length,
+          solutions: keptSolutions.length,
           total: totalRules,
           dropped: droppedCount,
         },

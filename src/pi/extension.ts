@@ -83,6 +83,9 @@ function formatRules(rules: ActiveRules): string {
   if (rules.corrections.length > 0) {
     sections.push('## Corrections\n' + rules.corrections.map(m => `- ${extractVal(m.value)}`).join('\n'));
   }
+  if ((rules.solutions ?? []).length > 0) {
+    sections.push('## Solutions (hard-won — reuse these)\n' + rules.solutions.map(m => `- ${extractVal(m.value)}`).join('\n'));
+  }
   if (rules.failures.length > 0) {
     sections.push('## Failures\n' + rules.failures.map(m => `- ${extractVal(m.value)}`).join('\n'));
   }

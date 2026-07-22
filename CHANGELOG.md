@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.0] - 2026-07-22
+
+### Added
+
+- **Success-capture — a first-class `solution` memory type.** Until now the learning pipeline was failure/correction/preference-biased by construction: a hard-won win (e.g. cracking programmatic Kaggle submission after many failed attempts) left no trace. Solutions close that gap, via two paths:
+  - **Auto (struggle→resolution).** Session extraction now captures a `solution` when the transcript shows a goal that was attempted, failed **repeatedly** (≥2 distinct failed attempts), and then finally worked — storing the reusable technique, generalized away from the one-off task specifics. The multi-failure gate is the selectivity dial: a first-try success or an unresolved struggle captures nothing, so routine wins don't flood the store.
+  - **Deliberate.** `store_memory` accepts `type: "solution"`, and the tool description nudges the agent to save hard-won fixes it discovered through trial-and-error.
+  - **Promote on first.** A captured solution is stored **active immediately** (no ≥2-evidence wait — you rarely crack the same hard task twice) and injected at every surface: `load_rules`, post-compact reload, JIT rule injection, Kiro, sub-agents, Pi. Retrieval ranks solutions just below explicit corrections; `claude-recall list --type solution` lists them. Solutions are deliberately excluded from the cite=0 auto-demote sweep so a rarely-needed-but-valuable win isn't retired.
+
 ## [0.36.2] - 2026-07-22
 
 ### Fixed

@@ -94,12 +94,13 @@ function formatRulesForContext(): { body: string; total: number } {
   const sections = [
     section('Preferences', rules.preferences),
     section('Corrections', rules.corrections),
+    section('Solutions (hard-won — reuse these)', rules.solutions ?? []),
     section('Failures', rules.failures),
     section('DevOps Rules', rules.devops),
   ].filter((s): s is string => s !== null);
 
   const total = rules.preferences.length + rules.corrections.length
-    + rules.failures.length + rules.devops.length;
+    + rules.failures.length + rules.devops.length + (rules.solutions ?? []).length;
 
   return { body: sections.join('\n\n'), total };
 }

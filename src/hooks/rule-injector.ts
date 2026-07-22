@@ -116,6 +116,7 @@ export async function computeInjection(
     ...activeRules.corrections,
     ...activeRules.failures,
     ...activeRules.devops,
+    ...(activeRules.solutions ?? []),
   ].map(m => ({
     key: m.key,
     type: m.type,

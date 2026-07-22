@@ -486,7 +486,7 @@ export async function extractSessionLearnings(
     try {
       const ms = MemoryService.getInstance();
       const rules = ms.loadActiveRules(projectId);
-      const all = [...rules.preferences, ...rules.corrections, ...rules.failures, ...rules.devops];
+      const all = [...rules.preferences, ...rules.corrections, ...rules.failures, ...rules.devops, ...(rules.solutions ?? [])];
       for (const m of all.slice(0, 20)) {
         const val = typeof m.value === 'object' ? (m.value?.content || JSON.stringify(m.value)) : String(m.value);
         existingMemories.push(truncate(val, 80));

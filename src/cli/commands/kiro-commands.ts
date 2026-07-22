@@ -470,7 +470,7 @@ export class KiroCommands {
         : `project: ${projectId} (from working directory)`);
       line('•', `total memories (all projects): ${stats.total}`);
       const rules = ms.loadActiveRules(projectId);
-      const ruleCount = rules.preferences.length + rules.corrections.length + rules.failures.length + rules.devops.length;
+      const ruleCount = rules.preferences.length + rules.corrections.length + rules.failures.length + rules.devops.length + (rules.solutions ?? []).length;
       line(ruleCount > 0 ? '✓' : '•', `active rules for this project: ${ruleCount}`);
     } catch (err) {
       line('⚠', `could not open database: ${(err as Error).message}`);

@@ -300,7 +300,7 @@ export class MemoryStorage {
   }
 
   /** Rule-type memories: the only types subject to fuzzy dedup and retro-dedup. */
-  private static readonly RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge'];
+  private static readonly RULE_TYPES = ['preference', 'correction', 'failure', 'devops', 'project-knowledge', 'solution'];
 
   /**
    * Supersession sentinels written by automatic hygiene passes (as opposed to
