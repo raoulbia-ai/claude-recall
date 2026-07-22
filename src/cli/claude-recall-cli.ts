@@ -870,17 +870,37 @@ class ClaudeRecallCLI {
 
   /**
    * Pull the human-readable text out of a memory value, whether it's a raw
-   * string, a JSON string, or a structured object with a content/value field.
+   * string, a JSON string, or a structured object. Failure memories nest their
+   * payload as an OBJECT under `content` ({ what_failed, why_failed, ... }), so
+   * a naive `String(value.content)` renders "[object Object]" — unwrap nested
+   * content/value/text wrappers and surface the failure gist instead.
    */
   private extractContent(value: any): string {
     let v = value;
-    if (typeof v === 'string') {
-      try { v = JSON.parse(v); } catch { return value; }
+    // Descend through nested wrappers. The payload can be an object, a JSON
+    // string, or an object whose content/value/text is itself a JSON string
+    // (failure memories come in both shapes) — so parse-as-we-go, bounded.
+    for (let depth = 0; depth < 6; depth++) {
+      if (typeof v === 'string') {
+        const t = v.trim();
+        if (t.startsWith('{') || t.startsWith('[')) {
+          try { v = JSON.parse(t); continue; } catch { return v; }
+        }
+        return v;
+      }
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        // Failure-shaped object: show what broke → what to do instead.
+        if (typeof v.what_failed === 'string') {
+          return v.what_should_do ? `${v.what_failed} → ${v.what_should_do}` : v.what_failed;
+        }
+        const next = v.content ?? v.value ?? v.text;
+        if (next === undefined) return JSON.stringify(v);
+        v = next;
+        continue;
+      }
+      break;
     }
-    if (v && typeof v === 'object') {
-      return String(v.content ?? v.value ?? v.text ?? JSON.stringify(v));
-    }
-    return String(v);
+    return typeof v === 'string' ? v : JSON.stringify(v);
   }
 
   /**
