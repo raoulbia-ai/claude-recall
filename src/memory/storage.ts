@@ -59,6 +59,11 @@ export class MemoryStorage {
     this.db.pragma('journal_mode = WAL');
     // Ensure changes are synced to disk
     this.db.pragma('synchronous = NORMAL');
+    // Cap WAL growth: after each checkpoint SQLite truncates the -wal file
+    // back to this ceiling, so it can't balloon (a stuck reader once left it
+    // at 34MB) and linger across restarts. Paired with a TRUNCATE checkpoint
+    // in close().
+    this.db.pragma('journal_size_limit = 8388608'); // 8 MB
     this.initialize();
   }
   
@@ -1277,6 +1282,15 @@ export class MemoryStorage {
   }
   
   close(): void {
+    // Flush the WAL into the main DB and truncate the -wal/-shm files so they
+    // don't linger at tens of MB after the process exits. Best-effort: a
+    // checkpoint can fail if another connection still holds a read lock, in
+    // which case db.close() below still runs an implicit passive checkpoint.
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      // ignore — proceed to close regardless
+    }
     this.db.close();
   }
 }

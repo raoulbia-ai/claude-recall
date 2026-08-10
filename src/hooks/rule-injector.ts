@@ -24,12 +24,16 @@
  * citation-detection regex.
  */
 
-import { hookLog } from './shared';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+import { hookLog, hookStateDir } from './shared';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
+import { writeHarnessSessionLink } from '../services/session-link';
 
 const TYPE_LABELS: Record<string, string> = {
   correction: 'correction',
@@ -84,6 +88,44 @@ function formatInjection(matches: RankedRule[], toolName: string): string {
 }
 
 /**
+ * Per-session injection dedup. The hook fires on EVERY tool call, so without
+ * this the same rule is re-injected verbatim before every Read/Bash/Edit —
+ * pure per-call token overhead, and identical repetition trains the model to
+ * tune the block out. We remember which rules were already injected this
+ * session (keyed by rule identity + a content hash, so a rule re-injects only
+ * if its content actually changed) and skip them next time.
+ */
+function injectionStateFile(sessionId: string): string {
+  const safe = (sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
+  return path.join(hookStateDir(), `rule-injector-${safe}.json`);
+}
+
+function loadInjectedSet(sessionId: string): Set<string> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(injectionStateFile(sessionId), 'utf-8'));
+    if (Array.isArray(parsed?.injected)) return new Set(parsed.injected);
+  } catch { /* no state yet — first injection this session */ }
+  return new Set();
+}
+
+function saveInjectedSet(sessionId: string, injected: Set<string>): void {
+  try {
+    fs.writeFileSync(
+      injectionStateFile(sessionId),
+      JSON.stringify({ injected: [...injected] }),
+      'utf-8',
+    );
+  } catch { /* best-effort — dedup is an optimization, never block the call */ }
+}
+
+function ruleInjectionId(rule: Rule): string {
+  let payload: string;
+  try { payload = JSON.stringify(rule.value); } catch { payload = String(rule.value); }
+  const hash = createHash('sha1').update(payload).digest('hex').slice(0, 8);
+  return `${rule.type}:${rule.key}:${hash}`;
+}
+
+/**
  * Runtime-agnostic core: rank active rules against this tool call, record
  * the injections for outcome resolution, and return the formatted context
  * block — or null when there is nothing to inject. Emitters wrap this per
@@ -94,6 +136,7 @@ export async function computeInjection(
   toolName: string,
   toolInput: any,
   toolUseId: string,
+  sessionId: string = 'default',
 ): Promise<string | null> {
   if (!toolName) return null;
 
@@ -106,6 +149,11 @@ export async function computeInjection(
 
   const projectId = ConfigService.getInstance().getProjectId();
   const memoryService = MemoryService.getInstance();
+
+  // Record the harness session id for this project so the MCP server can
+  // correlate its own logs with hook-side state (#6). This hook runs on every
+  // tool call with the harness session_id, so the link stays fresh.
+  writeHarnessSessionLink(sessionId, projectId);
 
   // Fetch all active rules for this project. We pass them all to the ranker
   // because the ranking function is fast and we want sticky rules to surface
@@ -138,10 +186,21 @@ export async function computeInjection(
     return null;
   }
 
+  // Drop rules already injected this session (unless their content changed).
+  const injected = loadInjectedSet(sessionId);
+  const freshMatches = matches.filter(m => !injected.has(ruleInjectionId(m.rule)));
+  if (freshMatches.length === 0) {
+    hookLog(
+      'rule-injector',
+      `All ${matches.length} matched rule(s) already injected this session (${sessionId}) — skipping`,
+    );
+    return null;
+  }
+
   // Record each injection so PostToolUse can resolve it with the outcome
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
-    for (const m of matches) {
+    for (const m of freshMatches) {
       outcomeStorage.recordRuleInjection({
         rule_key: m.rule.key,
         tool_name: toolName,
@@ -156,12 +215,16 @@ export async function computeInjection(
     hookLog('rule-injector', `Failed to record injections: ${(err as Error).message}`);
   }
 
+  // Mark them injected so they don't repeat on the next tool call.
+  for (const m of freshMatches) injected.add(ruleInjectionId(m.rule));
+  saveInjectedSet(sessionId, injected);
+
   hookLog(
     'rule-injector',
-    `Injected ${matches.length} rule(s) for ${toolName} (top score=${matches[0].score.toFixed(3)})`,
+    `Injected ${freshMatches.length} rule(s) for ${toolName} (top score=${freshMatches[0].score.toFixed(3)})`,
   );
 
-  return formatInjection(matches, toolName);
+  return formatInjection(freshMatches, toolName);
 }
 
 export async function handleRuleInjector(input: any): Promise<void> {
@@ -170,6 +233,7 @@ export async function handleRuleInjector(input: any): Promise<void> {
       input?.tool_name ?? '',
       input?.tool_input ?? {},
       input?.tool_use_id ?? '',
+      input?.session_id ?? 'default',
     );
 
     if (!additionalContext) {

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.2] - 2026-08-10
+
+### Fixed
+
+- **Rule-injector no longer repeats itself on every tool call.** The PreToolUse just-in-time injector fires before *every* tool use and previously re-injected the same `<recalled-memory>` block verbatim each time — per-call token overhead, and identical repetition trains the model to tune it out. It now dedups per session (keyed by rule identity + a content hash, so a rule re-injects only if its content actually changed), reusing the harness `session_id` it had been ignoring. The dedup set is reset on `PreCompact` so rules re-inject after a compaction drops them from context.
+- **Failure memories render readable titles instead of raw JSON.** A failure stored as `JSON.stringify(content)` used to surface its raw JSON as the file title/slug in the auto-memory index (e.g. `[{"what_failed":"Bash command...`), and clean object-content memories stringified to `[object Object]`. The memory-sync renderer now resolves every historical value shape to readable text (prefers a structured `title`, renders failures as `what_failed → what_should_do`, unwraps nested/stringified JSON) — which also fixes pre-existing memories retroactively.
+- **Boilerplate-only failure lessons are no longer promoted to the file-based memory.** A failure whose only takeaway is a generic default ("check inputs and prerequisites before retrying") teaches nothing as a durable memory, so it's skipped during sync. The specific failure stays in the DB, so fix-pairing and evidence counting are unaffected; once a fix enriches the lesson, it syncs normally.
+- **WAL no longer grows unbounded.** SQLite `journal_size_limit` is capped at 8 MB and `close()` now runs an explicit `wal_checkpoint(TRUNCATE)`, so the `-wal` file can't balloon to tens of MB and linger across restarts (it was observed at 34 MB). `claude-recall status` now surfaces the WAL size, with a warning when it's large.
+
+### Security
+
+- The memory-sync secret filter now scans the **full** raw memory value rather than the shortened display gist, so a secret buried in a non-title field can't slip past the pre-sync redaction check.
+
 ## [0.37.1] - 2026-08-10
 
 ### Fixed

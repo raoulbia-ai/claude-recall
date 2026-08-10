@@ -406,5 +406,110 @@ describe('memory-sync-hook', () => {
       // Filenames should be different
       expect(files[0]).not.toBe(files[1]);
     });
+
+    // --- #7: failure title rendering + boilerplate drop ---
+
+    it('renders a readable name for a JSON-stringified failure (not raw JSON)', async () => {
+      // The old bug: a failure stored as JSON.stringify(content) surfaced its
+      // raw JSON as the file name/slug (`[{"what_failed":"Bash command...`).
+      const failure = JSON.stringify({
+        what_failed: 'Command failed: pkill -f ericai',
+        why_failed: 'Exit code 1',
+        what_should_do: 'Fix: use pgrep to check first',
+        context: 'Bash non-zero exit',
+        preventative_checks: ['Verify process name'],
+      });
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'hook_failure_1', value: failure, crType: 'failure', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
+      const nameLine = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8')
+        .split('\n').find(l => l.startsWith('name:')) || '';
+      expect(nameLine).toContain('Command failed: pkill -f ericai');
+      expect(nameLine).not.toContain('{"what_failed"'); // no raw JSON leaked into the title
+      expect(files[0]).not.toMatch(/^recall_feedback_-*what-failed/); // slug isn't JSON-derived
+    });
+
+    it('prefers a clean structured title when present', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({
+          key: 'hook_failure_2',
+          value: { title: 'Avoid: rm -rf on wrong dir', description: 'destructive', content: { what_failed: 'rm -rf ran in $HOME' } },
+          crType: 'failure', ccType: 'feedback',
+        }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      const content = fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8');
+      expect(content).toContain('Avoid: rm -rf on wrong dir');
+      expect(content).not.toContain('[object Object]');
+    });
+
+    it('drops failures whose only lesson is boilerplate', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({
+          key: 'hook_failure_boiler',
+          value: JSON.stringify({
+            what_failed: 'SomeTool failed',
+            why_failed: 'error',
+            what_should_do: 'Check inputs and prerequisites before retrying',
+            context: 'x',
+            preventative_checks: ['Verify tool inputs are correct'],
+          }),
+          crType: 'failure', ccType: 'feedback',
+        }),
+        makeSyncRule({ key: 'real_pref', value: 'Keep this preference', crType: 'preference', ccType: 'feedback' }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1); // boilerplate failure skipped, preference kept
+      expect(fs.readFileSync(path.join(memoryDir, files[0]), 'utf-8')).toContain('Keep this preference');
+    });
+
+    it('keeps a failure once its lesson is enriched beyond boilerplate', async () => {
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({
+          key: 'hook_failure_fixed',
+          value: JSON.stringify({
+            what_failed: 'Build failed: missing dist',
+            why_failed: 'error',
+            what_should_do: 'Fix: run npm run build before publish',
+            context: 'x',
+            preventative_checks: [],
+          }),
+          crType: 'failure', ccType: 'feedback',
+        }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(1);
+    });
+
+    it('still filters a secret buried in a non-title field', async () => {
+      // extractValue now returns a gist (the title); the secret scan must
+      // still see the full value, so a secret in a nested field is caught.
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({
+          key: 'sneaky',
+          value: { title: 'Deploy note', content: { what_failed: 'deploy', why_failed: 'api_key=abc123 leaked' } },
+          crType: 'failure', ccType: 'feedback',
+        }),
+      ]);
+
+      await handleMemorySync({ cwd: testCwd });
+
+      const files = fs.readdirSync(memoryDir).filter(f => f.startsWith('recall_'));
+      expect(files).toHaveLength(0); // filtered out by the full-value secret scan
+    });
   });
 });

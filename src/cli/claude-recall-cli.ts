@@ -1176,6 +1176,15 @@ class ClaudeRecallCLI {
       const stats = fs.statSync(dbPath);
       console.log(`  Path: ${dbPath}`);
       console.log(`  Size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+      // Surface the write-ahead log size. A WAL that has grown to a large
+      // fraction of the DB usually means a long-lived connection isn't
+      // checkpointing; it's truncated on the next clean shutdown (close()).
+      const walPath = `${dbPath}-wal`;
+      if (fs.existsSync(walPath)) {
+        const walMb = fs.statSync(walPath).size / 1024 / 1024;
+        const warn = walMb > 16 ? '  ⚠️  large — will truncate on next clean shutdown' : '';
+        console.log(`  WAL:  ${walMb.toFixed(2)} MB${warn}`);
+      }
     }
     
     // Memory stats
