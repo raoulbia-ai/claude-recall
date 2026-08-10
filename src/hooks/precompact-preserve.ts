@@ -79,31 +79,39 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
   }
   hookLog('precompact', `PreCompact sweep: stored ${stored} memories from ${entries.length} entries`);
 
-  // Reset search enforcer hook-state so Claude is forced to re-load rules
-  // after context compression. Without this, the enforcer thinks rules are
-  // still loaded even though they may have been lost during compaction.
-  resetEnforcerState(input?.session_id);
+  // Reset per-session hook-state so Claude is forced to re-load AND re-inject
+  // rules after context compression. Without this, the enforcer thinks rules
+  // are still loaded and the rule-injector thinks it already injected them —
+  // but compaction may have dropped both from context.
+  resetSessionHookState(input?.session_id);
 }
 
 /**
- * Delete the search enforcer's hook-state file for this session,
- * forcing a fresh load_rules gate on the next tool call.
+ * Delete this session's per-session hook-state files, forcing a fresh
+ * load_rules gate (search enforcer) and re-injection (rule-injector) on the
+ * next tool call after compaction.
  */
-function resetEnforcerState(sessionId?: string): void {
+function resetSessionHookState(sessionId?: string): void {
   if (!sessionId) {
-    hookLog('precompact', 'No session_id — cannot reset enforcer state');
+    hookLog('precompact', 'No session_id — cannot reset session hook-state');
     return;
   }
 
   const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
-  const stateFile = path.join(os.homedir(), '.claude-recall', 'hook-state', `${safeId}.json`);
+  const stateDir = path.join(os.homedir(), '.claude-recall', 'hook-state');
+  const stateFiles = [
+    path.join(stateDir, `${safeId}.json`), // search-enforcer gate state
+    path.join(stateDir, `rule-injector-${safeId}.json`), // rule-injector dedup set
+  ];
 
-  try {
-    if (fs.existsSync(stateFile)) {
-      fs.unlinkSync(stateFile);
-      hookLog('precompact', `Reset enforcer state for session ${safeId} — rules will re-gate`);
+  for (const stateFile of stateFiles) {
+    try {
+      if (fs.existsSync(stateFile)) {
+        fs.unlinkSync(stateFile);
+        hookLog('precompact', `Reset hook-state ${path.basename(stateFile)} for session ${safeId}`);
+      }
+    } catch (err: any) {
+      hookLog('precompact', `Failed to reset ${path.basename(stateFile)}: ${err.message}`);
     }
-  } catch (err: any) {
-    hookLog('precompact', `Failed to reset enforcer state: ${err.message}`);
   }
 }

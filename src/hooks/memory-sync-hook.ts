@@ -45,11 +45,78 @@ export function deriveAutoMemoryPath(cwd: string, homedir?: string): string {
  * Extract display value from a memory record.
  */
 function extractValue(value: any): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object' && value !== null) {
-    return value.content || value.value || JSON.stringify(value);
+  // Always resolve to readable text. Handles every historical shape:
+  //  - clean structured `{ title, description, content }` → prefer the title
+  //  - failure content objects → "what_failed → what_should_do"
+  //  - nested `{ content: { ... } }` / `{ content: "{...json...}" }` wrappers
+  //  - stringified-JSON stored as a plain string
+  // Without this, a failure stored as `JSON.stringify(content)` rendered its
+  // raw JSON as the file title/slug (e.g. `[{"what_failed":"Bash command...`),
+  // and clean object-content memories stringified to "[object Object]".
+  let v: any = value;
+  for (let depth = 0; depth < 6; depth++) {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t.startsWith('{') || t.startsWith('[')) {
+        try { v = JSON.parse(t); continue; } catch { return v; }
+      }
+      return v;
+    }
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if (typeof v.title === 'string' && v.title.trim()) return v.title.trim();
+      if (typeof v.what_failed === 'string') {
+        return v.what_should_do ? `${v.what_failed} → ${v.what_should_do}` : v.what_failed;
+      }
+      const next = v.content ?? v.value ?? v.text;
+      if (next === undefined) return JSON.stringify(v);
+      v = next;
+      continue;
+    }
+    break;
   }
-  return String(value ?? '');
+  return typeof v === 'string' ? v : JSON.stringify(v ?? '');
+}
+
+/**
+ * Generic default "lessons" the failure detectors emit when no fix has been
+ * paired yet. A promoted memory whose only takeaway is one of these teaches
+ * nothing — it just costs context. We skip syncing those to the file-based
+ * memory; the specific failure still lives in the DB, so fix-pairing and
+ * evidence counting are unaffected, and once a fix enriches what_should_do
+ * (e.g. "Fix: <command>") the memory syncs normally.
+ */
+const BOILERPLATE_LESSONS = new Set([
+  'check inputs and prerequisites before retrying',
+  'check command syntax, file paths, and prerequisites before running',
+  'review error details and adjust approach',
+]);
+
+/** Unwrap a memory value to the object that carries the failure fields, or null. */
+function unwrapToFailureObject(value: any): any {
+  let v: any = value;
+  for (let depth = 0; depth < 6; depth++) {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t.startsWith('{')) { try { v = JSON.parse(t); continue; } catch { return null; } }
+      return null;
+    }
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      if (typeof v.what_should_do === 'string' || typeof v.what_failed === 'string') return v;
+      const next = v.content ?? v.value;
+      if (next === undefined) return null;
+      v = next;
+      continue;
+    }
+    return null;
+  }
+  return null;
+}
+
+function isBoilerplateFailure(rule: SyncRule): boolean {
+  if (rule.crType !== 'failure') return false;
+  const obj = unwrapToFailureObject(rule.value);
+  const wsd = obj && typeof obj.what_should_do === 'string' ? obj.what_should_do.trim().toLowerCase() : '';
+  return BOILERPLATE_LESSONS.has(wsd);
 }
 
 /**
@@ -218,11 +285,17 @@ export async function handleMemorySync(input: any): Promise<void> {
     // Get top rules ranked for sync
     const rules = memoryService.getTopRulesForSync(projectId, MAX_SYNC_FILES);
 
-    // Filter out test data and secrets
+    // Filter out test data, secrets, and boilerplate-only failure lessons.
     const filtered = rules.filter(r => {
       if (isTestData(r.key)) return false;
-      const val = extractValue(r.value);
-      if (containsSecret(val)) return false;
+      // Scan the FULL raw value for secrets, not just the display gist —
+      // extractValue now returns a summary that could omit a secret buried in
+      // a non-title field.
+      let raw: string;
+      try { raw = typeof r.value === 'string' ? r.value : JSON.stringify(r.value); }
+      catch { raw = String(r.value ?? ''); }
+      if (containsSecret(raw)) return false;
+      if (isBoilerplateFailure(r)) return false;
       return true;
     });
 

@@ -42,10 +42,15 @@ jest.mock('../../src/services/outcome-storage', () => ({
   },
 }));
 
+let mockStateDir = '';
 jest.mock('../../src/hooks/shared', () => ({
   hookLog: (...args: any[]) => mockHookLog(...args),
+  hookStateDir: () => mockStateDir,
 }));
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { handleRuleInjector } from '../../src/hooks/rule-injector';
 import { handleRuleInjectionResolver } from '../../src/hooks/rule-injection-resolver';
 
@@ -65,8 +70,14 @@ function captureStdout(): { restore: () => string } {
 }
 
 describe('handleRuleInjector — PreToolUse hook', () => {
+  let tmpRoot = '';
   beforeEach(() => {
     jest.clearAllMocks();
+    // Isolate per-session dedup state + the harness-session link to a temp dir.
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rule-injector-'));
+    mockStateDir = path.join(tmpRoot, 'hook-state');
+    fs.mkdirSync(mockStateDir, { recursive: true });
+    process.env.CLAUDE_RECALL_DB_PATH = tmpRoot;
     mockLoadActiveRules.mockReturnValue({
       preferences: [],
       corrections: [],
@@ -74,6 +85,11 @@ describe('handleRuleInjector — PreToolUse hook', () => {
       devops: [],
       summary: '',
     });
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_RECALL_DB_PATH;
+    if (tmpRoot && fs.existsSync(tmpRoot)) fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   it('emits empty JSON when tool_name is missing', async () => {
@@ -260,6 +276,55 @@ describe('handleRuleInjector — PreToolUse hook', () => {
     // The injection itself should still go through even if recording fails
     const parsed = JSON.parse(output);
     expect(parsed.hookSpecificOutput?.additionalContext).toBeDefined();
+  });
+
+  // --- #5: per-session dedup ---
+
+  const buildDevopsRule = (content: string) => ({
+    preferences: [], corrections: [], failures: [],
+    devops: [{ key: 'd1', type: 'devops', value: { content }, is_active: true, timestamp: Date.now() }],
+    summary: '',
+  });
+
+  it('does not re-inject the same rule twice in one session (#5)', async () => {
+    mockLoadActiveRules.mockReturnValue(buildDevopsRule('always run npm run build before npm test'));
+
+    const s1 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'a', session_id: 'sess-A' });
+    const first = s1.restore();
+    expect(JSON.parse(first).hookSpecificOutput.additionalContext).toContain('npm run build');
+
+    const s2 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'b', session_id: 'sess-A' });
+    const second = s2.restore();
+    expect(second.trim()).toBe('{}'); // already injected this session — suppressed
+  });
+
+  it('re-injects the same rule in a different session', async () => {
+    mockLoadActiveRules.mockReturnValue(buildDevopsRule('always run npm run build before npm test'));
+
+    const s1 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'a', session_id: 'sess-A' });
+    s1.restore();
+
+    const s2 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'b', session_id: 'sess-B' });
+    const out = s2.restore();
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toContain('npm run build');
+  });
+
+  it('re-injects when the rule content changes within a session', async () => {
+    mockLoadActiveRules.mockReturnValueOnce(buildDevopsRule('always run npm run build before npm test'));
+    const s1 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'a', session_id: 'sess-C' });
+    s1.restore();
+
+    // Same key, changed content → different hash → should inject again
+    mockLoadActiveRules.mockReturnValueOnce(buildDevopsRule('always run npm run build AND npm run lint before npm test'));
+    const s2 = captureStdout();
+    await handleRuleInjector({ tool_name: 'Bash', tool_input: { command: 'npm run build && npm test' }, tool_use_id: 'b', session_id: 'sess-C' });
+    const out = s2.restore();
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toContain('npm run lint');
   });
 });
 

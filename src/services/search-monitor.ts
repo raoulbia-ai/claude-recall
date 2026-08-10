@@ -1,4 +1,6 @@
 import { LoggingService } from './logging';
+import { ConfigService } from './config';
+import { readHarnessSessionLink } from './session-link';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -7,7 +9,14 @@ export interface SearchCall {
   timestamp: number;
   query: string;
   resultCount: number;
+  /** The MCP server's own per-process session id. */
   sessionId: string;
+  /**
+   * Claude Code's harness session_id for this project, when a hook has
+   * recorded it (#6). Lets these logs be correlated with hook-state files,
+   * which are named by the harness id. Undefined when no hook has run yet.
+   */
+  harnessSessionId?: string;
   source: 'mcp' | 'cli' | 'direct';
   context?: any;
 }
@@ -39,6 +48,20 @@ export class SearchMonitor {
     }
   }
 
+  /**
+   * Best-effort lookup of the harness session_id for this process's project.
+   * A hook records it (see session-link.ts); returns undefined if none has run
+   * yet or on any error — this must never disrupt a search.
+   */
+  private resolveHarnessSessionId(): string | undefined {
+    try {
+      const projectId = ConfigService.getInstance().getProjectId();
+      return readHarnessSessionLink(projectId) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   recordSearch(query: string, resultCount: number, sessionId: string, source: 'mcp' | 'cli' | 'direct', context?: any): void {
     if (!this.monitoringEnabled) return;
 
@@ -47,6 +70,7 @@ export class SearchMonitor {
       query,
       resultCount,
       sessionId,
+      harnessSessionId: this.resolveHarnessSessionId(),
       source,
       context
     };
