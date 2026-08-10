@@ -103,11 +103,17 @@ const RESET = '\x1b[0m';
 
 function getPackedFiles() {
   const out = execSync('npm pack --dry-run --json', { encoding: 'utf8' });
-  const arr = JSON.parse(out);
-  if (!Array.isArray(arr) || !arr[0] || !Array.isArray(arr[0].files)) {
+  const parsed = JSON.parse(out);
+  // Tolerate both output shapes:
+  //   npm <= 10: [ { ..., files: [{ path }] } ]           (array)
+  //   npm >= 11: { "<pkg>": { ..., files: [{ path }] } }  (map keyed by name)
+  const entry = Array.isArray(parsed)
+    ? parsed[0]
+    : (parsed && typeof parsed === 'object' ? Object.values(parsed)[0] : undefined);
+  if (!entry || !Array.isArray(entry.files)) {
     throw new Error('Unexpected `npm pack --dry-run --json` output shape');
   }
-  return arr[0].files.map(f => f.path);
+  return entry.files.map(f => f.path);
 }
 
 function checkPaths(files) {
