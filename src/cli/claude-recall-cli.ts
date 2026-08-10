@@ -18,9 +18,10 @@ import { KiroCommands } from './commands/kiro-commands';
 import { runRepair, resolveOnPath } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
+// v15 = bound the search_enforcer PreToolUse entry with timeout: 5.
 // Bump when the hook block template changes — setup skips the settings
 // rewrite when the installed hooksVersion already matches.
-const HOOKS_VERSION = '14.0.0';
+const HOOKS_VERSION = '15.0.0';
 import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 
 const program = new Command();
@@ -1483,7 +1484,11 @@ async function main() {
           hooks: [
             {
               type: "command",
-              command: `python3 ${hookDest}`
+              command: `python3 ${hookDest}`,
+              // Runs before EVERY tool call (matcher .*). Bound the python3
+              // cold start so it can't become a per-call latency tax or an
+              // unbounded failure mode.
+              timeout: 5
             },
             {
               type: "command",

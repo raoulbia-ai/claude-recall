@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.37.1] - 2026-08-10
+
+### Fixed
+
+- **Search-enforcer no longer defaults to hard-block (deadlock fix).** The PreToolUse gate that requires `load_rules` before mutations now defaults to `warn` instead of `block` — its own comments call it "an advisory nudge, not a security boundary," and a nudge should never be able to stall a session. In harnesses that **defer MCP tool schemas** (tool names appear but must be discovered via `ToolSearch` before they're callable), the old `block` default could wall a session: the gate told the agent to call `mcp__claude-recall__load_rules` directly, the call failed with no loaded schema, and work stopped. Set `CLAUDE_RECALL_ENFORCE_MODE=block` to restore hard enforcement.
+- **Kill switch is now reachable from inside a running session.** Enforcement mode resolves from `CLAUDE_RECALL_ENFORCE_MODE` (wins) → `~/.claude-recall/config.json` `"enforceMode"` → default `warn`. An env var set before launch can't be changed mid-session; the config file can (an agent can edit it to escape a stuck gate). The block message now names the exact file and key instead of an unqualified `CLAUDE_RECALL_ENFORCE_MODE=off`.
+- **Enforcer block/stale messages now include the discovery step** — if `load_rules` isn't directly callable, run `ToolSearch({query:"select:mcp__claude-recall__load_rules"})` first.
+- **Enforcer PreToolUse hook is now bounded by `timeout: 5`.** It runs before *every* tool call (matcher `.*`) and was the only claude-recall hook with no timeout, making the `python3` cold start an unbounded per-call cost. `HOOKS_VERSION` bumped to `15.0.0` so existing installs pick up the timeout on next `setup --install`.
+
 ## [0.37.0] - 2026-07-22
 
 ### Added

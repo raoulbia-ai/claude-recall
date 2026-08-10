@@ -16,7 +16,29 @@ from datetime import datetime
 
 STATE_DIR = Path.home() / '.claude-recall' / 'hook-state'
 SEARCH_TTL_MS = int(os.environ.get('CLAUDE_RECALL_SEARCH_TTL', 60 * 1000))  # 1 min default (once per task)
-ENFORCE_MODE = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE', 'block')  # block, warn, off
+
+
+def _resolve_enforce_mode() -> str:
+    """Enforcement mode: env var wins, then ~/.claude-recall/config.json
+    ("enforceMode"), else default 'warn'. A file-based switch is reachable
+    from inside a running session (an agent can edit config.json to escape a
+    stuck gate); an env var set before launch is not. Default is 'warn' — this
+    gate is an advisory nudge (see module docstring), so it should never
+    hard-block a session by default."""
+    env = os.environ.get('CLAUDE_RECALL_ENFORCE_MODE')
+    if env:
+        return env.strip().lower()
+    try:
+        cfg = json.load(open(Path.home() / '.claude-recall' / 'config.json'))
+        mode = cfg.get('enforceMode')
+        if mode:
+            return str(mode).strip().lower()
+    except Exception:
+        pass
+    return 'warn'
+
+
+ENFORCE_MODE = _resolve_enforce_mode()  # block, warn, off
 MAX_BLOCKS = int(os.environ.get('CLAUDE_RECALL_MAX_BLOCKS', 3))  # degrade to warn after N blocks
 
 # Tools that count as "search performed"
@@ -182,6 +204,7 @@ STALE RULES — consider reloading before {tool_name}
 
 Rules were loaded earlier but TTL expired.
 Run: mcp__claude-recall__load_rules({{}})
+(If not directly callable, ToolSearch it first — see below.)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
         print(msg.strip(), file=sys.stderr)
@@ -214,10 +237,14 @@ LOAD RULES REQUIRED before {tool_name} (attempt {block_count}/{MAX_BLOCKS})
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Run: mcp__claude-recall__load_rules({{}})
+(If that tool is not directly callable, first run
+ ToolSearch({{query:"select:mcp__claude-recall__load_rules"}}) —
+ some harnesses defer MCP tool schemas until discovered.)
 
 This ensures you apply user preferences and avoid past mistakes.
 
-To disable: CLAUDE_RECALL_ENFORCE_MODE=off
+To disable this gate: set "enforceMode":"off" in ~/.claude-recall/config.json
+(or export CLAUDE_RECALL_ENFORCE_MODE=off before launching Claude Code).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
     print(msg.strip(), file=sys.stderr)

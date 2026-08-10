@@ -58,7 +58,7 @@ Common read-only commands are exempt from enforcement:
 | Environment Variable | Default | Description |
 |---|---|---|
 | `CLAUDE_RECALL_SEARCH_TTL` | `300000` (5 min) | Milliseconds a search remains valid |
-| `CLAUDE_RECALL_ENFORCE_MODE` | `block` | `block` (exit 2), `warn` (exit 0 + stderr message), or `off` (disabled) |
+| `CLAUDE_RECALL_ENFORCE_MODE` | `warn` | `block` (exit 2), `warn` (exit 0 + stderr message), or `off` (disabled). Env wins; otherwise read from `~/.claude-recall/config.json` → `"enforceMode"`; else `warn`. The file switch is reachable from inside a running session — an env var set before launch is not. |
 
 ### Exit Codes
 
