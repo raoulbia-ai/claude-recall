@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.0] - 2026-08-17
+
+### Added
+
+- **Opt-in FTS5 / BM25 lexical retrieval (`CLAUDE_RECALL_RETRIEVAL=fts`).** The candidate-fetch stage can now rank memories with SQLite's built-in FTS5 (BM25) instead of the crude `value LIKE '%kw%'` substring filter — better recall and ranking as the corpus grows, with **no new dependency and no loss of the local-only/offline guarantee**. A trigger-synced external-content mirror of `memories.value` keeps the index current for every writer; terms are prefix-matched (`"auth"*`) so short keywords still reach longer tokens; the normalized BM25 score replaces the keyword-overlap boost in the relevance fusion (every other signal — time-decay, strength, evidence, project/file boosts — is unchanged). **Defaults to `like` (the legacy path), so upgrades are inert**; the FTS index is feature-detected and falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md).
+- **Retrieval benchmark harness (`npm run bench:retrieval`).** A standalone reporting script (not part of `npm test`) that measures recall@5 and tokens/query for `like` vs `fts` over a curated fixture set, so flipping the default to `fts` later is an evidenced decision. On the seed fixtures FTS improves mean recall@5 (the win concentrates on partial-overlap queries the legacy AND-filter drops). See [tests/benchmarks/README.md](tests/benchmarks/README.md).
+
 ## [0.37.2] - 2026-08-10
 
 ### Fixed

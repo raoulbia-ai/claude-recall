@@ -48,12 +48,33 @@ export interface Memory {
   content_hash?: string;
   load_count?: number;
   cite_count?: number;
+  /**
+   * Normalized BM25 lexical score in [0,1] (1 = best match in the candidate
+   * set), attached only by the FTS5 retrieval path (v0.38.0+). Undefined on the
+   * legacy LIKE path — retrieval falls back to its keyword-overlap boost then.
+   */
+  bm25Score?: number;
 }
 
 export class MemoryStorage {
   private db: Database.Database;
-  
+
+  /**
+   * Retrieval mode for the lexical candidate-fetch stage: 'fts' uses SQLite
+   * FTS5 / BM25, 'like' uses the legacy substring filter. Defaults to 'like'
+   * so upgrades are inert; opt in with CLAUDE_RECALL_RETRIEVAL=fts.
+   */
+  private retrievalMode: string;
+
+  /**
+   * Whether the FTS5 mirror table + triggers are present and usable. Set once
+   * during setupFts(); when false, searchByContext always uses the LIKE path
+   * regardless of retrievalMode (self-built/exotic SQLite may lack FTS5).
+   */
+  private ftsAvailable = false;
+
   constructor(dbPath: string) {
+    this.retrievalMode = (process.env.CLAUDE_RECALL_RETRIEVAL || 'like').trim().toLowerCase();
     this.db = new Database(dbPath);
     // Enable WAL mode for better concurrency and to ensure writes are visible
     this.db.pragma('journal_mode = WAL');
@@ -283,8 +304,92 @@ export class MemoryStorage {
       console.error('⚠️  Schema migration error:', error);
       // Don't throw - let the database continue with existing schema
     }
+
+    // FTS5 lexical index (v0.38.0+). Separate from the try block above so a
+    // FTS5-less SQLite build degrades to the LIKE path instead of aborting the
+    // whole migration.
+    this.setupFts();
   }
-  
+
+  /**
+   * Create the FTS5 mirror of memories.value (external-content table kept in
+   * sync by triggers) and backfill it once. Feature-detected: if this SQLite
+   * build lacks FTS5, ftsAvailable stays false and retrieval uses LIKE.
+   *
+   * The table + triggers are derived, redundant data — dropping them reverts to
+   * LIKE with zero risk to `memories`. Triggers do the syncing in SQL so every
+   * writer (upsert, INSERT OR REPLACE, delete, import) stays covered without a
+   * TypeScript write-path change.
+   */
+  private setupFts(): void {
+    try {
+      // Was the mirror already present before this startup? If so, the triggers
+      // below have been maintaining it and we must NOT re-backfill. We cannot
+      // gauge this from `count(*) FROM memories_fts`: for an external-content
+      // table that count proxies to the content table, so it reads non-zero
+      // even when the index is empty (the legacy-upgrade bug).
+      const existed = !!this.db.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memories_fts'"
+      ).get();
+
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+          value,
+          content='memories',
+          content_rowid='id'
+        );
+        CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+          INSERT INTO memories_fts(rowid, value) VALUES (new.id, new.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+          INSERT INTO memories_fts(memories_fts, rowid, value) VALUES('delete', old.id, old.value);
+        END;
+        CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+          INSERT INTO memories_fts(memories_fts, rowid, value) VALUES('delete', old.id, old.value);
+          INSERT INTO memories_fts(rowid, value) VALUES (new.id, new.value);
+        END;
+      `);
+
+      // First time the mirror is created (fresh DB or legacy upgrade): backfill
+      // the index from existing rows via FTS5's canonical 'rebuild' command —
+      // the correct way to populate an external-content index from content. A
+      // single scan, trivial at the 10k row cap. Skipped on later startups.
+      if (!existed) {
+        this.db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')");
+      }
+
+      this.ftsAvailable = true;
+    } catch (error) {
+      // FTS5 unavailable (self-built SQLite without the extension) — leave the
+      // flag off; searchByContext uses the LIKE path everywhere.
+      this.ftsAvailable = false;
+    }
+  }
+
+  /**
+   * Turn extracted keywords into a safe FTS5 MATCH expression: each term is
+   * stripped to word characters, wrapped as a quoted prefix token, and
+   * OR-joined — e.g. `"kaggle"* OR "submission"*`. Prefix (`*`) mimics the
+   * substring reach of the old LIKE filter ("auth" still matches
+   * "authentication"). Returns '' when nothing usable remains, so the caller
+   * falls back to LIKE rather than issuing an empty MATCH.
+   *
+   * Sanitization is mandatory: bare AND/OR/NEAR, quotes, hyphens and `*` are
+   * FTS5 operators and throw SQLITE_ERROR on malformed input.
+   */
+  private sanitizeFtsMatch(keywords: string[]): string {
+    const terms: string[] = [];
+    for (const kw of keywords) {
+      // Keep only letters/digits/space; collapse everything else (quotes,
+      // hyphens, parens, operators) to spaces, then take the first token.
+      const cleaned = String(kw).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+      if (!cleaned) continue;
+      const token = cleaned.split(/\s+/)[0];
+      if (token) terms.push(`"${token}"*`);
+    }
+    return [...new Set(terms)].join(' OR ');
+  }
+
   /**
    * Compute a SHA-256 content hash from the meaningful fields of a memory.
    * Includes type + canonical JSON of value. Excludes metadata (key, timestamps, project_id, scope, etc.)
@@ -679,6 +784,26 @@ export class MemoryStorage {
       );
     }
 
+    // FTS5 lexical path (opt-in). Only when a keyword filter would otherwise be
+    // applied — empty/stopword queries keep the LIKE branch's "return all
+    // scoped rows" behaviour so load_rules-style calls are unaffected.
+    if (
+      this.retrievalMode === 'fts' &&
+      this.ftsAvailable &&
+      context.keywords &&
+      context.keywords.length > 0
+    ) {
+      const matchExpr = this.sanitizeFtsMatch(context.keywords);
+      if (matchExpr) {
+        try {
+          return this.searchByContextFts(context, matchExpr);
+        } catch {
+          // Malformed MATCH or FTS error — never crash retrieval; fall through
+          // to the LIKE path below.
+        }
+      }
+    }
+
     let query = 'SELECT * FROM memories WHERE 1=1';
     const params: any[] = [];
 
@@ -693,12 +818,12 @@ export class MemoryStorage {
       query += ' AND file_path = ?';
       params.push(context.file_path);
     }
-    
+
     if (context.type) {
       query += ' AND type = ?';
       params.push(context.type);
     }
-    
+
     // Add keyword search in value field
     if (context.keywords && context.keywords.length > 0) {
       if (context.keywords.length >= 3) {
@@ -730,10 +855,60 @@ export class MemoryStorage {
     
     const stmt = this.db.prepare(query);
     const rows = stmt.all(...params) as any[];
-    
+
     return rows.map(row => this.rowToMemory(row));
   }
-  
+
+  /**
+   * FTS5 candidate fetch: MATCH replaces the LIKE keyword filter while every
+   * other predicate (scope, file_path, type) is preserved verbatim. Attaches a
+   * normalized bm25Score ∈ [0,1] to each row (1 = best match in this set) for
+   * the retrieval-layer fusion. Throws on a malformed MATCH — the caller
+   * catches and falls back to LIKE.
+   */
+  private searchByContextFts(
+    context: { project_id?: string; file_path?: string; type?: string; keywords?: string[]; includeAllProjects?: boolean },
+    matchExpr: string,
+  ): Memory[] {
+    let query =
+      `SELECT m.*, bm25(memories_fts) AS bm25_rank
+       FROM memories_fts
+       JOIN memories m ON m.id = memories_fts.rowid
+       WHERE memories_fts MATCH ?`;
+    const params: any[] = [matchExpr];
+
+    if (context.project_id) {
+      query += ' AND (m.project_id = ? OR m.scope = ? OR m.project_id IS NULL)';
+      params.push(context.project_id, 'universal');
+    }
+    if (context.file_path) {
+      query += ' AND m.file_path = ?';
+      params.push(context.file_path);
+    }
+    if (context.type) {
+      query += ' AND m.type = ?';
+      params.push(context.type);
+    }
+    // SQLite bm25() is negative; more-negative = better, so ascending is best-first.
+    query += ' ORDER BY bm25_rank';
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+    if (rows.length === 0) return [];
+
+    // Min-max normalize -bm25 (so higher = better) across the candidate set.
+    const raws = rows.map(r => -(r.bm25_rank as number));
+    const min = Math.min(...raws);
+    const max = Math.max(...raws);
+    const span = max - min;
+
+    return rows.map((row, i) => {
+      const memory = this.rowToMemory(row);
+      // Degenerate set (single row, or all equally ranked) → all are the best match.
+      memory.bm25Score = span > 0 ? (raws[i] - min) / span : 1.0;
+      return memory;
+    });
+  }
+
   deleteByKey(key: string): boolean {
     const stmt = this.db.prepare('DELETE FROM memories WHERE key = ?');
     const result = stmt.run(key);
