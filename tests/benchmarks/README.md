@@ -41,6 +41,24 @@ npx jest tests/benchmarks/ --verbose
 
 ## Current Benchmarks
 
+### Retrieval: LIKE vs FTS5/BM25 (`retrieval-benchmark.ts`)
+
+Measures **recall@5** and mean payload size for the two lexical retrieval
+engines (`CLAUDE_RECALL_RETRIEVAL=like` vs `fts`) over a curated fixture set.
+Unlike the others here, this is a **standalone reporting script, not a jest
+test** — it prints a comparison table and has no pass/fail assertions, so it is
+never part of `npm test`.
+
+```bash
+npm run bench:retrieval
+```
+
+It exists to give the FTS5 rollout an evidenced before/after number (see
+`docs/design-hybrid-retrieval-fts5.md` §7) so flipping the default to `fts` is a
+measured decision. The built-in fixtures are a small hand-labelled seed, not the
+full LongMemEval corpus — expand `MEMORIES` / `QUERIES` in the script with real
+transcript-derived cases to tighten the estimate.
+
 ### Queue Performance (`queue-performance.test.ts`)
 
 Tests the performance characteristics of the queue system:

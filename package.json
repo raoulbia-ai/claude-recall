@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.37.2",
+  "version": "0.38.0",
   "description": "Persistent memory for Claude Code and Pi with native Skills integration, automatic capture, failure learning, and project scoping",
   "main": "dist/index.js",
   "bin": {
@@ -41,6 +41,7 @@
     "test:coverage:unit": "jest --coverage --maxWorkers=50% tests/unit",
     "test:coverage:integration": "jest --coverage --maxWorkers=50% tests/integration",
     "test:benchmarks": "jest tests/benchmarks",
+    "bench:retrieval": "ts-node tests/benchmarks/retrieval-benchmark.ts",
     "test:experimental": "jest tests/experimental",
     "build": "tsc && mkdir -p dist/memory dist/config && cp src/memory/schema.sql dist/memory/ && (cp -r src/config/* dist/config/ 2>/dev/null || true) && chmod +x dist/cli/claude-recall-cli.js",
     "build:cli": "tsc && chmod +x dist/cli/claude-recall-cli.js",

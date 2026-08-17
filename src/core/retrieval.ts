@@ -128,6 +128,14 @@ export class MemoryRetrieval {
     return scored.slice(0, 5);
   }
 
+  /**
+   * Fusion weight for the FTS5 BM25 lexical signal. Chosen so a top match
+   * (bm25Score=1) yields a ~4x boost, matching the LIKE path's full-match
+   * dynamic range (1 + matchRatio*3, ×1.5 all-match). Tune against the
+   * retrieval benchmark before flipping CLAUDE_RECALL_RETRIEVAL=fts to default.
+   */
+  private static readonly W_LEXICAL = 3.0;
+
   private static readonly TYPE_PRIORITY: Record<string, number> = {
     'correction': 6,
     'solution': 5.5,       // hard-won reusable solutions — high signal, rank just below corrections
@@ -146,9 +154,17 @@ export class MemoryRetrieval {
     evidenceCount: number,
   ): number {
     let score = memory.relevance_score || 1.0;
-    
-    // Boost for keyword matches in memory value
-    if (context.keywords && context.keywords.length > 0) {
+
+    // Lexical boost. Two sources, mutually exclusive:
+    //   (a) FTS5 path — storage attached a normalized bm25Score ∈ [0,1]; every
+    //       returned candidate already matched the query (MATCH filtered), so
+    //       there is no "no-overlap" case here.
+    //   (b) LIKE path — no bm25Score; fall back to keyword-overlap counting.
+    if (memory.bm25Score !== undefined) {
+      // Fuse BM25 multiplicatively, preserving the LIKE path's dynamic range
+      // (~1x..4x) so decay/strength/evidence boosts behave identically.
+      score *= 1 + MemoryRetrieval.W_LEXICAL * memory.bm25Score;
+    } else if (context.keywords && context.keywords.length > 0) {
       const memoryStr = JSON.stringify(memory.value).toLowerCase();
       let keywordMatches = 0;
 
@@ -173,7 +189,7 @@ export class MemoryRetrieval {
         score *= 0.3;
       }
     }
-    
+
     // Decay over time (forgetting curve) - less aggressive for project-knowledge
     const timestamp = memory.timestamp || Date.now();
     const daysSince = (Date.now() - timestamp) / (1000 * 60 * 60 * 24);

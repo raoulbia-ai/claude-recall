@@ -464,6 +464,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). `0` disables. |
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
+| `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 
 ---
 
