@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.38.1] - 2026-08-20
+
+### Fixed
+
+- **memory-sync no longer silently deletes user content appended to `MEMORY.md`.** The auto-memory index writer always re-appended its `## Claude Recall` section to the *end* of the file, and its strip regex ran to end-of-file — so any pointer a user (or Claude) appended below the section, the most natural way to add an entry, was swallowed and permanently deleted on the next `Stop`/`PreCompact` sync, with no warning and no backup. The managed section is now fenced between `<!-- BEGIN CLAUDE RECALL -->` / `<!-- END CLAUDE RECALL -->` markers and rewritten strictly in place; everything outside the fence is preserved byte-for-byte. Files written by earlier versions migrate on the next sync: only the heading and the lines the hook owns (`recall_*.md` pointers, the empty sentinel) are replaced, stopping at the first line it doesn't own, so trailing hand-written content survives and the section comes back fenced. Regression tests cover both the append-at-EOF trigger and the legacy migration.
+
 ## [0.38.0] - 2026-08-17
 
 ### Added

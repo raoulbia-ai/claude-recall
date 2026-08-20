@@ -21,6 +21,18 @@ const MAX_SYNC_FILES = 30;
 /** Prefix for all recall memory files — prevents namespace collisions */
 const FILE_PREFIX = 'recall_';
 
+/**
+ * Marker comments fencing the managed "## Claude Recall" section in MEMORY.md.
+ * Everything between these markers is owned by this hook and rewritten in place;
+ * everything outside them is left byte-for-byte untouched. Before these markers
+ * existed, the section was re-appended to the end of the file on every sync, and
+ * the strip regex ran to EOF — so any content a user (or Claude) appended below
+ * the section was silently deleted on the next sync. The fence makes that
+ * impossible: the managed region no longer depends on being last in the file.
+ */
+const RECALL_BEGIN = '<!-- BEGIN CLAUDE RECALL (auto-generated — do not edit inside this block) -->';
+const RECALL_END = '<!-- END CLAUDE RECALL -->';
+
 /** Keys that look like test data */
 const TEST_KEY_PATTERNS = [/^Test /i, /^Session test /i, /^test_/i];
 
@@ -204,36 +216,81 @@ function renderMemoryFile(rule: SyncRule): string {
   return lines.join('\n');
 }
 
+/** Escape a literal string for use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
- * Update MEMORY.md with pointers to recall files.
- * Replaces any existing "## Claude Recall" section, preserves everything else.
+ * Lines the hook is allowed to remove when migrating a legacy (pre-fence)
+ * "## Claude Recall" section: blank lines, the empty sentinel, and pointer
+ * lines targeting a recall_*.md file this hook wrote. Anything else — including
+ * a hand-written pointer to a non-recall file — is NOT owned and stops the scan,
+ * so content that followed the old section survives the migration.
  */
-function updateMemoryMdIndex(memoryDir: string, files: Array<{ filename: string; name: string; description: string }>): void {
-  const memoryMdPath = path.join(memoryDir, 'MEMORY.md');
+function isOwnedRecallLine(line: string): boolean {
+  const t = line.trim();
+  if (t === '') return true;
+  if (t === '- No recall rules synced') return true;
+  return /^- \[[^\]]*\]\(recall_[^)]*\.md\)/.test(t);
+}
 
-  let existing = '';
-  if (fs.existsSync(memoryMdPath)) {
-    existing = fs.readFileSync(memoryMdPath, 'utf-8');
-  }
-
-  // Remove existing Claude Recall section (everything from ## Claude Recall to next ## or end)
-  const sectionRegex = /\n?## Claude Recall\n[\s\S]*?(?=\n## |\n*$)/;
-  const cleaned = existing.replace(sectionRegex, '').trimEnd();
-
-  // Build new section
-  const recallLines = ['', '## Claude Recall'];
+/** Build the marker-fenced managed block. */
+function buildRecallBlock(files: Array<{ filename: string; name: string; description: string }>): string {
+  const lines = [RECALL_BEGIN, '## Claude Recall'];
   if (files.length === 0) {
-    recallLines.push('- No recall rules synced');
+    lines.push('- No recall rules synced');
   } else {
     for (const f of files) {
       const hook = f.description.length > 80 ? f.description.substring(0, 77) + '...' : f.description;
-      recallLines.push(`- [${f.name}](${f.filename}) — ${hook}`);
+      lines.push(`- [${f.name}](${f.filename}) — ${hook}`);
     }
   }
-  recallLines.push('');
+  lines.push(RECALL_END);
+  return lines.join('\n');
+}
 
-  const newContent = cleaned + recallLines.join('\n');
-  fs.writeFileSync(memoryMdPath, newContent);
+/**
+ * Update MEMORY.md with pointers to recall files.
+ *
+ * The managed section is fenced between RECALL_BEGIN/RECALL_END marker comments
+ * and is the ONLY region this hook ever rewrites — everything outside the fence,
+ * anywhere in the file, is preserved exactly. Three cases:
+ *   1. Fence present  → replace the block in place, between the markers.
+ *   2. Legacy unfenced "## Claude Recall" section → replace only the heading and
+ *      the lines this hook owns (recall_* pointers / the empty sentinel),
+ *      stopping at the first line it does not own so any hand-written content
+ *      that followed the old section survives the one-time migration.
+ *   3. No section at all → append a fenced block at the end.
+ */
+function updateMemoryMdIndex(memoryDir: string, files: Array<{ filename: string; name: string; description: string }>): void {
+  const memoryMdPath = path.join(memoryDir, 'MEMORY.md');
+  const existing = fs.existsSync(memoryMdPath) ? fs.readFileSync(memoryMdPath, 'utf-8') : '';
+  const block = buildRecallBlock(files);
+
+  // Case 1: fenced block already present — splice it in place, touching nothing else.
+  const fence = new RegExp(`${escapeRegExp(RECALL_BEGIN)}[\\s\\S]*?${escapeRegExp(RECALL_END)}`);
+  if (fence.test(existing)) {
+    fs.writeFileSync(memoryMdPath, existing.replace(fence, block));
+    return;
+  }
+
+  const lines = existing.split('\n');
+  const headingIdx = lines.findIndex(l => l.trim() === '## Claude Recall');
+
+  // Case 2: legacy unfenced section — remove only the lines we own, keep the rest.
+  if (headingIdx !== -1) {
+    let end = headingIdx + 1;
+    while (end < lines.length && isOwnedRecallLine(lines[end])) end++;
+    const merged = [...lines.slice(0, headingIdx), ...block.split('\n'), ...lines.slice(end)].join('\n');
+    fs.writeFileSync(memoryMdPath, merged);
+    return;
+  }
+
+  // Case 3: no section — append a fenced block at the end.
+  const base = existing.replace(/\s+$/, '');
+  const sep = base ? '\n\n' : '';
+  fs.writeFileSync(memoryMdPath, base + sep + block + '\n');
 }
 
 /**

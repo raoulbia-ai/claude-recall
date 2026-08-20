@@ -206,6 +206,53 @@ describe('memory-sync-hook', () => {
       expect(memoryMd).toContain('## Claude Recall');
     });
 
+    it('does not delete user content appended after the section (data-loss regression)', async () => {
+      // First sync creates the fenced Claude Recall block.
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'Use tabs', crType: 'preference', ccType: 'feedback' }),
+      ]);
+      await handleMemorySync({ cwd: testCwd });
+
+      // User appends a hand-written pointer to the very END of the file — below
+      // the block, with no heading of its own. This is the exact trigger that
+      // the pre-fix strip-to-EOF regex silently deleted on the next sync.
+      const memoryMdPath = path.join(memoryDir, 'MEMORY.md');
+      fs.appendFileSync(memoryMdPath, '\n- [My note](my-note.md) — something important\n');
+
+      // Second sync must update the block WITHOUT eating the appended line.
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p2', value: 'Use spaces', crType: 'preference', ccType: 'feedback' }),
+      ]);
+      await handleMemorySync({ cwd: testCwd });
+
+      const after = fs.readFileSync(memoryMdPath, 'utf-8');
+      expect(after).toContain('- [My note](my-note.md) — something important'); // survived
+      expect(after).toContain('Use spaces'); // block did update
+      expect(after.match(/## Claude Recall/g)).toHaveLength(1); // still no duplication
+    });
+
+    it('migrates a legacy unfenced section without eating trailing hand-written content', async () => {
+      fs.mkdirSync(memoryDir, { recursive: true });
+      // A file written by the pre-fix hook: section appended last, then the user
+      // appended a non-recall pointer to the very end — the data-loss trigger.
+      fs.writeFileSync(
+        path.join(memoryDir, 'MEMORY.md'),
+        '# My Notes\n\n- Keep me\n\n## Claude Recall\n- [Old rule](recall_feedback_old.md) — hook\n\n- [My note](my-note.md) — hand-written\n'
+      );
+
+      mockGetTopRulesForSync.mockReturnValue([
+        makeSyncRule({ key: 'p1', value: 'New rule', crType: 'preference', ccType: 'feedback' }),
+      ]);
+      await handleMemorySync({ cwd: testCwd });
+
+      const after = fs.readFileSync(path.join(memoryDir, 'MEMORY.md'), 'utf-8');
+      expect(after).toContain('- Keep me'); // content above survives
+      expect(after).toContain('- [My note](my-note.md) — hand-written'); // content below survives
+      expect(after).toContain('New rule'); // block updated
+      expect(after.match(/## Claude Recall/g)).toHaveLength(1); // no duplication
+      expect(after).toContain('BEGIN CLAUDE RECALL'); // now fenced → future syncs are safe
+    });
+
     it('replaces Claude Recall section on re-run (no duplication)', async () => {
       mockGetTopRulesForSync.mockReturnValue([
         makeSyncRule({ key: 'p1', value: 'Old rule', crType: 'preference', ccType: 'feedback' }),
