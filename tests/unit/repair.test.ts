@@ -8,6 +8,7 @@ import {
   scanFile,
   applyFixes,
   runRepair,
+  nodeVersionFromPath,
 } from '../../src/cli/commands/repair';
 
 function mkTmp(prefix = 'repair-test-'): string {
@@ -632,6 +633,97 @@ describe('runRepair', () => {
       expect(messages.join('\n')).toMatch(/invalid JSON/);
     } finally {
       rmTmp(tmp);
+    }
+  });
+});
+
+// Build an EXISTING claude-recall-cli.js under a versioned node dir, to simulate
+// a hook pinned to a specific (possibly wrong) node install.
+function mkVersionedScript(tmp: string, version: string): string {
+  const dir = path.join(tmp, '.nvm', 'versions', 'node', version, 'lib', 'node_modules', 'claude-recall', 'dist', 'cli');
+  fs.mkdirSync(dir, { recursive: true });
+  const p = path.join(dir, 'claude-recall-cli.js');
+  fs.writeFileSync(p, '// stub');
+  return p;
+}
+
+describe('nodeVersionFromPath', () => {
+  it('extracts the node version from an nvm-style path', () => {
+    expect(nodeVersionFromPath('/home/u/.nvm/versions/node/v20.19.3/lib/node_modules/claude-recall/x.js')).toBe('v20.19.3');
+    expect(nodeVersionFromPath('/opt/versions/node/v22.0.0/bin/claude-recall')).toBe('v22.0.0');
+  });
+  it('returns null when there is no versioned node dir', () => {
+    expect(nodeVersionFromPath('/usr/local/lib/node_modules/claude-recall/x.js')).toBeNull();
+  });
+});
+
+describe('classifyHook — node-version-orphaned install', () => {
+  it('flags an EXISTING script under a DIFFERENT node version as orphaned-node', () => {
+    const tmp = mkTmp();
+    try {
+      const script = mkVersionedScript(tmp, 'v18.0.0'); // != process.version (test runs on 20/22)
+      const result = classifyHook(`node ${script} hook run rule-injector`, resolverYes);
+      expect(result).toEqual({
+        status: 'orphaned-node',
+        scriptPath: script,
+        scriptNodeVersion: 'v18.0.0',
+        hookId: 'rule-injector',
+      });
+    } finally { rmTmp(tmp); }
+  });
+
+  it('leaves an EXISTING script under the ACTIVE node version as ok', () => {
+    const tmp = mkTmp();
+    try {
+      const script = mkVersionedScript(tmp, process.version);
+      expect(classifyHook(`node ${script} hook run rule-injector`, resolverYes)).toEqual({ status: 'ok' });
+    } finally { rmTmp(tmp); }
+  });
+
+  it('still reports a MISSING versioned script as broken-absolute (not orphaned)', () => {
+    const missing = '/home/u/.nvm/versions/node/v18.0.0/lib/node_modules/claude-recall/dist/cli/claude-recall-cli.js';
+    expect(classifyHook(`node ${missing} hook run memory-stop`, resolverYes)).toEqual({
+      status: 'broken-absolute', scriptPath: missing, hookId: 'memory-stop',
+    });
+  });
+
+  it('scanFile proposes the PATH-form rewrite for an orphaned-node hook', () => {
+    const tmp = mkTmp();
+    try {
+      const script = mkVersionedScript(tmp, 'v18.0.0');
+      const settingsPath = path.join(tmp, 'settings.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: `node ${script} hook run rule-injector` }] }] },
+      }));
+      const report = scanFile(settingsPath, resolverYes);
+      expect(report.findings).toHaveLength(1);
+      expect(report.findings[0].classification.status).toBe('orphaned-node');
+      expect(report.findings[0].proposedCommand).toBe('claude-recall hook run rule-injector');
+    } finally { rmTmp(tmp); }
+  });
+
+  it('runRepair --auto rewrites an orphaned-node hook to the PATH form', async () => {
+    const home = mkTmp();
+    try {
+      const script = mkVersionedScript(home, 'v18.0.0');
+      const claudeDir = path.join(home, '.claude');
+      fs.mkdirSync(claudeDir, { recursive: true });
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: `node ${script} hook run correction-detector` }] }] },
+      }));
+
+      const r = await runRepair({
+        auto: true, scope: 'user', home, cwd: home,
+        logger: { log: () => {}, warn: () => {} },
+        claudeRecallOnPath: resolverYes,
+      });
+
+      expect(r.fixesApplied).toBe(1);
+      const after = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      expect(after.hooks.UserPromptSubmit[0].hooks[0].command).toBe('claude-recall hook run correction-detector');
+    } finally {
+      rmTmp(home);
     }
   });
 });

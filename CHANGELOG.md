@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.40.0] - 2026-09-30
+
+### Fixed
+
+- **`doctor` and `repair` now catch node-version-orphaned hooks — a silent capture failure they both previously missed.** When a project's `.claude/settings.json` pins a hook to an absolute install path under one node version (`node /…/versions/node/v20.x/…/claude-recall-cli.js hook run …`) and the active node is different, node loads that install's `better-sqlite3` under the wrong ABI and the hook **crashes on load** — so capture, injection, and sync silently fail while the CLI and MCP server (a different code path) look perfectly healthy. 0.39.0's `doctor` reported "healthy" in exactly this state. Now: `repair`'s `classifyHook` flags an **existing** absolute script under a mismatched node version as `orphaned-node` (not `ok`) and rewrites it to the portable `claude-recall hook run …` form — so `claude-recall repair --auto` (including the postinstall pass) self-heals it, and a fresh `npm install -g` under a new node fixes every project on the machine.
+
+### Added
+
+- **`claude-recall doctor` now has a Hooks section** that inspects the hook commands Claude Code actually runs (via the repair scanner), not just the CLI/MCP path — catching orphaned, missing, and off-PATH hook entries the live smoke-test can't see. **`claude-recall doctor --fix` now repairs hooks too** (rewriting orphaned/broken absolute paths to the PATH form, backups written first) in addition to consolidating MCP config, so one command heals both. Found by live-testing 0.39.0, which surfaced a real orphaned-hook capture failure on a machine with two node-version installs.
+
 ## [0.39.0] - 2026-09-30
 
 ### Added
