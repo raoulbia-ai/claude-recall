@@ -20,9 +20,10 @@ import { runRepair, resolveOnPath } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
 // v15 = bound the search_enforcer PreToolUse entry with timeout: 5.
+// v16 = add SessionStart session-start-banner (memory-active affordance).
 // Bump when the hook block template changes — setup skips the settings
 // rewrite when the installed hooksVersion already matches.
-const HOOKS_VERSION = '15.0.0';
+const HOOKS_VERSION = '16.0.0';
 import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 
 const program = new Command();
@@ -1309,21 +1310,27 @@ async function main() {
     }
   }
 
-  // Install skills + minimal enforcement hook
-  function installSkillsAndHook(force: boolean = false): void {
-    const cwd = process.cwd();
-    const projectName = path.basename(cwd);
+  // Install skills + minimal enforcement hook.
+  // `global` targets ~/.claude (user scope) instead of the current project, so
+  // the hooks fire in EVERY project — install-once, no per-project repetition.
+  function installSkillsAndHook(force: boolean = false, global: boolean = false): void {
+    const baseDir = global ? os.homedir() : process.cwd();
 
     console.log('\n📦 Claude Recall Setup\n');
-    console.log(`📍 Project: ${projectName}`);
-    console.log(`📍 Directory: ${cwd}\n`);
+    if (global) {
+      console.log('📍 Scope: global — ~/.claude (hooks active in ALL projects)');
+    } else {
+      console.log(`📍 Project: ${path.basename(baseDir)}`);
+      console.log(`📍 Directory: ${baseDir}`);
+    }
+    console.log('');
 
     // Find the package directory (where claude-recall is installed)
     const packageDir = path.resolve(__dirname, '../..');
     const packageSkillsDir = path.join(packageDir, '.claude/skills');
     const packageHooksDir = path.join(packageDir, '.claude/hooks');
 
-    const claudeDir = path.join(cwd, '.claude');
+    const claudeDir = path.join(baseDir, '.claude');
     const hooksDir = path.join(claudeDir, 'hooks');
     const settingsPath = path.join(claudeDir, 'settings.json');
 
@@ -1462,6 +1469,18 @@ async function main() {
               timeout: 10
             }
           ]
+        },
+        {
+          // No matcher → fires on every SessionStart; the handler self-guards
+          // against "compact" (owned by post-compact-reload) and prints a one-
+          // line "memory active — N rules" affordance banner otherwise.
+          hooks: [
+            {
+              type: "command",
+              command: `${hookCmd} session-start-banner`,
+              timeout: 10
+            }
+          ]
         }
       ],
       PostToolUse: [
@@ -1577,6 +1596,9 @@ async function main() {
 
     console.log('\n✅ Setup complete!\n');
     console.log('ℹ️  Uses Skills (guidance) + hooks (auto-capture with LLM classification).');
+    if (global) {
+      console.log('🌍 Installed at user scope — active in every project, current and future.');
+    }
     console.log('Restart Claude Code to activate.\n');
   }
 
@@ -1596,10 +1618,11 @@ async function main() {
     .command('setup')
     .description('Show activation instructions or install skills')
     .option('--install', 'Install skills and clean up old hooks')
+    .option('--global', 'With --install: install hooks at user scope (~/.claude), active in every project — install once, no per-project repeat')
     .action((options) => {
       if (options.install) {
-        // Install skills and enforcement hook
-        installSkillsAndHook();
+        // Install skills and enforcement hook (globally with --global)
+        installSkillsAndHook(false, !!options.global);
       } else {
         // Show activation instructions. Registration uses the global
         // `claude-recall` binary, NOT `npx ... @latest`: npx resolves through
@@ -1609,7 +1632,18 @@ async function main() {
         // one go.
         console.log('\n✅ Claude Recall Setup\n');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('📌 ACTIVATE CLAUDE RECALL (run in each project):');
+        console.log('📌 ACTIVATE ONCE FOR EVERY PROJECT (recommended):');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('');
+        console.log('claude-recall setup --install --global');
+        console.log('claude mcp add --scope user claude-recall -- claude-recall mcp start');
+        console.log('');
+        console.log('  Hooks go in ~/.claude, the MCP server registers at user scope —');
+        console.log('  active in every project (current and future). Memories still scope');
+        console.log('  per project automatically. Restart Claude Code to activate.');
+        console.log('');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('📌 OR activate a single project only:');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('');
         console.log('claude-recall setup --install');
