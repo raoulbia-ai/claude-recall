@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.0] - 2026-09-30
+
+### Added
+
+- **`claude-recall statusline` — a persistent, user-visible "memory active" indicator.** 0.41.0's session-start banner turned out to be invisible to the user: Claude Code treats `SessionStart` hook stdout as **model context only**, never a terminal message (there is no user-facing hook-output field). The real mechanism is Claude Code's **statusLine**, a bar pinned at the bottom of the terminal. The new command reads the session JSON Claude Code pipes on stdin, scopes to the reported project, and prints `🧠 Recall · N rules · <project>` — so memory-is-on is visible the whole session, not just at start. Fail-safe: a broken DB or missing stdin yields a minimal `🧠 Recall`, never an error in the status bar. `setup --install` (and `--global`) now wires it into `settings.json` automatically — but **never clobbers an existing `statusLine`** (if you have one, it prints the `claude-recall statusline` command to add yourself). Hook template → v17.
+
+### Changed
+
+- **The SessionStart banner is now correctly described as a model-facing primer**, not user feedback. It still runs (it primes the model that memory is on and capture is automatic — valuable under governance where the MCP tools are absent), but the README and its own docs no longer claim it shows the user anything; the statusLine is the visible signal.
+
 ## [0.41.0] - 2026-09-30
 
 ### Added

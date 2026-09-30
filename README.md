@@ -205,7 +205,7 @@ Classification runs on each runtime's **own** LLM — Claude Code via headless `
 
 Captured rules are kept **precise and current**: the classifier phrases each rule as *trigger + concrete pattern* where your message allows ("email files must start with email" → *"When creating an email text file, name it `email_*.txt`"*); a rule too vague to act on is stored but flagged, and the agent is nudged at injection time to ask you for a precise restatement. When you restate an existing rule in new words, the **new phrasing supersedes the old row** (counters carry over) instead of creating a duplicate or being swallowed by the old wording.
 
-**You'll see it's on.** Because the work happens in background hooks, Claude Recall surfaces a couple of visible signals so it's never silent: a one-line **`🧠 Recall: memory active — N rules for "<project>"`** banner at the start of each session, and a **`🔄 Recall: N rules re-loaded`** line after a context compaction. For anything deeper, `claude-recall doctor` gives a full health verdict.
+**You'll see it's on.** The work happens in background hooks, so Claude Recall surfaces a persistent visible signal: a **statusLine indicator** — `🧠 Recall · N rules · <project>` — pinned at the bottom of the Claude Code terminal for the whole session. `setup --install` adds it automatically (and never clobbers an existing statusLine — if you have one, add `claude-recall statusline` to it). After a compaction you'll also see a `🔄 Recall: N rules re-loaded` line. For anything deeper, `claude-recall doctor` gives a full health verdict.
 
 ```bash
 # Verify it's working
@@ -276,6 +276,7 @@ claude-recall kiro setup                 # Write Kiro custom agent (--global for
 claude-recall kiro setup --merge-into <agent>  # Merge into an existing Kiro agent
 claude-recall kiro doctor                # Kiro integration health report
 claude-recall doctor                     # Health check: install, MCP config, hooks, live server, DB (--fix repairs config + hooks)
+claude-recall statusline                 # One-line memory indicator for Claude Code's settings.json "statusLine" (added by setup)
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Fix broken claude-recall hook paths (preserves your customizations)

@@ -16,14 +16,16 @@ import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
 import { KiroCommands } from './commands/kiro-commands';
 import { DoctorCommands } from './commands/doctor-commands';
+import { StatuslineCommands } from './commands/statusline-command';
 import { runRepair, resolveOnPath } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
 // v15 = bound the search_enforcer PreToolUse entry with timeout: 5.
-// v16 = add SessionStart session-start-banner (memory-active affordance).
+// v16 = add SessionStart session-start-banner (model-facing primer).
+// v17 = add a user-visible statusLine memory indicator (only if none set).
 // Bump when the hook block template changes — setup skips the settings
 // rewrite when the installed hooksVersion already matches.
-const HOOKS_VERSION = '16.0.0';
+const HOOKS_VERSION = '17.0.0';
 import { parsePositiveInt, parseUnitFloat } from './parse-utils';
 
 const program = new Command();
@@ -1586,6 +1588,17 @@ async function main() {
       ]
     };
 
+    // Add a USER-VISIBLE memory indicator via Claude Code's statusLine — but
+    // NEVER clobber a statusLine the user already configured. (SessionStart
+    // hook output is model-context only; statusLine is the real visible bar.)
+    const statuslineCmd = onPath ? 'claude-recall statusline' : `node ${cliScript} statusline`;
+    if (!(settings as any).statusLine) {
+      (settings as any).statusLine = { type: 'command', command: statuslineCmd, padding: 1 };
+      console.log('✅ Added statusLine memory indicator (🧠 Recall · N rules · <project>)');
+    } else {
+      console.log(`ℹ️  Existing statusLine left untouched — for the memory indicator use: ${statuslineCmd}`);
+    }
+
     if (!fs.existsSync(claudeDir)) {
       fs.mkdirSync(claudeDir, { recursive: true });
     }
@@ -2156,6 +2169,9 @@ async function main() {
 
   // Health check + MCP-config repair
   DoctorCommands.register(program);
+
+  // Status-line memory indicator (for Claude Code settings.json "statusLine")
+  StatuslineCommands.register(program);
 
   // Migration commands
 
