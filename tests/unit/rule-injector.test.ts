@@ -168,7 +168,8 @@ describe('handleRuleInjector — PreToolUse hook', () => {
     expect(parsed.hookSpecificOutput).toBeDefined();
     expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
     expect(parsed.hookSpecificOutput.additionalContext).toContain('npm run build');
-    expect(parsed.hookSpecificOutput.additionalContext).toContain('Recall:');
+    // Liveness signal: the block announces memory is active and how many rules exist.
+    expect(parsed.hookSpecificOutput.additionalContext).toContain('Claude Recall active');
   });
 
   it('records a rule_injection_event for each matched rule', async () => {

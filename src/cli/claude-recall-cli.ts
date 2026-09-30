@@ -15,6 +15,7 @@ import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
 import { KiroCommands } from './commands/kiro-commands';
+import { DoctorCommands } from './commands/doctor-commands';
 import { runRepair, resolveOnPath } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
@@ -2052,7 +2053,12 @@ async function main() {
         await server.start();
         // Server runs until interrupted
       } catch (error) {
-        console.error('Failed to start MCP server:', error);
+        // Explicit, actionable failure — never a silent close. Claude Code
+        // surfaces MCP server stderr in its server logs, so this line is the
+        // user's lead when a session shows CONNECTION_CLOSED.
+        const reason = error instanceof Error ? error.message : String(error);
+        console.error(`claude-recall MCP server failed to start: ${reason}`);
+        console.error('Diagnose with:  claude-recall doctor');
         process.exit(1);
       }
     });
@@ -2113,6 +2119,9 @@ async function main() {
 
   // Kiro CLI integration
   KiroCommands.register(program);
+
+  // Health check + MCP-config repair
+  DoctorCommands.register(program);
 
   // Migration commands
 

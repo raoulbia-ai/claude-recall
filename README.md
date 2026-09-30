@@ -239,6 +239,8 @@ Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no
 ### Troubleshooting
 
 ```bash
+claude-recall doctor                     # One-shot health check: install, MCP config, live server, DB
+claude-recall doctor --fix               # Repair MCP-config drift in ~/.claude.json (backup written first)
 claude-recall status                     # Are hooks + MCP registered? Which project is this?
 claude-recall hooks check                # Do the hook files exist and validate?
 claude-recall mcp status                 # Is the MCP server running? (mcp ps lists all)
@@ -263,6 +265,7 @@ claude-recall setup --install            # Install skills + hooks (Claude Code, 
 claude-recall kiro setup                 # Write Kiro custom agent (--global for all projects)
 claude-recall kiro setup --merge-into <agent>  # Merge into an existing Kiro agent
 claude-recall kiro doctor                # Kiro integration health report
+claude-recall doctor                     # Health check: install, MCP config, live server, DB (--fix repairs MCP config)
 claude-recall upgrade                    # One-shot upgrade: global binary + clear stale MCP servers
 claude-recall status                     # Installation and system status
 claude-recall repair                     # Fix broken claude-recall hook paths (preserves your customizations)
