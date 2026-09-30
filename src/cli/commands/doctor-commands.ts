@@ -95,7 +95,6 @@ export class DoctorCommands {
   /** Print the MCP-config section; apply the fix when `fix` is set. Returns problem count. */
   static reportMcpConfig(report: McpConfigReport, fix: boolean, log: (m: string) => void): number {
     const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
-    let problems = 0;
 
     if (!report.present) {
       line('•', '~/.claude.json not found — no MCP registration to check');
@@ -117,7 +116,7 @@ export class DoctorCommands {
       return 0;
     }
 
-    problems = withIssues.length || (report.needsConsolidation ? 1 : 0);
+    const problems = withIssues.length || (report.needsConsolidation ? 1 : 0);
     line('⚠', `${report.entryCount} claude-recall MCP entr${report.entryCount === 1 ? 'y' : 'ies'}; config needs consolidation`);
     for (const f of withIssues) {
       for (const issue of f.issues) {
