@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.42.1] - 2026-09-30
+
+### Documentation
+
+- **README friendliness pass** (no code changes — published so the npm page reflects it): a compact "Jump to:" navigation line under the intro, and **Quick Start moved above the pitch sections** (In practice → Quick Start → Why not CLAUDE.md → Features) so install instructions come first. Also documents the install-once `setup --install --global` path, an nvm durability note, and the `statusline`/`doctor` commands. All internal links verified.
+
 ## [0.42.0] - 2026-09-30
 
 ### Added
