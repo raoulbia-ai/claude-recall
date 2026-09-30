@@ -595,3 +595,125 @@ export async function runRepair(options: RepairOptions = {}): Promise<RepairResu
     reports,
   };
 }
+
+// ── Redundant per-project hook dedup ────────────────────────────────────────
+// After `setup --install --global`, hooks live at user scope (~/.claude) and
+// fire in every project. Any leftover claude-recall hooks in a project's
+// .claude/settings.json then double-fire. This removes those redundant entries
+// — but only when user scope actually covers them, and only claude-recall's own
+// hooks (a user's own hooks, e.g. `pre_tool_search_enforcer.py`, are preserved).
+
+/** claude-recall's canonical search-enforcer filename (exact basename match). */
+const SEARCH_ENFORCER_BASENAME = 'search_enforcer.py';
+
+/**
+ * Strictly decide whether a hook command belongs to claude-recall. Conservative
+ * by design — a false positive would delete a user's own hook.
+ *   - contains the literal `claude-recall` (covers `claude-recall hook run …`
+ *     and `node …/claude-recall-cli.js …`), OR
+ *   - a python invocation whose script basename is EXACTLY `search_enforcer.py`
+ *     (claude-recall's enforcer). The known collision `pre_tool_search_enforcer.py`
+ *     has a different basename and is preserved.
+ */
+export function isClaudeRecallHookCommand(command: string): boolean {
+  const cmd = (command || '').trim();
+  if (!cmd) return false;
+  if (/claude-recall/.test(cmd)) return true;
+  const tokens = cmd.split(/\s+/);
+  const first = path.basename(tokens[0] || '');
+  if (first === 'python3' || first === 'python' || /\/python3?$/.test(tokens[0] || '')) {
+    const script = tokens[1];
+    if (script && path.basename(script) === SEARCH_ENFORCER_BASENAME) return true;
+  }
+  return false;
+}
+
+/** True when ~/.claude/settings.json already carries claude-recall hooks. */
+export function userScopeHasClaudeRecallHooks(home: string = os.homedir()): boolean {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
+    const hooks = s?.hooks;
+    if (!hooks || typeof hooks !== 'object') return false;
+    for (const groups of Object.values(hooks)) {
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups) for (const h of ((g as any)?.hooks || [])) {
+        if (typeof h?.command === 'string' && isClaudeRecallHookCommand(h.command)) return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export interface DedupeResult {
+  skipped: boolean;
+  reason?: string;
+  filesChanged: number;
+  hooksRemoved: number;
+  backups: string[];
+}
+
+/**
+ * Remove redundant per-project claude-recall hooks, preserving the user's own
+ * hooks. No-op unless user scope covers them (else project hooks are the only
+ * coverage). Backs up each modified file, writes atomically, is idempotent, and
+ * never throws.
+ */
+export function dedupeRedundantProjectHooks(
+  home: string = os.homedir(),
+  opts: { dryRun?: boolean } = {},
+): DedupeResult {
+  const res: DedupeResult = { skipped: false, filesChanged: 0, hooksRemoved: 0, backups: [] };
+
+  if (!userScopeHasClaudeRecallHooks(home)) {
+    res.skipped = true;
+    res.reason = 'no claude-recall hooks at user scope — run `claude-recall setup --install --global` first';
+    return res;
+  }
+
+  for (const f of findHomeProjectSettings(home)) {
+    let raw: string;
+    let parsed: any;
+    try {
+      raw = fs.readFileSync(f, 'utf8');
+      parsed = JSON.parse(raw);
+    } catch {
+      continue; // unreadable / invalid JSON — leave untouched
+    }
+    const hooks = parsed?.hooks;
+    if (!hooks || typeof hooks !== 'object') continue;
+
+    let removedHere = 0;
+    for (const event of Object.keys(hooks)) {
+      const groups = hooks[event];
+      if (!Array.isArray(groups)) continue;
+      const newGroups: any[] = [];
+      for (const g of groups) {
+        if (!g || !Array.isArray(g.hooks)) { newGroups.push(g); continue; }
+        const kept = g.hooks.filter((h: any) => {
+          if (typeof h?.command === 'string' && isClaudeRecallHookCommand(h.command)) { removedHere++; return false; }
+          return true;
+        });
+        if (kept.length > 0) newGroups.push({ ...g, hooks: kept });
+      }
+      if (newGroups.length > 0) hooks[event] = newGroups; else delete hooks[event];
+    }
+
+    if (removedHere === 0) continue;
+    if (Object.keys(hooks).length === 0) delete parsed.hooks;
+
+    res.hooksRemoved += removedHere;
+    res.filesChanged++;
+    if (!opts.dryRun) {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const backup = `${f}.bak.${ts}`;
+      fs.writeFileSync(backup, raw);
+      const tmp = `${f}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(parsed, null, 2) + '\n');
+      fs.renameSync(tmp, f);
+      res.backups.push(backup);
+    }
+  }
+  return res;
+}

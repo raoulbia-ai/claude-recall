@@ -9,6 +9,9 @@ import {
   applyFixes,
   runRepair,
   nodeVersionFromPath,
+  isClaudeRecallHookCommand,
+  userScopeHasClaudeRecallHooks,
+  dedupeRedundantProjectHooks,
 } from '../../src/cli/commands/repair';
 
 function mkTmp(prefix = 'repair-test-'): string {
@@ -725,5 +728,126 @@ describe('classifyHook — node-version-orphaned install', () => {
     } finally {
       rmTmp(home);
     }
+  });
+});
+
+describe('isClaudeRecallHookCommand (dedup ownership predicate)', () => {
+  it('matches claude-recall hook-run and cli.js commands', () => {
+    expect(isClaudeRecallHookCommand('claude-recall hook run rule-injector')).toBe(true);
+    expect(isClaudeRecallHookCommand('node /x/.nvm/versions/node/v20.0.0/lib/node_modules/claude-recall/dist/cli/claude-recall-cli.js hook run memory-stop')).toBe(true);
+  });
+  it('matches the enforcer ONLY by exact basename search_enforcer.py', () => {
+    expect(isClaudeRecallHookCommand('python3 /home/u/proj/.claude/hooks/search_enforcer.py')).toBe(true);
+    // The known user collision must be preserved:
+    expect(isClaudeRecallHookCommand('python3 /home/u/proj/.claude/hooks/pre_tool_search_enforcer.py')).toBe(false);
+  });
+  it('does not match a user\'s own hooks or empty commands', () => {
+    expect(isClaudeRecallHookCommand('python3 /home/u/proj/.claude/hooks/pubnub_pre_tool_hook.py')).toBe(false);
+    expect(isClaudeRecallHookCommand('npx claude-flow@alpha hooks pre-edit')).toBe(false);
+    expect(isClaudeRecallHookCommand('')).toBe(false);
+  });
+});
+
+describe('dedupeRedundantProjectHooks', () => {
+  function seedUserScope(home: string, withCR = true): void {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const hooks = withCR
+      ? { PreToolUse: [{ hooks: [{ type: 'command', command: 'claude-recall hook run rule-injector' }] }] }
+      : {};
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ hooks }));
+  }
+  function seedProject(home: string): string {
+    const dir = path.join(home, 'proj', '.claude');
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, 'settings.json');
+    fs.writeFileSync(p, JSON.stringify({
+      hooks: {
+        PreToolUse: [{ hooks: [
+          { type: 'command', command: 'claude-recall hook run rule-injector' },
+          { type: 'command', command: 'python3 /home/u/proj/.claude/hooks/search_enforcer.py' },
+          { type: 'command', command: 'python3 /home/u/proj/.claude/hooks/pre_tool_search_enforcer.py' },
+          { type: 'command', command: 'python3 /home/u/proj/.claude/hooks/pubnub_pre_tool_hook.py' },
+        ] }],
+        UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'claude-recall hook run correction-detector' }] }],
+      },
+    }));
+    return p;
+  }
+  const projHooks = (p: string): string[] => {
+    const s = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const out: string[] = [];
+    for (const g of Object.values<any>(s.hooks || {})) for (const x of g) for (const h of (x.hooks || [])) out.push(h.command);
+    return out;
+  };
+
+  it('removes claude-recall hooks, preserves the user\'s own, cleans empties, backs up', () => {
+    const home = mkTmp();
+    try {
+      seedUserScope(home);
+      const proj = seedProject(home);
+      const res = dedupeRedundantProjectHooks(home);
+      expect(res.skipped).toBe(false);
+      expect(res.hooksRemoved).toBe(3); // rule-injector + search_enforcer + correction-detector
+      expect(res.filesChanged).toBe(1);
+      expect(res.backups).toHaveLength(1);
+      expect(fs.existsSync(res.backups[0])).toBe(true);
+      // preserved: the user's own two hooks; UserPromptSubmit event removed (was all-CR)
+      expect(projHooks(proj).sort()).toEqual([
+        'python3 /home/u/proj/.claude/hooks/pre_tool_search_enforcer.py',
+        'python3 /home/u/proj/.claude/hooks/pubnub_pre_tool_hook.py',
+      ]);
+      const after = JSON.parse(fs.readFileSync(proj, 'utf8'));
+      expect(after.hooks.UserPromptSubmit).toBeUndefined();
+    } finally { rmTmp(home); }
+  });
+
+  it('is a no-op guard when user scope has no claude-recall hooks', () => {
+    const home = mkTmp();
+    try {
+      seedUserScope(home, false); // user scope empty
+      const proj = seedProject(home);
+      const before = fs.readFileSync(proj, 'utf8');
+      const res = dedupeRedundantProjectHooks(home);
+      expect(res.skipped).toBe(true);
+      expect(res.hooksRemoved).toBe(0);
+      expect(fs.readFileSync(proj, 'utf8')).toBe(before); // untouched
+    } finally { rmTmp(home); }
+  });
+
+  it('dry-run reports counts but writes nothing', () => {
+    const home = mkTmp();
+    try {
+      seedUserScope(home);
+      const proj = seedProject(home);
+      const before = fs.readFileSync(proj, 'utf8');
+      const res = dedupeRedundantProjectHooks(home, { dryRun: true });
+      expect(res.hooksRemoved).toBe(3);
+      expect(res.backups).toHaveLength(0);
+      expect(fs.readFileSync(proj, 'utf8')).toBe(before);
+    } finally { rmTmp(home); }
+  });
+
+  it('is idempotent — a second run removes nothing', () => {
+    const home = mkTmp();
+    try {
+      seedUserScope(home);
+      seedProject(home);
+      dedupeRedundantProjectHooks(home);
+      const res2 = dedupeRedundantProjectHooks(home);
+      expect(res2.hooksRemoved).toBe(0);
+      expect(res2.filesChanged).toBe(0);
+    } finally { rmTmp(home); }
+  });
+
+  it('userScopeHasClaudeRecallHooks detects coverage', () => {
+    const home = mkTmp();
+    try {
+      seedUserScope(home, true);
+      expect(userScopeHasClaudeRecallHooks(home)).toBe(true);
+      const home2 = mkTmp();
+      seedUserScope(home2, false);
+      expect(userScopeHasClaudeRecallHooks(home2)).toBe(false);
+      rmTmp(home2);
+    } finally { rmTmp(home); }
   });
 });

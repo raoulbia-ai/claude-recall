@@ -81,7 +81,7 @@ claude-recall setup --install               # hooks → ./.claude
 claude mcp add claude-recall -- claude-recall mcp start
 ```
 
-> Already set up per-project and tired of repeating it? Run the global pair above once, then delete the redundant `.claude/settings.json` hooks from individual projects — `claude-recall doctor` will confirm the global hooks cover everything.
+> Already set up per-project and tired of repeating it? Run the global pair above once, then `claude-recall doctor --fix` — it repairs any stale config and **removes the now-redundant per-project hooks** for you (preserving your own hooks). One command cleans up a messy machine.
 
 **Capture runs on your Claude subscription — no API key.** The capture hook classifies each prompt via a headless `claude -p` call on the same login that powers your session, in a detached background worker (your turn is never blocked; capture is silent and lands a few seconds later). If you happen to have `ANTHROPIC_API_KEY` exported for other tools, it is deliberately **not** used unless you set `CLAUDE_RECALL_PREFER_API_KEY=1` — a stray key shouldn't quietly spend your Anthropic API credits. Verify captures any time:
 
