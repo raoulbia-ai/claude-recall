@@ -5,7 +5,14 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveOnPath } from './repair';
+import {
+  resolveOnPath,
+  nodeVersionFromPath,
+  findSettingsFiles,
+  scanFile,
+  runRepair,
+  FileReport,
+} from './repair';
 import {
   scanMcpConfig,
   applyMcpConsolidation,
@@ -31,9 +38,9 @@ export class DoctorCommands {
   /** Detect a node-version-orphaned binary (nvm switch casualty). */
   static nodeVersionInfo(binPath: string | null): { mismatch: boolean; binNodeVersion?: string } {
     if (!binPath) return { mismatch: false };
-    const m = binPath.match(/\/(?:\.nvm\/)?versions\/node\/(v[0-9][0-9.]*)\//);
-    if (!m) return { mismatch: false };
-    return { mismatch: m[1] !== process.version, binNodeVersion: m[1] };
+    const v = nodeVersionFromPath(binPath);
+    if (!v) return { mismatch: false };
+    return { mismatch: v !== process.version, binNodeVersion: v };
   }
 
   /**
@@ -145,6 +152,85 @@ export class DoctorCommands {
     return problems;
   }
 
+  /** One-line description of a broken/orphaned hook finding for doctor output. */
+  static describeHookFinding(settingsPath: string, c: import('./repair').Classification): string {
+    const where = `${path.basename(path.dirname(path.dirname(settingsPath)))}/.claude/${path.basename(settingsPath)}`;
+    if (c.status === 'orphaned-node') {
+      return `${where}: hook built for node ${c.scriptNodeVersion}, active is ${process.version} — will crash on load (silent DB-write loss)`;
+    }
+    if (c.status === 'broken-absolute') {
+      return `${where}: hook points at a missing script (${c.scriptPath})`;
+    }
+    if (c.status === 'broken-path') {
+      return `${where}: hook uses '${c.binary}' which is not on PATH`;
+    }
+    return `${where}: ${c.status}`;
+  }
+
+  /**
+   * Print the Hooks section — the fix for doctor's blind spot. It inspects the
+   * hook COMMANDS Claude Code actually runs (via repair's scanner), not the CLI
+   * path, so a node-version-orphaned hook is caught even when the CLI/DB looks
+   * healthy. When `fix` is set, runs `repair --auto` to rewrite them.
+   */
+  static async reportHooks(
+    home: string,
+    cwd: string,
+    fix: boolean,
+    log: (m: string) => void,
+    resolver: () => string | null = () => resolveOnPath('claude-recall'),
+  ): Promise<number> {
+    const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
+    const files = findSettingsFiles(cwd, home, 'all');
+    if (files.length === 0) {
+      line('•', 'no Claude Code settings files found — no hooks to check');
+      return 0;
+    }
+
+    const badStatuses = new Set(['orphaned-node', 'broken-absolute', 'broken-path']);
+    const bad: string[] = [];
+    let okCount = 0;
+    for (const f of files) {
+      const r: FileReport = scanFile(f, resolver);
+      if (r.parseError) { bad.push(`${f}: ${r.parseError}`); continue; }
+      for (const finding of r.findings) {
+        if (badStatuses.has(finding.classification.status)) {
+          bad.push(DoctorCommands.describeHookFinding(f, finding.classification));
+        } else {
+          okCount++;
+        }
+      }
+    }
+
+    if (bad.length === 0) {
+      line('✓', `all ${okCount} claude-recall hook(s) healthy (${files.length} settings file${files.length === 1 ? '' : 's'})`);
+      return 0;
+    }
+
+    line('⚠', `${bad.length} broken/orphaned hook entr${bad.length === 1 ? 'y' : 'ies'} — these hooks crash silently`);
+    for (const d of bad) line(' ', `        - ${d}`);
+
+    if (!fix) {
+      line(' ', '        fix: claude-recall doctor --fix');
+      return bad.length;
+    }
+
+    // Repair rewrites orphaned/broken absolute paths to the portable PATH form
+    // (backup + atomic write handled inside runRepair).
+    const res = await runRepair({
+      auto: true, scope: 'all', cwd, home,
+      logger: { log: () => {}, warn: () => {} },
+      claudeRecallOnPath: resolver,
+    });
+    if (res.fixesApplied > 0) {
+      line('✓', `repaired ${res.fixesApplied} hook(s) across ${res.filesModified} file(s) — rewrote to the PATH form`);
+      line(' ', '        restart Claude Code for it to take effect');
+      return res.unfixable;
+    }
+    line('⚠', `could not auto-repair (${res.unfixable} unfixable) — run: claude-recall repair`);
+    return bad.length;
+  }
+
   static async runDoctor(options: { fix?: boolean; home?: string } = {}): Promise<void> {
     const home = options.home ?? os.homedir();
     const log = (m: string) => console.log(m);
@@ -178,6 +264,10 @@ export class DoctorCommands {
     log('\nMCP configuration (~/.claude.json)');
     const report = scanMcpConfig(home);
     problems += DoctorCommands.reportMcpConfig(report, !!options.fix, log);
+
+    // --- Hooks (the path Claude Code actually runs — catches node-version orphans) ---
+    log('\nHooks (Claude Code settings.json)');
+    problems += await DoctorCommands.reportHooks(home, process.cwd(), !!options.fix, log);
 
     // --- Live server smoke-test ---
     log('\nServer');
@@ -214,15 +304,15 @@ export class DoctorCommands {
       log('✅ All checks passed — memory is active and healthy.\n');
       process.exit(0);
     }
-    log(`⚠️  ${problems} issue${problems === 1 ? '' : 's'} found.${options.fix ? '' : ' Re-run with --fix to repair MCP config.'}\n`);
+    log(`⚠️  ${problems} issue${problems === 1 ? '' : 's'} found.${options.fix ? '' : ' Re-run with --fix to repair MCP config + hooks.'}\n`);
     process.exit(1);
   }
 
   static register(program: Command): void {
     program
       .command('doctor')
-      .description('Health check: install, MCP config, live server, database. --fix repairs MCP config drift.')
-      .option('--fix', 'Consolidate MCP config in ~/.claude.json to a single canonical entry (backup written first)')
+      .description('Health check: install, MCP config, hooks, live server, database. --fix repairs MCP config + hook drift.')
+      .option('--fix', 'Repair MCP config in ~/.claude.json and rewrite orphaned/broken hook paths (backups written first)')
       .action(async (options) => {
         await DoctorCommands.runDoctor({ fix: options.fix });
       });

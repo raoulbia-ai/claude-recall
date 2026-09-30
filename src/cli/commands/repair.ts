@@ -25,7 +25,12 @@ export type Classification =
   | { status: 'ok' }
   | { status: 'non-claude-recall' }
   | { status: 'broken-absolute'; scriptPath: string; hookId: string | null }
-  | { status: 'broken-path'; binary: string; hookId: string | null };
+  | { status: 'broken-path'; binary: string; hookId: string | null }
+  // Absolute script EXISTS but lives under a node version that isn't the one
+  // now running — its native better-sqlite3 binding is ABI-incompatible, so the
+  // hook crashes on load and DB writes are silently lost. Rewritable to the
+  // portable PATH form. (Discovered live-testing 0.39.0.)
+  | { status: 'orphaned-node'; scriptPath: string; scriptNodeVersion: string; hookId: string | null };
 
 export interface HookLocation {
   settingsPath: string;
@@ -99,6 +104,17 @@ export function resolveOnPath(binName: string): string | null {
 }
 
 /**
+ * Extract the node version from an nvm/node-manager install path, e.g.
+ * `/home/u/.nvm/versions/node/v20.19.3/lib/node_modules/…` → `v20.19.3`.
+ * Returns null when the path isn't under a versioned node dir. Shared with
+ * `doctor` so both compare against `process.version` the same way.
+ */
+export function nodeVersionFromPath(p: string): string | null {
+  const m = p.match(/\/(?:\.nvm\/)?versions\/node\/(v[0-9][0-9.]*)\//);
+  return m ? m[1] : null;
+}
+
+/**
  * Decide whether a hook command belongs to claude-recall and, if so, whether
  * its invocation target actually resolves on disk / on PATH. Pure function —
  * no I/O except for the filesystem check on absolute script paths and the
@@ -132,6 +148,13 @@ export function classifyHook(
     if (script && path.isAbsolute(script) && CLAUDE_RECALL_CLI_RE.test(script)) {
       if (!fs.existsSync(script)) {
         return { status: 'broken-absolute', scriptPath: script, hookId };
+      }
+      // Script exists — but if it lives under a node version that isn't the one
+      // running now, its native binding is ABI-incompatible and the hook will
+      // crash on load (silent DB-write loss). Rewrite it to the PATH form.
+      const scriptNodeVersion = nodeVersionFromPath(script);
+      if (scriptNodeVersion && scriptNodeVersion !== process.version) {
+        return { status: 'orphaned-node', scriptPath: script, scriptNodeVersion, hookId };
       }
       return { status: 'ok' };
     }
@@ -348,7 +371,10 @@ export function scanFile(
           classification,
         };
 
-        if (classification.status === 'broken-absolute') {
+        // Both broken-absolute (missing file) and orphaned-node (wrong node
+        // version) rewrite to the portable PATH form when claude-recall is on
+        // PATH and we parsed the hook id.
+        if (classification.status === 'broken-absolute' || classification.status === 'orphaned-node') {
           const crPath = cachingResolver();
           if (crPath) {
             const id = classification.hookId;
@@ -419,6 +445,9 @@ function describe(finding: Finding): string {
   }
   if (c.status === 'broken-path') {
     return `${loc}  '${c.binary}' not on PATH`;
+  }
+  if (c.status === 'orphaned-node') {
+    return `${loc}  built for node ${c.scriptNodeVersion}, active is ${process.version} — will crash on load (ABI mismatch)`;
   }
   return `${loc}  ok`;
 }
