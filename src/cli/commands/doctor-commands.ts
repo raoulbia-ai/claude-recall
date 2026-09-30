@@ -11,6 +11,7 @@ import {
   findSettingsFiles,
   scanFile,
   runRepair,
+  dedupeRedundantProjectHooks,
   FileReport,
 } from './repair';
 import {
@@ -202,33 +203,53 @@ export class DoctorCommands {
       }
     }
 
+    let problems = 0;
     if (bad.length === 0) {
       line('✓', `all ${okCount} claude-recall hook(s) healthy (${files.length} settings file${files.length === 1 ? '' : 's'})`);
-      return 0;
+    } else {
+      line('⚠', `${bad.length} broken/orphaned hook entr${bad.length === 1 ? 'y' : 'ies'} — these hooks crash silently`);
+      for (const d of bad) line(' ', `        - ${d}`);
+      if (fix) {
+        // Repair rewrites orphaned/broken absolute paths to the portable PATH
+        // form (backup + atomic write handled inside runRepair).
+        const res = await runRepair({
+          auto: true, scope: 'all', cwd, home,
+          logger: { log: () => {}, warn: () => {} },
+          claudeRecallOnPath: resolver,
+        });
+        if (res.fixesApplied > 0) {
+          line('✓', `repaired ${res.fixesApplied} hook(s) across ${res.filesModified} file(s) — rewrote to the PATH form`);
+          line(' ', '        restart Claude Code for it to take effect');
+          problems += res.unfixable;
+        } else {
+          line('⚠', `could not auto-repair (${res.unfixable} unfixable) — run: claude-recall repair`);
+          problems += bad.length;
+        }
+      } else {
+        line(' ', '        fix: claude-recall doctor --fix');
+        problems += bad.length;
+      }
     }
 
-    line('⚠', `${bad.length} broken/orphaned hook entr${bad.length === 1 ? 'y' : 'ies'} — these hooks crash silently`);
-    for (const d of bad) line(' ', `        - ${d}`);
+    // Redundant per-project hooks: once user scope covers them, project-scope
+    // copies just double-fire. Informational (not counted as a broken problem);
+    // --fix removes them.
+    DoctorCommands.reportDedupe(home, fix, line);
 
+    return problems;
+  }
+
+  /** Report (and, with fix, remove) redundant per-project claude-recall hooks. */
+  static reportDedupe(home: string, fix: boolean, line: (marker: string, text: string) => void): void {
+    const dry = dedupeRedundantProjectHooks(home, { dryRun: true });
+    if (dry.skipped || dry.hooksRemoved === 0) return; // nothing to dedupe (or no user-scope coverage)
     if (!fix) {
-      line(' ', '        fix: claude-recall doctor --fix');
-      return bad.length;
+      line('•', `${dry.hooksRemoved} redundant per-project hook(s) across ${dry.filesChanged} file(s) — doctor --fix removes them`);
+      return;
     }
-
-    // Repair rewrites orphaned/broken absolute paths to the portable PATH form
-    // (backup + atomic write handled inside runRepair).
-    const res = await runRepair({
-      auto: true, scope: 'all', cwd, home,
-      logger: { log: () => {}, warn: () => {} },
-      claudeRecallOnPath: resolver,
-    });
-    if (res.fixesApplied > 0) {
-      line('✓', `repaired ${res.fixesApplied} hook(s) across ${res.filesModified} file(s) — rewrote to the PATH form`);
-      line(' ', '        restart Claude Code for it to take effect');
-      return res.unfixable;
-    }
-    line('⚠', `could not auto-repair (${res.unfixable} unfixable) — run: claude-recall repair`);
-    return bad.length;
+    const res = dedupeRedundantProjectHooks(home);
+    line('✓', `removed ${res.hooksRemoved} redundant per-project hook(s) across ${res.filesChanged} file(s) — user scope covers them`);
+    line(' ', '        restart Claude Code for it to take effect');
   }
 
   static async runDoctor(options: { fix?: boolean; home?: string } = {}): Promise<void> {
