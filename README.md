@@ -6,6 +6,8 @@ Coding agents forget everything between sessions. Claude Recall fixes that: it c
 
 It works with **Claude Code**, **[Pi](https://github.com/mariozechner/pi)**, and **[Kiro CLI](https://kiro.dev/cli/)** — all three share the same database, so a rule learned in one agent is applied in the others. Everything stays on your machine: no cloud, no telemetry, works offline.
 
+**Jump to:** [Quick Start](#quick-start) · [In practice](#what-it-looks-like-in-practice) · [vs. CLAUDE.md](#why-not-just-steering-files-or-claudemd) · [What runs automatically](#what-happens-automatically) · [Commands](#everyday-commands) · [How it works](#how-it-works) · [Upgrading](#upgrading) · [Configuration](#configuration) · [Security](#security--privacy)
+
 ---
 
 ## What it looks like in practice
