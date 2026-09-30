@@ -1,17 +1,19 @@
 /**
  * session-start-banner hook — fires on SessionStart (normal sources).
  *
- * Affordance, not injection. claude-recall runs almost entirely through
- * background hooks, so a user has little visible sign it's on — previously the
- * only feedback was around compaction (post-compact-reload). This prints one
- * concise, user-visible line at the start of every session confirming memory is
- * active, how many rules apply to this project, and that capture is automatic.
+ * A MODEL-FACING primer. Claude Code treats SessionStart hook stdout as context
+ * for the model, NOT a user-visible message (verified against the hooks docs) —
+ * the user-visible "memory active" indicator is the `claude-recall statusline`
+ * command instead. This line still earns its place: it primes the model at
+ * session start that persistent memory is on and capture is automatic, which
+ * matters most under governance where the MCP tools are absent (so the model
+ * never claims it has no memory).
  *
  * It does NOT re-inject full rule bodies (the rule-injector does that
  * just-in-time before each tool call) — keeping the per-session context cost to
  * a single line. The compaction case is left to post-compact-reload (which
  * re-injects the rules that were dropped), so this handler no-ops on
- * source "compact" to avoid a duplicate banner.
+ * source "compact" to avoid a duplicate.
  *
  * Input: { session_id, hook_event_name: "SessionStart", source: "startup" | "resume" | "clear" | "compact" }
  */
