@@ -6,6 +6,8 @@ Coding agents forget everything between sessions. Claude Recall fixes that: it c
 
 It works with **Claude Code**, **[Pi](https://github.com/mariozechner/pi)**, and **[Kiro CLI](https://kiro.dev/cli/)** — all three share the same database, so a rule learned in one agent is applied in the others. Everything stays on your machine: no cloud, no telemetry, works offline.
 
+**Jump to:** [Quick Start](#quick-start) · [In practice](#what-it-looks-like-in-practice) · [vs. CLAUDE.md](#why-not-just-steering-files-or-claudemd) · [What runs automatically](#what-happens-automatically) · [Commands](#everyday-commands) · [How it works](#how-it-works) · [Upgrading](#upgrading) · [Configuration](#configuration) · [Security](#security--privacy)
+
 ---
 
 ## What it looks like in practice
@@ -39,32 +41,6 @@ $ claude-recall search "pnpm"
 1. [correction] Score: 7.9
    Content: {"content":"Use pnpm, not npm","confidence":0.95,"source":"hook-auto-capture",...}
 ```
-
----
-
-## Why not just steering files or CLAUDE.md?
-
-Use them! They're the right tool for **team standards you already know** — written by hand, reviewed in PRs, shipped with the repo. Claude Recall covers what they structurally can't:
-
-- **Nobody writes it down.** Steering files hold what you remembered to document. Recall captures rules *in the flow of work* — you correct the agent once, mid-session, and it's stored. The stuff that burns you repeatedly is exactly the stuff too small to feel worth documenting.
-- **They can't learn from failure.** There's no steering-file mechanism for *tool failure → lesson → rule*. "Exit code 0 doesn't mean the tests passed" enters Recall because the agent got burned — not because someone wrote a postmortem.
-- **One memory, every agent.** Steering is Kiro-only, CLAUDE.md is Claude-Code-only. Recall is one local DB behind Claude Code, Kiro, and Pi — correct one agent, all of them know.
-- **They rot.** Nobody prunes a rules file. Recall tracks whether rules are actually used, demotes dead ones, and a daily LLM janitor merges duplicates and cleans noise.
-- **Personal ≠ repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Recall is per-developer and never touches your repo.
-- **They bloat context.** An always-included steering file ships its full text into every interaction, relevant or not, and only ever grows. Recall's injection is token-budgeted, surfaces rules relevant to the action at hand, and the corpus self-prunes — the context cost stays bounded as the memory grows.
-
-In short: steering files are documentation — what your team decided. Claude Recall is memory — what your sessions taught.
-
----
-
-## Features
-
-- **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts, running on **the agent's own LLM** (Claude subscription / Kiro credits — never a separate API key), with regex fallback when no LLM is available
-- **Applied where it counts** — rules load at session start and are re-surfaced mid-session: just-in-time before each tool call (Claude Code, Pi) or as a periodic refresh every N prompts (Kiro)
-- **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
-- **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
-- **Outcome-aware** — tracks whether rules actually help (tool results, test cycles, re-asks) and promotes validated lessons into active rules
-- **Local-only** — one SQLite file on your machine; inspect, export, or delete everything from the CLI
 
 ---
 
@@ -178,6 +154,32 @@ tail -5 ~/.claude-recall/hook-logs/kiro-classifier.log  # what the classifier de
 Or, from **inside the Kiro session**, just ask the agent to recall it (*"what do you remember about my package manager?"*) — it reads the same DB and will surface the stored rule if capture succeeded.
 
 **Everything else Kiro** — MCP-only mode, project scoping and `--resume`, the classifier internals, enterprise-governance notes, troubleshooting: **[docs/kiro.md](docs/kiro.md)**.
+
+---
+
+## Why not just steering files or CLAUDE.md?
+
+Use them! They're the right tool for **team standards you already know** — written by hand, reviewed in PRs, shipped with the repo. Claude Recall covers what they structurally can't:
+
+- **Nobody writes it down.** Steering files hold what you remembered to document. Recall captures rules *in the flow of work* — you correct the agent once, mid-session, and it's stored. The stuff that burns you repeatedly is exactly the stuff too small to feel worth documenting.
+- **They can't learn from failure.** There's no steering-file mechanism for *tool failure → lesson → rule*. "Exit code 0 doesn't mean the tests passed" enters Recall because the agent got burned — not because someone wrote a postmortem.
+- **One memory, every agent.** Steering is Kiro-only, CLAUDE.md is Claude-Code-only. Recall is one local DB behind Claude Code, Kiro, and Pi — correct one agent, all of them know.
+- **They rot.** Nobody prunes a rules file. Recall tracks whether rules are actually used, demotes dead ones, and a daily LLM janitor merges duplicates and cleans noise.
+- **Personal ≠ repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Recall is per-developer and never touches your repo.
+- **They bloat context.** An always-included steering file ships its full text into every interaction, relevant or not, and only ever grows. Recall's injection is token-budgeted, surfaces rules relevant to the action at hand, and the corpus self-prunes — the context cost stays bounded as the memory grows.
+
+In short: steering files are documentation — what your team decided. Claude Recall is memory — what your sessions taught.
+
+---
+
+## Features
+
+- **Automatic capture** — an LLM classifier detects preferences, corrections, and project facts in your normal prompts, running on **the agent's own LLM** (Claude subscription / Kiro credits — never a separate API key), with regex fallback when no LLM is available
+- **Applied where it counts** — rules load at session start and are re-surfaced mid-session: just-in-time before each tool call (Claude Code, Pi) or as a periodic refresh every N prompts (Kiro)
+- **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
+- **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
+- **Outcome-aware** — tracks whether rules actually help (tool results, test cycles, re-asks) and promotes validated lessons into active rules
+- **Local-only** — one SQLite file on your machine; inspect, export, or delete everything from the CLI
 
 ---
 
