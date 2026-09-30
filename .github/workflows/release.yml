@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # required to create the GitHub Release after publishing
   id-token: write # required for OIDC trusted publishing
 
 jobs:
@@ -79,3 +79,29 @@ jobs:
       # trusted publishing supplies the credential itself.
       - name: Publish
         run: npm publish
+
+      # Create a GitHub Release for the tag so maintainers and repo watchers get
+      # a notification on every publish — npm's own publish email is unreliable
+      # under OIDC trusted publishing (the publish isn't tied to a user account).
+      # Uses the first-party gh CLI + the built-in GITHUB_TOKEN (no third-party
+      # action), consistent with this workflow's security posture. Best-effort:
+      # a release hiccup must never fail an otherwise-successful publish.
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Pull this version's section out of CHANGELOG.md (from its heading up
+          # to the next "## [" heading) for the release body.
+          NOTES="$(awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {grab=1; next}
+            grab && /^## \[/ {exit}
+            grab {print}
+          ' CHANGELOG.md)"
+          [ -z "$NOTES" ] && NOTES="Release $GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "$NOTES" \
+            --verify-tag \
+          || echo "::warning::GitHub Release creation failed (npm publish already succeeded)"
