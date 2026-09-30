@@ -72,7 +72,7 @@ In short: steering files are documentation — what your team decided. Claude Re
 
 **Requirements:** Node.js **20.19+**, macOS / Linux / Windows (WSL supported).
 
-Install the global binary once per machine:
+Install the global binary once:
 
 ```bash
 npm install -g claude-recall
@@ -81,24 +81,31 @@ npm install -g claude-recall
 > **Do NOT add claude-recall as a project dependency** (`npm install claude-recall` inside a project). All projects share one database, and a stale project-local copy silently shadows your global one. One global binary; per-project *activation* only.
 > Hit `EACCES: permission denied`? See [Upgrade & install troubleshooting](#upgrading) below.
 
+> **Using nvm?** A global install lives under the *active* Node version, so switching Node versions hides it (`claude-recall: command not found`, and hooks stop firing). Make it stick across versions once:
+> ```bash
+> echo 'claude-recall' >> ~/.nvm/default-packages   # every future `nvm install` includes it
+> ```
+> `claude-recall doctor` flags a version-orphaned install and how to fix it.
+
 ### Claude Code
 
-In each project where you want it active:
+**Install once — active in every project (recommended):**
 
 ```bash
-claude-recall setup --install
-claude mcp add claude-recall -- claude-recall mcp start
-```
-
-Restart Claude Code. Ask *"Load my rules"* to verify — Claude should call `load_rules`.
-
-Prefer it available in **every** project? Register the MCP server once at user scope (memories stay isolated per project either way — scoping comes from the working directory, not the install):
-
-```bash
+claude-recall setup --install --global      # hooks → ~/.claude (every project)
 claude mcp add --scope user claude-recall -- claude-recall mcp start
 ```
 
-Hook-based auto-capture remains a per-project opt-in via `claude-recall setup --install`.
+Restart Claude Code and you're done — every project, current and future, has memory with nothing more to run. Memories still scope **per project** automatically (isolation comes from the working directory, not the install). Ask *"Load my rules"* to verify — Claude should call `load_rules`.
+
+**Or activate a single project only** (hooks + MCP scoped to this directory):
+
+```bash
+claude-recall setup --install               # hooks → ./.claude
+claude mcp add claude-recall -- claude-recall mcp start
+```
+
+> Already set up per-project and tired of repeating it? Run the global pair above once, then delete the redundant `.claude/settings.json` hooks from individual projects — `claude-recall doctor` will confirm the global hooks cover everything.
 
 **Capture runs on your Claude subscription — no API key.** The capture hook classifies each prompt via a headless `claude -p` call on the same login that powers your session, in a detached background worker (your turn is never blocked; capture is silent and lands a few seconds later). If you happen to have `ANTHROPIC_API_KEY` exported for other tools, it is deliberately **not** used unless you set `CLAUDE_RECALL_PREFER_API_KEY=1` — a stray key shouldn't quietly spend your Anthropic API credits. Verify captures any time:
 
@@ -198,8 +205,11 @@ Classification runs on each runtime's **own** LLM — Claude Code via headless `
 
 Captured rules are kept **precise and current**: the classifier phrases each rule as *trigger + concrete pattern* where your message allows ("email files must start with email" → *"When creating an email text file, name it `email_*.txt`"*); a rule too vague to act on is stored but flagged, and the agent is nudged at injection time to ask you for a precise restatement. When you restate an existing rule in new words, the **new phrasing supersedes the old row** (counters carry over) instead of creating a duplicate or being swallowed by the old wording.
 
+**You'll see it's on.** Because the work happens in background hooks, Claude Recall surfaces a couple of visible signals so it's never silent: a one-line **`🧠 Recall: memory active — N rules for "<project>"`** banner at the start of each session, and a **`🔄 Recall: N rules re-loaded`** line after a context compaction. For anything deeper, `claude-recall doctor` gives a full health verdict.
+
 ```bash
 # Verify it's working
+claude-recall doctor                     # full health check (install, config, hooks, server, DB)
 claude-recall stats
 claude-recall search "preference"
 ```

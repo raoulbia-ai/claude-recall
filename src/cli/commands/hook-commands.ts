@@ -8,6 +8,7 @@ const AVAILABLE_HOOKS = [
   'memory-sync',
   'precompact-preserve',
   'post-compact-reload',
+  'session-start-banner',
   'tool-outcome-watcher',
   'tool-failure',
   'rule-injector',
@@ -80,6 +81,11 @@ export class HookCommands {
       case 'post-compact-reload': {
         const { handlePostCompactReload } = await import('../../hooks/post-compact-reload');
         await handlePostCompactReload(input);
+        break;
+      }
+      case 'session-start-banner': {
+        const { handleSessionStartBanner } = await import('../../hooks/session-start-banner');
+        await handleSessionStartBanner(input);
         break;
       }
       case 'subagent-start': {

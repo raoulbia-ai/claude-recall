@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.41.0] - 2026-09-30
+
+### Added
+
+- **`claude-recall setup --install --global` — install once, active in every project.** Previously hooks could only be installed per project (`setup --install` writes to `./.claude`), so every new project needed a repeat install. `--global` writes the hook block (and the enforcer + skills) to `~/.claude` at user scope, so auto-capture and injection fire in every project — current and future — with nothing more to run. Paired with `claude mcp add --scope user …`, the whole tool is a one-time setup. Memories still scope per project automatically. `claude-recall setup` (no args) now prints the global pair as the recommended path; the per-project flow remains for single-project installs.
+- **A session-start affordance banner** so memory is never silently on. Claude Recall runs almost entirely through background hooks, so the only visible sign it was working used to be around compaction. A new `SessionStart` hook now prints a one-line **`🧠 Recall: memory active — N rule(s) for "<project>"`** at the start of every session (and a "no rules yet" variant when the project is empty), confirming memory is on and that capture is automatic. It no-ops on the compaction case (`post-compact-reload` still handles that), adds only a single line of context, and fails safe (a broken DB just means no banner — `doctor` flags it). Hook template bumped to v16; re-run `setup --install` (or `--global`) or `repair --reinstall-hooks` to pick it up.
+
 ## [0.40.0] - 2026-09-30
 
 ### Fixed
