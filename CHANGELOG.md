@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.39.0] - 2026-09-30
+
+### Added
+
+- **`claude-recall doctor` — a one-shot health verdict for the whole install.** Recurring support incidents (governance-dropped MCP, PATH-broken hooks / exit 127, node-version-orphaned binaries, and `npx`-vs-binary scope collisions causing `CONNECTION_CLOSED`) were all *config/plumbing* drift, never the memory engine — but nothing surfaced them, so a healthy session and a broken one looked identical. `doctor` reports, in one command: install (version, on-PATH, and **whether the binary is orphaned under an inactive node version** after an nvm switch), MCP configuration in `~/.claude.json`, a **live `initialize` smoke-test** that proves the server code + DB actually work (isolating "config broken" from "server broken"), and database reachability. DB access is lazy, so `doctor` still runs when the native SQLite binding is broken — exactly the state you'd run it to diagnose. Exits non-zero when anything is wrong, so it's scriptable.
+- **`claude-recall doctor --fix` — self-healing MCP config.** `repair` only ever scanned `.claude/settings.json` *hooks*; it never touched `~/.claude.json`, where the MCP **server** registration drifts. `--fix` consolidates every `claude-recall` MCP entry (the user-scope one plus per-project duplicates) to a **single canonical user-scope entry using the direct binary** — eliminating flaky `npx` launchers, orphaned absolute command paths, and duplicate cross-scope definitions in one pass. Env is preserved by union across the entries; on a genuine env *conflict* across scopes it refuses to consolidate and reports rather than guessing (never silently degrade). A timestamped backup is written and the file is replaced atomically; the operation is idempotent.
+
+### Changed
+
+- **MCP server startup failures are now explicit, not silent.** A fatal `mcp start` error prints an actionable message (the reason + `Run: claude-recall doctor`) to stderr, which Claude Code surfaces in its server logs — turning an opaque `CONNECTION_CLOSED` into a lead.
+- **The just-in-time rule-injector announces liveness.** The injected `<recalled-memory>` block now opens with `Claude Recall active — N rule(s) in memory for this project`, so the model can confirm memory is on — the only in-session evidence memory is working when the MCP tools are absent (e.g. governance-blocked). Model-facing; not a UI indicator.
+
 ## [0.38.1] - 2026-08-20
 
 ### Fixed
