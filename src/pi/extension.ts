@@ -97,6 +97,11 @@ function formatRules(rules: ActiveRules): string {
 }
 
 export default function(pi: PiTypes.ExtensionAPI) {
+  // Announce the runtime so the LLM backends know Pi's headless mode is
+  // available. Without this they would have to probe PATH, and a Claude Code
+  // user who also has Pi installed would get their hooks answered by it.
+  process.env.CLAUDE_RECALL_RUNTIME = 'pi';
+
   let projectId: string = '';
   const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const collectedToolResults: ConversationEntry[] = [];

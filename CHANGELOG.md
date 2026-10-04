@@ -66,6 +66,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Auto-captured failures are no longer labelled "rules".** The statusline counted preferences + corrections + devops + solutions **+ failures** and called the total "rules", so a user who had taught it nothing could still see `🧠 Recall · 3 rules`. It now reports them separately — `🧠 Recall · 2 rules · 3 failures` — and omits the failure segment when there are none. The session-start banner counts consistently.
 - **The surfaces can no longer contradict each other.** `memory-sync` already refused to sync boilerplate-only failures into `MEMORY.md`, but `loadActiveRules` had no such filter — so the same memories were injected, counted and advertised as "rules" while the file index said "No recall rules synced". That predicate now lives in `services/memory-quality.ts` and is applied by **both**, so injection, `load_rules`, the statusline and the file index agree. Boilerplate failures are no longer injected at all (they cost context and teach nothing); the underlying failure still lives in the DB, so fix-pairing and evidence counting are unaffected, and a lesson enriched by a real fix becomes active again.
 
+### Added
+
+- **Pi hosts can use an LLM again — through Pi itself.** Capture classification, session learnings, checkpoint extraction and hindsight hints all need a model, and the backends were `claude -p`, `kiro-cli` and an opt-in Anthropic key. A Pi-only machine has none of those, so every one of those features was silently inert there. Pi ships the same affordance the other runtimes do — `pi -p` answers on the model the user already configured — so it needs no API key either. The nested call runs with `--no-extensions`, which is a stronger recursion guard than an environment flag: the child cannot load claude-recall at all. New: `CLAUDE_RECALL_PI_MODEL`, `CLAUDE_RECALL_PI_LLM_TIMEOUT_MS`.
+
+  The backend is gated on the Pi extension announcing the runtime, not on `pi` being on PATH — a Claude Code user who also has Pi installed must not have their hooks quietly answered by a different agent.
+
+### Changed
+
+- **The three runtime CLI backends share one implementation** (`src/hooks/runtime-cli.ts`). `completeWithClaudeCli` and `completeWithKiroCli` were the same spawn, timeout, kill and stdout handling with different argv; adding a third copy for Pi would have made three.
+
+
 ## [0.43.0] - 2026-09-30
 
 ### Added
