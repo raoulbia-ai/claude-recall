@@ -32,9 +32,17 @@ export function completeWithPiCli(
 	const timeout = opts.timeoutMs
 		?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_TIMEOUT_MS);
 
-	// Without a model the child uses Pi's configured default, which keeps this
-	// backend working with no setup at all.
-	const args = ['--no-extensions', ...(model ? ['--model', model] : []), '-p', prompt];
+	// `--no-extensions` is the default guard, but it hides models contributed by
+	// an extension — on a host whose provider arrives that way, the child has
+	// nothing to answer with. Such a host can opt into loading extensions in the
+	// child, where CLAUDE_RECALL_NESTED below is what stops the recursion.
+	const isolated = process.env.CLAUDE_RECALL_PI_EXTENSIONS !== '1';
+	const args = [
+		...(isolated ? ['--no-extensions'] : []),
+		...(model ? ['--model', model] : []),
+		'-p',
+		prompt,
+	];
 
 	return completeWithRuntimeCli('pi', args, {
 		tag: 'pi-classifier',

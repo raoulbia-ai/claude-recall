@@ -53,6 +53,18 @@ describe('Pi LLM backend', () => {
 		expect(options.cwd).toBe(os.tmpdir());
 	});
 
+	it('can load extensions in the child when the host keeps its models there', async () => {
+		process.env.CLAUDE_RECALL_PI_EXTENSIONS = '1';
+		mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
+
+		await load().completeWithPiCli('prompt');
+
+		const [, args, options] = mockSpawn.mock.calls[0];
+		expect(args).not.toContain('--no-extensions');
+		// Recursion is then stopped by the flag instead, which the extension honours.
+		expect(options.env.CLAUDE_RECALL_NESTED).toBe('1');
+	});
+
 	it('passes a configured model through', async () => {
 		process.env.CLAUDE_RECALL_PI_MODEL = 'airpx-static/claude-sonnet-5';
 		mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));

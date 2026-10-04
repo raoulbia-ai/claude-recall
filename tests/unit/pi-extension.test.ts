@@ -309,6 +309,24 @@ describe('Pi Extension', () => {
     });
   });
 
+  describe('nested session', () => {
+    it('does nothing at all when spawned by our own LLM backend', () => {
+      const prev = process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_NESTED = '1';
+      jest.resetModules();
+      const nestedApi: any = { on: jest.fn(), registerTool: jest.fn(), registerCommand: jest.fn() };
+
+      try {
+        require('../../src/pi/extension').default(nestedApi);
+        expect(nestedApi.on).not.toHaveBeenCalled();
+        expect(nestedApi.registerTool).not.toHaveBeenCalled();
+      } finally {
+        if (prev === undefined) delete process.env.CLAUDE_RECALL_NESTED;
+        else process.env.CLAUDE_RECALL_NESTED = prev;
+      }
+    });
+  });
+
   describe('before_agent_start handler', () => {
     it('injects rules into system prompt on first call', () => {
       mockLoadActiveRules.mockReturnValueOnce({

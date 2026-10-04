@@ -102,6 +102,13 @@ export default function(pi: PiTypes.ExtensionAPI) {
   // user who also has Pi installed would get their hooks answered by it.
   process.env.CLAUDE_RECALL_RUNTIME = 'pi';
 
+  // A nested session spawned by our own LLM backend must stay a plain Pi run:
+  // no capture, no citations — otherwise asking the model to classify a prompt
+  // would itself become a session that captures a prompt. The backend prefers
+  // `--no-extensions`, which makes this moot, but a host whose models come
+  // from an extension has to load them.
+  if (process.env.CLAUDE_RECALL_NESTED === '1') return;
+
   let projectId: string = '';
   const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const collectedToolResults: ConversationEntry[] = [];
