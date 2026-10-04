@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Retention is now enforced on every host, and on the tables that actually grow.** Compaction only ever ran from the MCP server's boot path, so a Pi-only machine never compacted at all: `maxMemories` printed `Memory usage at 240% (24030/10000)` on every store while the database kept growing (measured: 133MB, 24032 memories). Two gaps made that unbounded even where compaction did run — `failure`, the highest-volume automatic write (23532 of those rows), had no retention, and outcome telemetry (`outcome_events` at 246845 rows, about two thirds of the file) had none at all. Since failures are a rule type, every turn loaded them: 5059 rules / 3.05MB / 80.6ms per turn, against 14.6ms once capped. Pi's `session_start` now calls the same compaction the MCP boot path does, via a shared `compactIfDue()` **throttled to once a day per database** (`compactThreshold` is 10MB, so `shouldCompact()` is true for most working databases, and compaction copies a backup and VACUUMs — without a floor, a host opening a session a minute would pay that every minute). Maintenance never throws: it must not keep a session or a server from starting.
+
+### Added
+
+- **`CLAUDE_RECALL_RETAIN_FAILURES`** (default `1000`) and **`CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`** (default `30`); `-1` keeps all. Failures are capped by strength like tool-use and corrections; telemetry is pruned by age, since a month-old tool result teaches nothing. Episodes are dropped only once no event references them — `episode_id` carries no foreign key, so SQLite would otherwise orphan the live events of a long-running episode.
+
+### Changed
+
+- **`pruneOldToolUse` and `pruneOldCorrections` collapsed into `pruneByType`** — they were the same function with a different type literal, and failures want the same policy.
+- **`getCompactionConfig` merges the stored config over the defaults** instead of replacing them. A config file written before this change has a `compaction` block without the new retention keys, and an undefined cap would reach `scored.slice(keepCount)` and select every row for deletion.
+
 ## [0.43.0] - 2026-09-30
 
 ### Added

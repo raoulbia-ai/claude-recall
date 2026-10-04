@@ -15,6 +15,8 @@ export interface CompactionConfig {
     corrections: number;
     preferences: number;
     projectKnowledge: number;
+    failures: number;
+    telemetryDays: number;
   };
 }
 
@@ -43,6 +45,53 @@ export class DatabaseManager {
     return DatabaseManager.instance;
   }
   
+  private static readonly COMPACTION_DEFAULTS: CompactionConfig = {
+    autoCompact: true,
+    compactThreshold: 10 * 1024 * 1024, // 10MB
+    maxMemories: 10000,
+    retention: {
+      toolUse: 1000,
+      corrections: 100,
+      preferences: -1, // Keep forever
+      projectKnowledge: -1, // Keep forever
+      failures: 1000,
+      telemetryDays: 30,
+    },
+  };
+
+  /** Shortest gap between two automatic compactions. */
+  private static readonly DEFAULT_COMPACTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+  /**
+   * Compact if the thresholds say so and the last automatic run is old enough.
+   *
+   * Every host that opens the database wants this exact sequence on startup,
+   * so it lives here instead of being spelled out at each call site. The
+   * throttle matters: `compactThreshold` defaults to 10MB, so `shouldCompact()`
+   * is true for most working databases, and compaction copies a backup and
+   * runs VACUUM. Without a floor on the interval, a host that starts a session
+   * per minute would pay that cost per minute.
+   *
+   * Returns null when nothing ran. Never throws: maintenance must not keep a
+   * session or a server from starting.
+   */
+  async compactIfDue(minIntervalMs: number = DatabaseManager.DEFAULT_COMPACTION_INTERVAL_MS): Promise<CompactionResult | null> {
+    try {
+      const marker = path.join(path.dirname(this.config.getDatabasePath()), '.last-compaction');
+      const lastRun = fs.existsSync(marker) ? fs.statSync(marker).mtimeMs : 0;
+      if (Date.now() - lastRun < minIntervalMs) return null;
+
+      if (!(await this.shouldCompact())) return null;
+
+      const result = await this.compact();
+      fs.writeFileSync(marker, new Date().toISOString());
+      return result;
+    } catch (error) {
+      this.logger.error('DatabaseManager', 'Automatic compaction failed', error);
+      return null;
+    }
+  }
+
   /**
    * Check if compaction is needed based on thresholds
    */
@@ -115,14 +164,14 @@ export class DatabaseManager {
       const dedupeResult = this.deduplicateMemories(db, dryRun);
       deduplicatedCount = dedupeResult;
       
-      // 2. Prune old tool-use memories
-      const toolUseResult = this.pruneOldToolUse(db, config.retention.toolUse, dryRun);
-      removedCount += toolUseResult;
-      
-      // 3. Prune old corrections
-      const correctionsResult = this.pruneOldCorrections(db, config.retention.corrections, dryRun);
-      removedCount += correctionsResult;
-      
+      // 2. Prune memory types that grow without bound, strongest kept
+      removedCount += this.pruneByType(db, 'tool-use', config.retention.toolUse, dryRun);
+      removedCount += this.pruneByType(db, 'correction', config.retention.corrections, dryRun);
+      removedCount += this.pruneByType(db, 'failure', config.retention.failures, dryRun);
+
+      // 3. Prune outcome telemetry past its retention window
+      removedCount += this.pruneTelemetry(db, config.retention.telemetryDays, dryRun);
+
       // 4. Run VACUUM to reclaim space (only if not dry run)
       if (!dryRun) {
         this.logger.info('DatabaseManager', 'Running VACUUM to reclaim space...');
@@ -281,17 +330,26 @@ export class DatabaseManager {
   }
   
   /**
-   * Prune old tool-use memories
+   * Prune one memory type down to its retention cap, keeping the strongest.
+   *
+   * tool-use, corrections and auto-captured failures all want the same policy
+   * — score by strength, keep the top N — so they share one implementation.
+   * Only the type and the cap differ.
+   *
+   * `correction` targets type = 'correction', what production actually writes.
+   * An earlier implementation targeted 'correction-pattern' with a
+   * preference_key requirement; only the dead PatternStore path ever wrote
+   * that type (and never with preference_key), so the documented "last N
+   * corrections" retention had never fired.
    */
-  private pruneOldToolUse(db: Database.Database, keepCount: number, dryRun: boolean): number {
+  private pruneByType(db: Database.Database, type: string, keepCount: number, dryRun: boolean): number {
     if (keepCount < 0) return 0; // Keep all
 
     try {
-      // Fetch all tool-use memories, compute strength, keep the strongest
       const rows = db.prepare(`
         SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
-        FROM memories WHERE type = 'tool-use'
-      `).all() as any[];
+        FROM memories WHERE type = ?
+      `).all(type) as any[];
 
       if (rows.length <= keepCount) return 0;
 
@@ -312,64 +370,80 @@ export class DatabaseManager {
           .run(...toRemove.map(r => r.id));
       }
 
-      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} old tool-use memories (kept ${keepCount} strongest)`);
+      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} weak '${type}' memories (kept ${keepCount} strongest)`);
       if (toRemove.length > 0 && !dryRun) {
-        console.error(`🔄 Pruned ${toRemove.length} weak tool-use memories`);
+        // stderr — this can run inside the MCP server, stdout is JSON-RPC
+        console.error(`🔄 Pruned ${toRemove.length} weak ${type} memories`);
       }
       return toRemove.length;
 
     } catch (error) {
-      this.logger.error('DatabaseManager', 'Error pruning tool-use memories', error);
+      this.logger.error('DatabaseManager', `Error pruning '${type}' memories`, error);
       return 0;
     }
   }
-  
+
   /**
-   * Prune corrections beyond the retention cap, keeping the strongest.
+   * Prune outcome telemetry past the retention window.
    *
-   * Targets type = 'correction' — what production actually writes. The
-   * previous implementation targeted 'correction-pattern' with a
-   * preference_key requirement; only the dead PatternStore path ever wrote
-   * that type (and never with preference_key), so the documented "last N
-   * corrections" retention had never fired.
+   * These tables are append-only observations — one row per tool result — so
+   * they outgrow `memories` by an order of magnitude and end up dominating the
+   * file. Age, not strength, is the right axis here: a month-old tool result
+   * teaches nothing. Episodes are only dropped once no event references them;
+   * `episode_id` carries no foreign key, so SQLite would happily orphan live
+   * events belonging to a long-running episode.
+   *
+   * The tables are created lazily by MemoryStorage, so a database written by
+   * an older version may not have them yet — hence the existence check.
    */
-  private pruneOldCorrections(db: Database.Database, keepCount: number, dryRun: boolean): number {
-    if (keepCount < 0) return 0; // Keep all
+  private pruneTelemetry(db: Database.Database, retentionDays: number, dryRun: boolean): number {
+    if (retentionDays < 0) return 0; // Keep all
 
     try {
-      const rows = db.prepare(`
-        SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
-        FROM memories
-        WHERE type = 'correction'
-      `).all() as any[];
+      const present = new Set(
+        (db.prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'table'
+           AND name IN ('outcome_events', 'rule_injection_events', 'episodes')`
+        ).all() as any[]).map(r => r.name)
+      );
+      if (present.size === 0) return 0;
 
-      if (rows.length <= keepCount) {
-        return 0;
+      const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+      const cutoffIso = new Date(cutoffMs).toISOString();
+      let removed = 0;
+
+      const sweep = (deleteSql: string, cutoff: string | number): void => {
+        if (dryRun) {
+          const countSql = deleteSql.replace('DELETE FROM', 'SELECT COUNT(*) AS c FROM');
+          removed += (db.prepare(countSql).get(cutoff) as any).c as number;
+        } else {
+          removed += db.prepare(deleteSql).run(cutoff).changes;
+        }
+      };
+
+      // created_at is ISO text; injected_at is epoch milliseconds.
+      if (present.has('outcome_events')) {
+        sweep('DELETE FROM outcome_events WHERE created_at < ?', cutoffIso);
+      }
+      if (present.has('rule_injection_events')) {
+        sweep('DELETE FROM rule_injection_events WHERE injected_at < ?', cutoffMs);
+      }
+      if (present.has('episodes')) {
+        const orphaned = present.has('outcome_events')
+          ? `DELETE FROM episodes WHERE created_at < ?
+             AND id NOT IN (SELECT episode_id FROM outcome_events WHERE episode_id IS NOT NULL)`
+          : 'DELETE FROM episodes WHERE created_at < ?';
+        sweep(orphaned, cutoffIso);
       }
 
-      const scored = rows.map(r => ({
-        id: r.id,
-        strength: MemoryRetrieval.computeStrength(r as Memory),
-      })).sort((a, b) => b.strength - a.strength);
-
-      const toRemove = scored.slice(keepCount);
-
-      if (!dryRun && toRemove.length > 0) {
-        // Prepared-statement deletion, matching pruneOldToolUse (audit 2026-04-23)
-        const placeholders = toRemove.map(() => '?').join(',');
-        db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`)
-          .run(...toRemove.map(r => r.id));
+      if (removed > 0) {
+        this.logger.info('DatabaseManager', `Pruned ${removed} telemetry rows older than ${retentionDays} days`);
+        if (!dryRun) console.error(`🔄 Pruned ${removed} telemetry rows older than ${retentionDays} days`);
       }
-
-      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} weak corrections (kept ${keepCount} strongest)`);
-      if (toRemove.length > 0 && !dryRun) {
-        // stderr — this can run inside the MCP server, stdout is JSON-RPC
-        console.error(`🔄 Pruned ${toRemove.length} weak correction memories`);
-      }
-      return toRemove.length;
+      return removed;
 
     } catch (error) {
-      this.logger.error('DatabaseManager', 'Error pruning corrections', error);
+      this.logger.error('DatabaseManager', 'Error pruning telemetry', error);
       return 0;
     }
   }
@@ -378,19 +452,18 @@ export class DatabaseManager {
    * Get compaction configuration
    */
   private getCompactionConfig(): CompactionConfig {
-    const config = this.config.getConfig();
-    
-    // Default configuration if not specified
-    return (config as any).database?.compaction || {
-      autoCompact: true,
-      compactThreshold: 10 * 1024 * 1024, // 10MB
-      maxMemories: 10000,
+    const stored = (this.config.getConfig() as any).database?.compaction;
+
+    // Merge rather than replace: a config file written by an older version has
+    // a `compaction` block without the newer retention keys, and an undefined
+    // cap would make `slice(keepCount)` select every row for deletion.
+    return {
+      ...DatabaseManager.COMPACTION_DEFAULTS,
+      ...stored,
       retention: {
-        toolUse: 1000,
-        corrections: 100,
-        preferences: -1, // Keep forever
-        projectKnowledge: -1 // Keep forever
-      }
+        ...DatabaseManager.COMPACTION_DEFAULTS.retention,
+        ...stored?.retention,
+      },
     };
   }
   
