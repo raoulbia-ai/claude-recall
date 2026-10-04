@@ -93,6 +93,12 @@ describe('event-processors', () => {
       );
     });
 
+    it('skips the outcome event when the reporting runtime has no consumer for it', () => {
+      processToolOutcome('Read', { file_path: '/test.ts' }, 'file contents', false, 'sess1', 'pi');
+
+      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+    });
+
     it('stores failure for Bash with non-zero exit', () => {
       processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
 
