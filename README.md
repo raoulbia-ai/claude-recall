@@ -476,6 +476,8 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_AUTO_CLEANUP`             | `false` | Auto-kill stale MCP processes on start (otherwise reports and exits).                                    |
 | `CLAUDE_RECALL_COMPACT_THRESHOLD`        | `10MB`  | DB size at which automatic compaction kicks in.                                                          |
 | `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
+| `CLAUDE_RECALL_RETAIN_FAILURES`          | `1000`  | Auto-captured failures kept at compaction, strongest first. `-1` keeps all. Failures are the highest-volume automatic write, so an uncapped store grows until every turn pays to load it. |
+| `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`    | `30`    | Age limit for outcome telemetry (`outcome_events`, `rule_injection_events`, and episodes nothing references any more). One row per tool result, so this is usually the largest table in the file. `-1` keeps all. |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `warn`  | `block` / `warn` / `off` for the search-enforcer hook. Env wins, else `~/.claude-recall/config.json` `"enforceMode"`, else `warn`. |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). `0` disables. |

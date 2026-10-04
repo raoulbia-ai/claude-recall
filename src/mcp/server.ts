@@ -412,19 +412,14 @@ export class MCPServer {
       // Auto-compaction: enforce the documented size/count thresholds and
       // retention limits. Non-fatal — a failed compaction (e.g. VACUUM busy)
       // must never prevent the server from starting.
-      try {
-        const { DatabaseManager } = await import('../services/database-manager');
-        const dbManager = DatabaseManager.getInstance();
-        if (await dbManager.shouldCompact()) {
-          const result = await dbManager.compact();
-          this.logger.info('MCPServer', 'Auto-compaction completed on boot', {
-            removed: result.removedCount,
-            deduplicated: result.deduplicatedCount,
-            savedBytes: result.beforeSize - result.afterSize,
-          });
-        }
-      } catch (error) {
-        this.logger.logServiceError('MCPServer', 'autoCompact', error as Error);
+      const { DatabaseManager } = await import('../services/database-manager');
+      const result = await DatabaseManager.getInstance().compactIfDue();
+      if (result) {
+        this.logger.info('MCPServer', 'Auto-compaction completed on boot', {
+          removed: result.removedCount,
+          deduplicated: result.deduplicatedCount,
+          savedBytes: result.beforeSize - result.afterSize,
+        });
       }
     } catch (error) {
       this.logger.logServiceError('MCPServer', 'start', error as Error);

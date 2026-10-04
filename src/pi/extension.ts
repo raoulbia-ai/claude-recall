@@ -11,6 +11,7 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
+import { DatabaseManager } from '../services/database-manager';
 import {
   processToolOutcome,
   processUserInput,
@@ -130,6 +131,10 @@ export default function(pi: PiTypes.ExtensionAPI) {
     } catch {
       // Non-critical
     }
+
+    // Until now only the MCP server's boot path compacted, so a Pi-only host
+    // never did. Fire-and-forget: compactIfDue throttles and swallows failures.
+    void DatabaseManager.getInstance().compactIfDue();
   });
 
   // --- Event: inject rules before each agent turn (full load on first turn,

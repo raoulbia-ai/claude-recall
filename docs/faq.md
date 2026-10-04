@@ -105,7 +105,12 @@ Configurable:
 export CLAUDE_RECALL_MAX_MEMORIES=20000
 ```
 
-Automatic compaction at 10MB threshold (configurable via `CLAUDE_RECALL_COMPACT_THRESHOLD`).
+Automatic compaction at 10MB threshold (configurable via `CLAUDE_RECALL_COMPACT_THRESHOLD`), and at
+most once a day per database. It runs on MCP server boot and on Pi session start.
+
+Compaction deduplicates, caps `tool-use`, `correction` and `failure` memories at their retention
+limits (keeping the strongest), drops outcome telemetry older than
+`CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`, and VACUUMs. A backup is written first.
 
 ---
 
