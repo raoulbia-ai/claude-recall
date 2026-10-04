@@ -11,6 +11,7 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
+import { CitableRule, extractCitations, matchCitations } from '../shared/citations';
 import {
   processToolOutcome,
   processUserInput,
@@ -101,6 +102,8 @@ export default function(pi: PiTypes.ExtensionAPI) {
   const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const collectedToolResults: ConversationEntry[] = [];
   let rulesLoaded = false;
+  /** Rules injected into the current turn — the only candidates for its citations. */
+  let injectedThisTurn: CitableRule[] = [];
   const collectedUserTexts: string[] = [];
   // Chronologically interleaved entries (user input + tool results in order)
   // for auto-checkpoint extraction at session end. Distinct from the two
@@ -129,6 +132,59 @@ export default function(pi: PiTypes.ExtensionAPI) {
       } as any);
     } catch {
       // Non-critical
+    }
+  });
+
+  // --- Event: credit rules the model says it applied ---
+  //
+  // Only Claude Code's stop hook read these marks back, so under Pi every rule
+  // sat at cite_count 0 however often it was applied — blinding demotion, the
+  // compliance report and the janitor.
+  pi.on('message_end', (event, _ctx) => {
+    try {
+      const message = event?.message;
+      if (!message || message.role !== 'assistant') return;
+
+      const text = Array.isArray(message.content)
+        ? message.content
+            .filter((c): c is PiTypes.TextContent => c.type === 'text')
+            .map(c => c.text)
+            .join('\n')
+        : typeof message.content === 'string'
+          ? message.content
+          : '';
+
+      const citations = extractCitations(text);
+      if (citations.length === 0) return;
+
+      // Candidates are the rules this turn injected. Scored against the whole
+      // store, "self-verify before done" — a rule living in AGENTS.md, not the
+      // database — matched an unrelated note at containment 1.0 just because it
+      // was long enough to contain both words.
+      // No candidates means no credit, but the citation still gets logged below.
+      const matches = matchCitations(citations, injectedThisTurn);
+      const ms = MemoryService.getInstance();
+
+      for (const { key } of matches) {
+        ms.incrementCiteCount(key);
+        try {
+          OutcomeStorage.getInstance().recordHelpful(key);
+        } catch { /* best-effort — ignore */ }
+      }
+
+      // Log the refusals too: a citation we decline to attribute is the only
+      // way to tell "the model cited a rule of ours" from "it cited CLAUDE.md".
+      const credited = new Set(matches.map(m => m.citation));
+      LoggingService.getInstance().info(
+        'pi-extension',
+        `Credited ${matches.length} of ${citations.length} citation(s)`,
+        {
+          keys: matches.map(m => m.key),
+          uncredited: citations.filter(c => !credited.has(c)).map(c => truncateStr(c, 80)),
+        },
+      );
+    } catch {
+      // Never let bookkeeping break a turn
     }
   });
 
@@ -171,6 +227,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
       const userPrompt: string = (_event as any)?.prompt ?? '';
       if (userPrompt && allRulesFlat.length > 0) {
         const matches = rankRulesForToolCall('agent_turn', { command: userPrompt }, allRulesFlat);
+        injectedThisTurn = matches.map(m => ({ key: m.rule.key, value: m.rule.value }));
         if (matches.length > 0) {
           const reminder = formatJitReminder(matches);
           systemPromptOut = (systemPromptOut ?? _event.systemPrompt) + '\n\n' + reminder;

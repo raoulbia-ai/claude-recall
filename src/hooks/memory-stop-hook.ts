@@ -27,6 +27,7 @@ import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
 import { extractHindsightHint } from './llm-classifier';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { extractCitations, matchCitations } from '../shared/citations';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
 const MAX_STORE = 3;
@@ -240,7 +241,6 @@ function scanForCitations(transcriptPath: string): void {
       return;
     }
 
-    const citationRegex = /\(applied from memory:\s*(.+?)\)/g;
     const citations: string[] = [];
     let assistantEntries = 0;
     let textsExtracted = 0;
@@ -253,10 +253,7 @@ function scanForCitations(transcriptPath: string): void {
       if (!text) continue;
       textsExtracted++;
 
-      let match;
-      while ((match = citationRegex.exec(text)) !== null) {
-        citations.push(match[1].trim());
-      }
+      citations.push(...extractCitations(text));
     }
 
     hookLog('memory-stop', `Citation scan: ${entries.length} entries, ${assistantEntries} assistant, ${textsExtracted} with text, ${citations.length} citations`);
@@ -271,83 +268,25 @@ function scanForCitations(transcriptPath: string): void {
     const allRules = memoryService.getAllRulesForCitationMatching();
     hookLog('memory-stop', `Matching citations against ${allRules.length} rules`);
 
-    for (const cite of citations) {
-      hookLog('memory-stop', `Citation text: "${cite.substring(0, 80)}"`);
+    const matches = matchCitations(citations, allRules);
 
-      let bestScore = 0;
-      let bestKey = '';
-      let bestContent = '';
+    for (const { citation, key, containment } of matches) {
+      memoryService.incrementCiteCount(key);
+      try {
+        OutcomeStorage.getInstance().recordHelpful(key);
+      } catch { /* best-effort — ignore */ }
+      hookLog('memory-stop', `Citation matched: "${citation.substring(0, 50)}" → rule ${key} (containment=${containment.toFixed(3)})`);
+    }
 
-      for (const rule of allRules) {
-        // Extract clean text content — value may be JSON string with content/value fields
-        const ruleContent = extractRuleContent(rule.value);
-
-        const score = citationContainment(cite, ruleContent);
-        if (score > bestScore) {
-          bestScore = score;
-          bestKey = rule.key;
-          bestContent = ruleContent.substring(0, 60);
-        }
-      }
-
-      hookLog('memory-stop', `Best match: "${bestContent}" containment=${bestScore.toFixed(3)} key=${bestKey}`);
-
-      if (bestScore >= 0.5) {
-        memoryService.incrementCiteCount(bestKey);
-        try {
-          OutcomeStorage.getInstance().recordHelpful(bestKey);
-        } catch { /* best-effort — ignore */ }
-        hookLog('memory-stop', `Citation matched: "${cite.substring(0, 50)}" → rule ${bestKey} (containment=${bestScore.toFixed(3)})`);
-      } else {
-        hookLog('memory-stop', `No match found for citation (best=${bestScore.toFixed(3)})`);
-      }
+    if (matches.length < citations.length) {
+      hookLog('memory-stop', `${citations.length - matches.length} citation(s) matched no rule above threshold`);
     }
   } catch (error) {
     hookLog('memory-stop', `Citation scan error: ${error}`);
   }
 }
 
-/**
- * What fraction of the citation's tokens appear in the rule text?
- * Better than Jaccard for short citations matching long rules.
- */
-function citationContainment(citation: string, ruleText: string): number {
-  const tokenize = (s: string) =>
-    new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean));
-  const citeTokens = tokenize(citation);
-  const ruleTokens = tokenize(ruleText);
-  if (citeTokens.size === 0) return 0;
-  let found = 0;
-  for (const w of citeTokens) {
-    if (ruleTokens.has(w)) found++;
-  }
-  return found / citeTokens.size;
-}
 
-/**
- * Extract plain text content from a rule value (may be JSON string, object, or plain string).
- */
-function extractRuleContent(value: any): string {
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      if (typeof parsed === 'string') return parsed;
-      if (typeof parsed?.content === 'string') return parsed.content;
-      if (typeof parsed?.value === 'string') return parsed.value;
-      // content might be an object — stringify it
-      if (parsed?.content) return JSON.stringify(parsed.content);
-      return value;
-    } catch {
-      return value;
-    }
-  }
-  if (typeof value === 'object' && value !== null) {
-    if (typeof value.content === 'string') return value.content;
-    if (typeof value.value === 'string') return value.value;
-    return JSON.stringify(value);
-  }
-  return String(value ?? '');
-}
 
 /**
  * Scan the last 200 transcript entries for failure signals and store up to 3.

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Citations are credited under Pi, not only under Claude Code.** The rule directive asks the model to mark the point of use — `(applied from memory: …)` — and models comply: a Pi-only transcript corpus here carries 30522 such marks across 2809 distinct phrasings. Only the Claude Code stop hook ever read them back, so under Pi every rule sat at `cite_count` 0 (measured: 1098 active rules, 123068 loads, zero citations) and everything downstream was blind — `rules demote` judges "loaded often, never cited", the compliance report reports nothing, and the janitor has no usage signal. A `message_end` handler now credits the cited rule.
+
+  Attribution is deliberately narrow, because a wrong credit is worse than none: it would feed demotion a counter built from noise. Candidates are the rules that turn injected, not the whole store — scored against everything, the citation "self-verify before done" (a rule living in AGENTS.md, never in the database) matched an unrelated note at containment 1.0 simply because the note was long enough to contain both words. Scoring also drops everyday words, needs two distinctive tokens, demands a complete match below four of them, and requires the winner to beat the runner-up by a margin.
+
+### Changed
+
+- **Citation scanning moved to `src/shared/citations.ts`** and the stop hook now uses it, replacing its private copies of the regex, the containment metric and the best-match loop.
+
 ## [0.43.0] - 2026-09-30
 
 ### Added

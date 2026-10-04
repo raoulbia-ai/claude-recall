@@ -305,6 +305,7 @@ claude-recall monitor                    # Memory search monitoring stats
 
 # ── Rule Hygiene ─────────────────────────────────────────────────────
 claude-recall rules demote [--dry-run]   # Demote rules loaded >=N times but never cited
+                                         # (citations are counted under both Claude Code and Pi)
 claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
 claude-recall rules promote <id>         # Restore an auto-demoted or auto-deduped rule
 claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)

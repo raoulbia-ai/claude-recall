@@ -14,6 +14,8 @@ const mockRecordRetrieval = jest.fn();
 const mockSaveCheckpoint = jest.fn();
 const mockHasCheckpoint = jest.fn().mockReturnValue(false);
 const mockLoadCheckpoint = jest.fn().mockReturnValue(null);
+const mockIncrementCiteCount = jest.fn();
+const mockGetAllRulesForCitationMatching = jest.fn().mockReturnValue([]);
 
 jest.mock('../../src/services/memory', () => ({
   MemoryService: {
@@ -26,6 +28,8 @@ jest.mock('../../src/services/memory', () => ({
       saveCheckpoint: mockSaveCheckpoint,
       hasCheckpoint: mockHasCheckpoint,
       loadCheckpoint: mockLoadCheckpoint,
+      incrementCiteCount: mockIncrementCiteCount,
+      getAllRulesForCitationMatching: mockGetAllRulesForCitationMatching,
     }),
   },
 }));
@@ -360,6 +364,95 @@ describe('Pi Extension', () => {
       );
 
       expect(result).toEqual({ action: 'continue' });
+    });
+  });
+
+  describe('message_end handler (citation credit)', () => {
+    const assistantSaying = (text: string) => ({
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    });
+
+    /** A turn that injected one rule, which is what makes it citable. */
+    function turnInjecting(content: string, key = 'r-verify'): void {
+      mockLoadActiveRules.mockReturnValueOnce({
+        preferences: [{ key, value: { content } }],
+        corrections: [], failures: [], devops: [], summary: '',
+      });
+      api._handlers['session_start']({ type: 'session_start' }, mockCtx());
+      api._handlers['before_agent_start'](
+        { type: 'before_agent_start', prompt: content, systemPrompt: 'base prompt' },
+        mockCtx(),
+      );
+    }
+
+    beforeEach(() => {
+      turnInjecting('rebuild the bundle before running the suite');
+    });
+
+    it('credits the rule the assistant says it applied', () => {
+      api._handlers['message_end'](
+        assistantSaying('Done (applied from memory: rebuild the bundle before running the suite).'),
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).toHaveBeenCalledTimes(1);
+      expect(mockIncrementCiteCount).toHaveBeenCalledWith('r-verify');
+    });
+
+    it('credits nobody for a rule it never injected — AGENTS.md and skills are not ours to claim', () => {
+      api._handlers['message_end'](
+        assistantSaying('Checked it (applied from memory: deploy the staging cluster at midnight).'),
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
+    it('ignores the directive text itself, so the placeholder earns no credit', () => {
+      api._handlers['message_end'](
+        assistantSaying('cite like this: (applied from memory: <short summary>)'),
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
+    it('ignores user messages — only the assistant can apply a rule', () => {
+      api._handlers['message_end'](
+        {
+          type: 'message_end',
+          message: { role: 'user', content: [{ type: 'text', text: '(applied from memory: self-verify before done)' }] },
+        },
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the database when the message carries no citation', () => {
+      api._handlers['message_end'](assistantSaying('Done, no marks here.'), mockCtx());
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
+    it('still records the citation when no rule was injected to match it', () => {
+      // A fresh session with nothing injected: nobody is credited, but the
+      // citation must not vanish — that is how we measure precision.
+      mockIncrementCiteCount.mockClear();
+
+      api._handlers['message_end'](
+        assistantSaying('Done (applied from memory: some rule we never supplied).'),
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
+    it('survives a malformed message rather than breaking the turn', () => {
+      expect(() =>
+        api._handlers['message_end']({ type: 'message_end' } as any, mockCtx()),
+      ).not.toThrow();
     });
   });
 
