@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Raw outcome telemetry is no longer collected on runtimes that cannot consume it.** `outcome_events` and `rule_injection_events` are written one row per tool result so that `memory-stop-hook` can later distill them into `candidate_lessons` and citation counts — but that hook is wired into Claude Code's hook CLI only. Under Pi the rows were therefore written and never read: one host reached **246845 `outcome_events` rows, about two thirds of a 133MB database, with `candidate_lessons` still empty and every `cite_count` at zero**. `rule_injection_events` is worse off still — `getInjectionStats`, its only reader, has no callers on any runtime. Collection now follows the consumer, via one pure policy function (`shouldRecordOutcomes`) that both writers consult.
+
+### Added
+
+- **`CLAUDE_RECALL_OUTCOME_TRACKING`** (`auto` | `on` | `off`, default `auto`). `auto` collects where the distillation step runs; `on` forces collection everywhere, which is what you want when reading the `outcomes` CLI or debugging capture; `off` disables it entirely. Failure memories are unaffected — Pi reads those back as rules.
+
 ## [0.43.0] - 2026-09-30
 
 ### Added
