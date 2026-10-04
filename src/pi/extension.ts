@@ -11,6 +11,7 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import {
   processToolOutcome,
   processUserInput,
@@ -175,20 +176,26 @@ export default function(pi: PiTypes.ExtensionAPI) {
           const reminder = formatJitReminder(matches);
           systemPromptOut = (systemPromptOut ?? _event.systemPrompt) + '\n\n' + reminder;
 
-          // Record each injection so we can correlate with success/failure later
-          try {
-            const outcomeStorage = OutcomeStorage.getInstance();
-            for (const m of matches) {
-              outcomeStorage.recordRuleInjection({
-                rule_key: m.rule.key,
-                tool_name: 'pi:agent_turn',
-                tool_use_id: `pi_turn_${Date.now()}`,
-                project_id: projectId,
-                match_score: m.score,
-                matched_tokens: m.matchedTokens,
-              });
-            }
-          } catch { /* non-critical */ }
+          // Record each injection so we can correlate with success/failure later.
+          // Same rule as outcome events: only where something reads them back.
+          // Pi has no resolver hook, and `getInjectionStats` — the only reader of
+          // this table — has no callers at all, so by default these rows would be
+          // written and never read.
+          if (shouldRecordOutcomes('pi')) {
+            try {
+              const outcomeStorage = OutcomeStorage.getInstance();
+              for (const m of matches) {
+                outcomeStorage.recordRuleInjection({
+                  rule_key: m.rule.key,
+                  tool_name: 'pi:agent_turn',
+                  tool_use_id: `pi_turn_${Date.now()}`,
+                  project_id: projectId,
+                  match_score: m.score,
+                  matched_tokens: m.matchedTokens,
+                });
+              }
+            } catch { /* non-critical */ }
+          }
         }
       }
 
@@ -208,7 +215,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
       .map(c => c.text)
       .join('\n');
 
-    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
+    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId, 'pi');
 
     // Collect for session extraction
     collectedToolResults.push({

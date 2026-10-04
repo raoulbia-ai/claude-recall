@@ -19,6 +19,7 @@ import { extractSessionLearningsWithLLM, extractCheckpointWithLLM } from '../hoo
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { FailureMemoryContent } from '../services/failure-extractor';
+import { Runtime, shouldRecordOutcomes } from './outcome-capture';
 
 // --- Logging ---
 
@@ -126,6 +127,12 @@ export function processToolOutcome(
   toolOutput: string,
   isError: boolean,
   sessionId: string,
+  /**
+   * Which runtime is reporting. Decides whether the raw outcome event is worth
+   * storing — see shouldRecordOutcomes. Defaults to 'cc', the historical
+   * behaviour, so existing callers keep recording.
+   */
+  runtime: Runtime = 'cc',
 ): ToolOutcomeResult {
   const result: ToolOutcomeResult = { captured: false, fixPaired: false };
 
@@ -144,8 +151,10 @@ export function processToolOutcome(
       result.fixPaired = tryPairFix(toolName, toolInput, toolOutput);
     }
 
-    // Record outcome event for all tools
-    recordOutcomeEvent(toolName, toolInput, toolOutput);
+    // Raw event for the distillation step — only where that step exists
+    if (shouldRecordOutcomes(runtime)) {
+      recordOutcomeEvent(toolName, toolInput, toolOutput);
+    }
   } catch (err) {
     logFn('event-processor', `processToolOutcome error: ${safeErrorMessage(err)}`);
   }
