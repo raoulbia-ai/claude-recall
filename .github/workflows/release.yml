@@ -36,6 +36,11 @@ permissions:
 jobs:
   publish:
     name: Publish to npm (OIDC)
+    # Trusted publishing is bound to this repository (see the prerequisite
+    # above), so a publish from anywhere else cannot succeed. A fork that pushes
+    # a version tag, or runs this by hand, gets a skipped job instead of a red
+    # one that says nothing about the fork's own code.
+    if: github.repository == 'raoulbia-ai/claude-recall'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
