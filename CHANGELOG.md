@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.1] - 2026-10-13
+
+### Fixed
+
+- **Follow-up to 0.44.0: `git config` reads are recognised regardless of flag order, and ssh connection errors are transient.** 0.44.0 matched `git config --get …` with the flag immediately after the subcommand, but real invocations put read flags first — `git config --show-origin --show-scope --get-regexp "gpg|sign"` and `git config --list --show-origin` (both observed in the hook log) were still captured as failures. The matcher is now order-insensitive: `git config` plus **any** read-only flag (`--get`/`--get-all`/`--get-regexp`/`--list`/`-l`/`--show-origin`/`--show-scope`). A failing `git config` **write** has no read flag and is still captured. Separately, `ssh` exit **255** (ssh's own connection error, e.g. a `BatchMode` reachability probe) joins the transient set; a remote command's exit code passes through unchanged, so genuine remote failures are still captured.
+
 ## [0.44.0] - 2026-10-13
 
 ### Fixed

@@ -176,12 +176,22 @@ export const handleBashFailureWatcher = handleToolOutcomeWatcher;
  * teaches nothing.
  */
 const QUERY_EXIT1 = /^(grep|egrep|fgrep|rg|ag|diff|cmp|pgrep|pidof|jq|test)\b/i;
-const GIT_QUERY = /^git\s+(config\s+--get|diff\s+--quiet|diff\s+--exit-code|rev-parse\s+--verify|ls-files\s+--error-unmatch|check-ignore|merge-base\s+--is-ancestor|describe\s+--exact-match)/i;
+const GIT_QUERY = /^git\s+(diff\s+--quiet|diff\s+--exit-code|rev-parse\s+--verify|ls-files\s+--error-unmatch|check-ignore|merge-base\s+--is-ancestor|describe\s+--exact-match)/i;
+/**
+ * `git config` in READ mode. Flag order varies in practice
+ * (`git config --show-origin --show-scope --get-regexp …`), so match the
+ * subcommand and look for any read-only flag anywhere — not a fixed sequence.
+ */
+const GIT_CONFIG_READ = /^git\s+config\b/i;
+const GIT_CONFIG_READ_FLAG = /(^|\s)(--get(-all|-regexp|-urlmatch)?|--list|-l|--show-origin|--show-scope)(\s|$)/i;
 const TRANSIENT_EXITS: Record<string, Set<string>> = {
   curl: new Set(['6', '7', '28', '35', '52', '56']),
   wget: new Set(['4']),
   ping: new Set(['1', '2']),
   timeout: new Set(['124', '137']),
+  // 255 is ssh's OWN connection error. A remote command's exit code passes
+  // through unchanged, so genuine remote failures are still captured.
+  ssh: new Set(['255']),
 };
 
 function leadingProgram(segment: string): string {
@@ -200,6 +210,7 @@ export function isBenignNonZeroExit(command: string, exitCode: string): boolean 
       if (!seg) continue;
       const t = seg.trim();
       if (QUERY_EXIT1.test(t) || GIT_QUERY.test(t)) return true;
+      if (GIT_CONFIG_READ.test(t) && GIT_CONFIG_READ_FLAG.test(t)) return true;
     }
   }
   const transient = TRANSIENT_EXITS[leadingProgram(cmd)];
