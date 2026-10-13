@@ -120,3 +120,28 @@ describe('isBenignNonZeroExit', () => {
     expect(isBenignNonZeroExit('curl http://x', '22')).toBe(false); // HTTP error is real
   });
 });
+
+// --- Follow-up: real invocations seen in the hook log that 0.44.0 still captured ---
+describe('git config reads (any flag order) and ssh connection errors', () => {
+  it('treats git config READS as benign regardless of flag order', () => {
+    expect(isBenignNonZeroExit('git config --get tag.gpgsign', '1')).toBe(true);
+    // the real one from the log — read flags appear before --get-regexp
+    expect(isBenignNonZeroExit('git config --show-origin --show-scope --get-regexp "gpg|sign"', '1')).toBe(true);
+    expect(isBenignNonZeroExit('git config --list --show-origin', '1')).toBe(true);
+    expect(isBenignNonZeroExit('git config -l', '1')).toBe(true);
+  });
+
+  it('still captures a failing git config WRITE (no read flag)', () => {
+    expect(isBenignNonZeroExit('git config user.email me@example.com', '1')).toBe(false);
+  });
+
+  it('treats ssh\'s own connection error (255) as transient', () => {
+    expect(isBenignNonZeroExit('ssh -q -o BatchMode=yes -o ConnectTimeout=5 host true', '255')).toBe(true);
+  });
+
+  it('still captures a genuine remote command failure through ssh', () => {
+    // a remote command's exit code passes through unchanged — that's a real failure
+    expect(isBenignNonZeroExit('ssh host npm run build', '1')).toBe(false);
+    expect(shouldCaptureFailure('ssh host npm run build', '1', 'error TS2345: ...')).toBe(true);
+  });
+});
