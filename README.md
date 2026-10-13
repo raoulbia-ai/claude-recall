@@ -509,4 +509,6 @@ npm run mcp:dev        # Start MCP server in dev mode
 
 ## License
 
-MIT.
+**[MIT](LICENSE)** · SPDX `MIT` · Copyright © 2025-2026 Raoul Biagioni
+
+Free to use, modify and distribute — including commercially and in closed-source work — provided the copyright notice and permission notice are retained. The software is provided "as is", without warranty of any kind. Full text: [LICENSE](LICENSE).
