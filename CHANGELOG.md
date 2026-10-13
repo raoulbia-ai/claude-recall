@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0] - 2026-10-13
+
+### Fixed
+
+- **Benign non-zero exits are no longer captured as "failures" — the biggest source of capture noise.** The watcher treated *any* non-zero Bash exit as a failure, but a large family of Unix tools use non-zero as a normal query answer: `git config --get x` exits 1 when the key is simply **unset**, `grep`/`rg` exit 1 on **no match**, `test`/`[` on **false**, `diff`/`cmp` on **differs**, `git diff --quiet` when there **are** changes, plus `pgrep`/`pidof`/`jq -e`. These are now recognised as benign (exit 1 only — `grep`'s exit 2 is still a real error), including when they end a pipeline (`… | grep x`). Transient network/timeout exits (`curl` 6/7/28/35, `wget` 4, `timeout` 124/137) are likewise not durable lessons. Also closed an own-goal: the low-output skip **exempted `git`**, so an output-less `git config --get` was captured *because* it started with `git` — real git failures always print to stderr, so the exemption is gone. Reported from the field: a project showed three "rules" that were all noise of exactly this kind.
+- **Auto-captured failures are no longer labelled "rules".** The statusline counted preferences + corrections + devops + solutions **+ failures** and called the total "rules", so a user who had taught it nothing could still see `🧠 Recall · 3 rules`. It now reports them separately — `🧠 Recall · 2 rules · 3 failures` — and omits the failure segment when there are none. The session-start banner counts consistently.
+- **The surfaces can no longer contradict each other.** `memory-sync` already refused to sync boilerplate-only failures into `MEMORY.md`, but `loadActiveRules` had no such filter — so the same memories were injected, counted and advertised as "rules" while the file index said "No recall rules synced". That predicate now lives in `services/memory-quality.ts` and is applied by **both**, so injection, `load_rules`, the statusline and the file index agree. Boilerplate failures are no longer injected at all (they cost context and teach nothing); the underlying failure still lives in the DB, so fix-pairing and evidence counting are unaffected, and a lesson enriched by a real fix becomes active again.
+
 ## [0.43.0] - 2026-09-30
 
 ### Added

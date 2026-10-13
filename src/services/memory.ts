@@ -4,6 +4,7 @@ import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { ExtractedPreference } from './preference-extractor';
 import { isTestPollution } from './test-pollution';
+import { isBoilerplateFailureValue } from './memory-quality';
 
 export interface MemoryServiceContext {
   projectId?: string;
@@ -575,6 +576,10 @@ export class MemoryService {
       const allFailures = this.storage.searchByContext({ ...searchContext, type: 'failure' });
       const failures = allFailures
         .filter(isActive)
+        // Boilerplate-only lessons teach nothing, so they must not be injected
+        // or counted. Same predicate memory-sync uses for the file index —
+        // otherwise the surfaces contradict each other ("3 rules" vs "none synced").
+        .filter(m => !isBoilerplateFailureValue(m.value))
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         .slice(0, 5);
 
