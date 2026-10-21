@@ -27,6 +27,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { customLauncher } from './repair';
 
 /** A Claude Code MCP server entry as stored in ~/.claude.json. */
 export interface McpServerEntry {
@@ -81,6 +82,8 @@ export interface McpConfigReport {
   envConflicts: EnvConflict[];
   /** True when the config is not already a single canonical user-scope entry. */
   needsConsolidation: boolean;
+  /** The user-scope entry's absolute launcher, kept through consolidation. */
+  launcher?: string;
 }
 
 export interface McpApplyResult {
@@ -105,19 +108,24 @@ export function mcpConfigPath(home: string = os.homedir()): string {
  * `timeout` for Kiro agent configs; Claude Code entries use `type: "stdio"` and
  * an `env` object instead.)
  */
-export function canonicalEntry(env: Record<string, string>): McpServerEntry {
+export function canonicalEntry(env: Record<string, string>, command = 'claude-recall'): McpServerEntry {
   return {
     type: 'stdio',
-    command: 'claude-recall',
+    command,
     args: ['mcp', 'start'],
     env: { ...env },
   };
 }
 
-/** True when an entry already matches the canonical shape (idempotency guard). */
+/**
+ * True when an entry already matches the canonical shape (idempotency guard).
+ * An existing absolute claude-recall launcher (the README's nvm wrapper) counts
+ * as canonical — rewriting it to bare `claude-recall` breaks the desktop app.
+ */
 export function isCanonical(entry: McpServerEntry): boolean {
+  const command = entry.command || '';
   return (
-    entry.command === 'claude-recall' &&
+    (command === 'claude-recall' || customLauncher(command) !== null) &&
     Array.isArray(entry.args) &&
     entry.args.length === 2 &&
     entry.args[0] === 'mcp' &&
@@ -184,6 +192,8 @@ export function scanMcpConfig(home: string = os.homedir()): McpConfigReport {
   const userEntry = parsed?.mcpServers?.[SERVER_KEY];
   if (userEntry && typeof userEntry === 'object') {
     entries.push({ scope: { kind: 'user' }, entry: userEntry });
+    const launcher = customLauncher(String(userEntry.command || ''));
+    if (launcher) base.launcher = launcher;
   }
 
   if (parsed?.projects && typeof parsed.projects === 'object') {
@@ -269,7 +279,7 @@ export function applyMcpConsolidation(
 
   // 1. Set the single user-scope canonical entry.
   parsed.mcpServers = parsed.mcpServers || {};
-  parsed.mcpServers[SERVER_KEY] = canonicalEntry(report.mergedEnv);
+  parsed.mcpServers[SERVER_KEY] = canonicalEntry(report.mergedEnv, report.launcher);
 
   // 2. Delete every per-project duplicate.
   const removed: McpScope[] = [];

@@ -17,7 +17,7 @@ import { HookCommands } from './commands/hook-commands';
 import { KiroCommands } from './commands/kiro-commands';
 import { DoctorCommands } from './commands/doctor-commands';
 import { StatuslineCommands } from './commands/statusline-command';
-import { runRepair, resolveOnPath } from './commands/repair';
+import { runRepair, resolveOnPath, customLauncher } from './commands/repair';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
 // v15 = bound the search_enforcer PreToolUse entry with timeout: 5.
@@ -1429,10 +1429,18 @@ async function main() {
     // absolute dist paths break on every nvm switch or prefix move, the exact
     // failure class `repair` exists to fix (repair already treats the PATH
     // form as canonical). Absolute path only as fallback.
+    //
+    // An existing absolute launcher (the README's nvm wrapper for the desktop
+    // app) wins over both: rewriting it to bare `claude-recall` reintroduces
+    // the "Executable not found" failure it exists to fix.
     const onPath = resolveOnPath('claude-recall');
     const cliScript = path.join(packageDir, 'dist', 'cli', 'claude-recall-cli.js');
-    const hookCmd = onPath ? 'claude-recall hook run' : `node ${cliScript} hook run`;
-    if (!onPath) {
+    const existingLauncher = findExistingLauncher((settings as any).hooks);
+    const launchCmd = existingLauncher ?? (onPath ? 'claude-recall' : `node ${cliScript}`);
+    const hookCmd = `${launchCmd} hook run`;
+    if (existingLauncher) {
+      console.log(`ℹ️  Keeping your claude-recall launcher for hooks: ${existingLauncher}`);
+    } else if (!onPath) {
       console.log('⚠️  claude-recall not on PATH — hooks will use an absolute path (breaks if the install moves).');
       console.log('   `npm install -g claude-recall` gives move-proof hooks; `claude-recall repair` can convert later.');
     }
@@ -1591,7 +1599,7 @@ async function main() {
     // Add a USER-VISIBLE memory indicator via Claude Code's statusLine — but
     // NEVER clobber a statusLine the user already configured. (SessionStart
     // hook output is model-context only; statusLine is the real visible bar.)
-    const statuslineCmd = onPath ? 'claude-recall statusline' : `node ${cliScript} statusline`;
+    const statuslineCmd = `${launchCmd} statusline`;
     if (!(settings as any).statusLine) {
       (settings as any).statusLine = { type: 'command', command: statuslineCmd, padding: 1 };
       console.log('✅ Added statusLine memory indicator (🧠 Recall · N rules · <project>)');
@@ -1613,6 +1621,21 @@ async function main() {
       console.log('🌍 Installed at user scope — active in every project, current and future.');
     }
     console.log('Restart Claude Code to activate.\n');
+  }
+
+  // First absolute claude-recall launcher used by an existing hook, if any.
+  function findExistingLauncher(hooks: unknown): string | null {
+    if (!hooks || typeof hooks !== 'object') return null;
+    for (const groups of Object.values(hooks as Record<string, any>)) {
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        for (const hook of Array.isArray(group?.hooks) ? group.hooks : []) {
+          const launcher = typeof hook?.command === 'string' ? customLauncher(hook.command) : null;
+          if (launcher) return launcher;
+        }
+      }
+    }
+    return null;
   }
 
   // === INSTALL: Copy skills directory (idempotent overwrite) ===
