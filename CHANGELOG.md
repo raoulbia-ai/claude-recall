@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.0] - 2026-10-21
+
+### Added
+
+- **`doctor` now checks launches from outside a terminal (Claude desktop app / IDEs).** nvm adds Node to `PATH` only in interactive shells, so an nvm install works in a terminal while the desktop app fails with `ENOENT: Executable not found in $PATH: "claude-recall"` and every hook with `claude-recall: not found` — and `doctor`, running in that same terminal, reported all green. A new *Launch outside a terminal* section collects every launch command Claude Code runs (MCP server entries, hooks, statusLine) and actually starts each distinct executable with `--version` under a minimal system `PATH` and bare environment, which also catches a resolvable script whose `#!/usr/bin/env node` line fails. Failures are shown as warnings with a pointer to the README fix; they don't fail `doctor` (terminal-only users are unaffected). Skipped on Windows.
+
+### Fixed
+
+- **`setup --install` and `doctor --fix` no longer undo a custom launcher.** An MCP entry or hooks registered by absolute path to a claude-recall launcher (e.g. the README's nvm wrapper) were treated as drift: `doctor --fix` rewrote the MCP command back to bare `claude-recall`, and a hooks-version upgrade via `setup --install` did the same to every hook — reintroducing the desktop-app failure. An existing absolute launcher whose basename starts with `claude-recall` is now kept by both.
+
+### Documentation
+
+- **README: nvm + desktop app troubleshooting.** New *nvm: "Executable not found"* entry in Install & upgrade troubleshooting with a wrapper script and where to register it, plus a pointer from the Quick Start *Using nvm?* note.
+
 ## [0.44.1] - 2026-10-13
 
 ### Fixed

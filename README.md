@@ -62,6 +62,7 @@ npm install -g claude-recall
 > echo 'claude-recall' >> ~/.nvm/default-packages   # every future `nvm install` includes it
 > ```
 > `claude-recall doctor` flags a version-orphaned install and how to fix it.
+> **Works in your terminal but not in the Claude desktop app or an IDE?** See *nvm: "Executable not found"* in [Install & upgrade troubleshooting](#upgrading) below.
 
 ### Claude Code
 
@@ -416,7 +417,7 @@ Per-runtime notes:
 - **Kiro CLI** — the binary upgrade covers hook behaviour; when release notes change the agent *template*, re-run `kiro setup` once and start one fresh conversation — see [docs/kiro.md](docs/kiro.md#upgrading).
 
 <details>
-<summary><b>Install & upgrade troubleshooting</b> (EACCES, unknown command, pre-0.27 registrations)</summary>
+<summary><b>Install & upgrade troubleshooting</b> (EACCES, unknown command, pre-0.27 registrations, nvm + desktop app)</summary>
 
 **`EACCES: permission denied`** — your global npm prefix is root-owned (common when node came from `apt`). Quick fix: `sudo npm install -g claude-recall@latest`. Permanent fix — move the prefix to a user-owned directory so global installs never need sudo again:
 
@@ -439,6 +440,26 @@ claude mcp add claude-recall -- claude-recall mcp start
 ```
 
 **WSL: "invalid ELF header"** — mixed Windows/WSL `node_modules`. Use the global install (the default) and verify the binary resolves to a Linux path: `which claude-recall` should show `/home/<user>/...`, not a Windows path. Global installation does not affect project scoping.
+
+**nvm: "Executable not found" in the Claude desktop app / an IDE, but fine in a terminal** — nvm adds Node to `PATH` only in interactive shells (`~/.bashrc`). Apps that start Claude Code without one (the Claude desktop app, some IDEs) then can't find `claude-recall` or `node`: the MCP server fails with `ENOENT: Executable not found in $PATH: "claude-recall"` and every hook fails with `claude-recall: not found`. `claude-recall doctor` reports this under *Launch outside a terminal*. Fix: register claude-recall by absolute path through a small wrapper that puts nvm's Node on `PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/claude-recall-wrap <<'EOF'
+#!/bin/sh
+# newest nvm Node that has claude-recall; no nvm.sh, so hooks stay fast
+for d in $(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V -r); do
+  if [ -x "$d/claude-recall" ]; then PATH="$d:$PATH"; export PATH; exec "$d/claude-recall" "$@"; fi
+done
+echo "claude-recall-wrap: claude-recall not found under ~/.nvm" >&2; exit 127
+EOF
+chmod +x ~/.local/bin/claude-recall-wrap
+
+# check it works without your shell's PATH (as the desktop app sees it)
+env -i HOME=$HOME PATH=/usr/bin:/bin ~/.local/bin/claude-recall-wrap --version
+```
+
+Then use the absolute wrapper path (`/home/<user>/.local/bin/claude-recall-wrap`) instead of `claude-recall` in the MCP server `command` (`claude mcp remove claude-recall`, then `claude mcp add --scope user claude-recall -- /home/<user>/.local/bin/claude-recall-wrap mcp start`), every hook command in `~/.claude/settings.json` (`… hook run …`), and the `statusLine` command. Restart Claude Code and re-run `claude-recall doctor`. From 0.45.0, `setup --install` and `doctor --fix` keep the wrapper instead of rewriting it back to `claude-recall`. The wrapper picks the **newest** nvm Node that has claude-recall installed, so it keeps working after `nvm install` as long as claude-recall comes along (see `~/.nvm/default-packages` above).
 
 </details>
 

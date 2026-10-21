@@ -1,7 +1,7 @@
 // Type-only import so commander (ESM-only in v15) never enters jest's CJS
 // transform via this module — same pattern as kiro-commands.ts.
 import type { Command } from 'commander';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,6 +13,7 @@ import {
   runRepair,
   dedupeRedundantProjectHooks,
   FileReport,
+  SettingsShape,
 } from './repair';
 import {
   scanMcpConfig,
@@ -35,6 +36,19 @@ import {
  * native binding is broken — that's exactly the state a user runs doctor to
  * diagnose (see the contract note in claude-recall-cli.ts).
  */
+/**
+ * The PATH an app gets when it starts Claude Code without a login shell (the
+ * Claude desktop app, some IDEs): system dirs only, none of the user-local bin
+ * dirs that ~/.bashrc adds (nvm, ~/.npm-global, volta, fnm, ...).
+ */
+export const MINIMAL_PATH = '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+
+/** A claude-recall launch command Claude Code runs, and where it's configured. */
+export interface LaunchCommand {
+  source: string;
+  command: string;
+}
+
 export class DoctorCommands {
   /** Detect a node-version-orphaned binary (nvm switch casualty). */
   static nodeVersionInfo(binPath: string | null): { mismatch: boolean; binNodeVersion?: string } {
@@ -252,6 +266,100 @@ export class DoctorCommands {
     line(' ', '        restart Claude Code for it to take effect');
   }
 
+  /**
+   * Every claude-recall command Claude Code launches: the MCP server entries,
+   * hook commands and the statusLine. These are what a desktop-app launch must
+   * be able to resolve without the user's shell PATH.
+   */
+  static collectLaunchCommands(home: string, cwd: string, mcp: McpConfigReport): LaunchCommand[] {
+    const out: LaunchCommand[] = [];
+    for (const f of mcp.findings) {
+      if (f.command) out.push({ source: `MCP server (${describeScope(f.scope)})`, command: f.command });
+    }
+    for (const file of findSettingsFiles(cwd, home, 'all')) {
+      for (const finding of scanFile(file, () => null).findings) {
+        out.push({ source: 'hooks', command: finding.originalCommand });
+      }
+      try {
+        const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as SettingsShape;
+        const cmd = (settings.statusLine as { command?: unknown } | undefined)?.command;
+        if (typeof cmd === 'string' && /\bclaude-recall\b/.test(cmd)) out.push({ source: 'statusLine', command: cmd });
+      } catch { /* unreadable/invalid — the Hooks section already reports it */ }
+    }
+    return out;
+  }
+
+  /**
+   * Can `executable` start with only MINIMAL_PATH? Resolves a bare name against
+   * it, then runs `<executable> --version` with a bare environment — the real
+   * test, since a resolvable script can still fail on its `#!/usr/bin/env node`
+   * line (the nvm failure: node itself isn't on that PATH either).
+   */
+  static probeMinimalPath(
+    executable: string,
+    home: string,
+    pathEnv = MINIMAL_PATH,
+    timeoutMs = 5000,
+  ): { ok: boolean; reason?: string } {
+    const resolved = path.isAbsolute(executable) ? executable : resolveOnPath(executable, pathEnv);
+    if (!resolved) return { ok: false, reason: `'${executable}' not found` };
+    const r = spawnSync(resolved, ['--version'], {
+      env: { HOME: home, PATH: pathEnv },
+      timeout: timeoutMs,
+      encoding: 'utf8',
+    });
+    if (r.error) return { ok: false, reason: r.error.message };
+    if (r.status !== 0) {
+      const detail = (r.stderr || '').trim().split('\n')[0];
+      return { ok: false, reason: detail || `exit ${r.status ?? r.signal}` };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Print the "outside a terminal" section. Doctor itself runs in the user's
+   * shell, where an nvm install resolves fine — so without this, a desktop-app
+   * launch that fails with "Executable not found" looks healthy here. Returns
+   * the number of failing launchers; deliberately NOT a doctor problem, since
+   * terminal-only users are unaffected.
+   */
+  static reportMinimalPathLaunch(
+    commands: LaunchCommand[],
+    home: string,
+    log: (m: string) => void,
+    probe: (exe: string) => { ok: boolean; reason?: string } = exe => DoctorCommands.probeMinimalPath(exe, home),
+  ): number {
+    const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
+    if (commands.length === 0) {
+      line('•', 'no claude-recall launch commands registered');
+      return 0;
+    }
+
+    // `node /abs/cli.js …` needs `node`; anything else needs its first token.
+    const byExe = new Map<string, Set<string>>();
+    for (const c of commands) {
+      const exe = c.command.trim().split(/\s+/)[0];
+      if (!exe) continue;
+      if (!byExe.has(exe)) byExe.set(exe, new Set());
+      byExe.get(exe)!.add(c.source);
+    }
+
+    let failing = 0;
+    for (const [exe, sources] of byExe) {
+      const r = probe(exe);
+      if (r.ok) continue;
+      failing++;
+      line('⚠', `${[...sources].join(', ')}: '${exe}' fails with a minimal PATH — ${r.reason}`);
+    }
+    if (failing === 0) {
+      line('✓', `MCP server, hooks and statusLine start with a minimal PATH (${MINIMAL_PATH})`);
+      return 0;
+    }
+    line(' ', '        fine in this terminal, but the Claude desktop app and some IDEs start these');
+    line(' ', '        without your shell PATH (common with nvm). Fix: README → "nvm: Executable not found"');
+    return failing;
+  }
+
   static async runDoctor(options: { fix?: boolean; home?: string } = {}): Promise<void> {
     const home = options.home ?? os.homedir();
     const log = (m: string) => console.log(m);
@@ -290,6 +398,14 @@ export class DoctorCommands {
     log('\nHooks (Claude Code settings.json)');
     problems += await DoctorCommands.reportHooks(home, process.cwd(), !!options.fix, log);
 
+    // --- Launch outside a terminal (desktop app / IDE PATH) ---
+    let launchWarnings = 0;
+    if (process.platform !== 'win32') {
+      log('\nLaunch outside a terminal (Claude desktop app / IDE)');
+      launchWarnings = DoctorCommands.reportMinimalPathLaunch(
+        DoctorCommands.collectLaunchCommands(home, process.cwd(), report), home, log);
+    }
+
     // --- Live server smoke-test ---
     log('\nServer');
     const smoke = await DoctorCommands.smokeTestServer();
@@ -322,7 +438,12 @@ export class DoctorCommands {
     // --- Verdict ---
     log('');
     if (problems === 0) {
-      log('✅ All checks passed — memory is active and healthy.\n');
+      if (launchWarnings > 0) {
+        log('✅ All checks passed in this terminal — memory is active and healthy.');
+        log('⚠️  But launches from the Claude desktop app / an IDE will fail — see "Launch outside a terminal" above.\n');
+      } else {
+        log('✅ All checks passed — memory is active and healthy.\n');
+      }
       process.exit(0);
     }
     log(`⚠️  ${problems} issue${problems === 1 ? '' : 's'} found.${options.fix ? '' : ' Re-run with --fix to repair MCP config + hooks.'}\n`);

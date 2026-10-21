@@ -229,3 +229,47 @@ describe('applyMcpConsolidation', () => {
     } finally { rmTmp(home); }
   });
 });
+
+describe('custom absolute launcher (nvm wrapper for the desktop app)', () => {
+  function mkLauncher(home: string): string {
+    const p = path.join(home, 'claude-recall-wrap');
+    fs.writeFileSync(p, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    return p;
+  }
+
+  it('treats an existing absolute claude-recall launcher as canonical', () => {
+    const home = mkTmp();
+    try {
+      const wrap = mkLauncher(home);
+      expect(isCanonical({ command: wrap, args: ['mcp', 'start'] })).toBe(true);
+      expect(isCanonical({ command: path.join(home, 'missing-claude-recall'), args: ['mcp', 'start'] })).toBe(false);
+    } finally { rmTmp(home); }
+  });
+
+  it('leaves a single wrapper entry alone (no consolidation needed)', () => {
+    const home = mkTmp();
+    try {
+      const wrap = mkLauncher(home);
+      writeConfig(home, { mcpServers: { 'claude-recall': { type: 'stdio', command: wrap, args: ['mcp', 'start'], env: {} } } });
+      const report = scanMcpConfig(home);
+      expect(report.needsConsolidation).toBe(false);
+      expect(report.launcher).toBe(wrap);
+    } finally { rmTmp(home); }
+  });
+
+  it('keeps the wrapper when consolidating project duplicates', () => {
+    const home = mkTmp();
+    try {
+      const wrap = mkLauncher(home);
+      writeConfig(home, {
+        mcpServers: { 'claude-recall': { type: 'stdio', command: wrap, args: ['mcp', 'start'], env: {} } },
+        projects: { '/p': { mcpServers: { 'claude-recall': binEntry() } } },
+      });
+      const result = applyMcpConsolidation(scanMcpConfig(home), { home });
+      expect(result.changed).toBe(true);
+      const cfg = readConfig(home);
+      expect(cfg.mcpServers['claude-recall'].command).toBe(wrap);
+      expect(cfg.projects['/p'].mcpServers['claude-recall']).toBeUndefined();
+    } finally { rmTmp(home); }
+  });
+});
