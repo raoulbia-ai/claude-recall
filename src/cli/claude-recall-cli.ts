@@ -18,6 +18,7 @@ import { KiroCommands } from './commands/kiro-commands';
 import { DoctorCommands } from './commands/doctor-commands';
 import { StatuslineCommands } from './commands/statusline-command';
 import { runRepair, resolveOnPath, customLauncher } from './commands/repair';
+import { importSkipReason } from './import-validation';
 
 // v14 = add PreToolUse rule-injector + Post resolver for JITRI.
 // v15 = bound the search_enforcer PreToolUse entry with timeout: 5.
@@ -965,7 +966,14 @@ class ClaudeRecallCLI {
       }
 
       let imported = 0;
+      let skipped = 0;
       for (const memory of data.memories) {
+        const skipReason = importSkipReason(memory);
+        if (skipReason) {
+          console.warn(`⚠️  Skipped memory ${memory?.key ? `'${String(memory.key).slice(0, 60)}'` : '(no key)'}: ${skipReason}`);
+          skipped++;
+          continue;
+        }
         try {
           // Preserve each memory's original scoping. Exported rows carry
           // project_id/scope as columns (not inside context) — the previous
@@ -987,6 +995,7 @@ class ClaudeRecallCLI {
         }
       }
 
+      if (skipped > 0) console.warn(`⚠️  Skipped ${skipped} invalid memor${skipped === 1 ? 'y' : 'ies'} (see above)`);
       console.log(`✅ Imported ${imported}/${data.memories.length} memories${options.project ? ` (rescoped to project: ${options.project})` : ' (original project scoping preserved)'}`);
       this.logger.info('CLI', 'Import completed', { imported, total: data.memories.length, project: options.project });
     } catch (error) {

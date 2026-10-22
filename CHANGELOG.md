@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.45.1] - 2026-10-22
+
+### Security
+
+- **`~/.claude-recall` is now owner-only (`0700`).** The memory DB, hook logs and session state were created with the default umask (usually `0755`), so any other account on the machine could read everything you'd typed. New dirs are created `0700`, and an existing default `~/.claude-recall` is tightened on startup and on install. A custom `CLAUDE_RECALL_DB_PATH` is created `0700` but never chmodded (it may be shared deliberately).
+- **`import` validates each memory.** Import files are untrusted, and active rules are injected into every session. Malformed types and values over 10,000 chars are skipped with a warning. Types are checked by shape rather than a fixed list, so every real type (`solution`, `task-checkpoint`, …) survives an export → import round trip.
+
+### Documentation
+
+- **Privacy wording corrected.** The README said no prompts are transmitted; capture actually sends each prompt to the agent's own LLM (`claude -p` / Kiro, or the Anthropic API on opt-in) for classification. The memory DB itself never leaves the machine.
+
 ## [0.45.0] - 2026-10-21
 
 ### Added

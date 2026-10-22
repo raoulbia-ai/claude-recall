@@ -14,7 +14,8 @@ All memory is stored in:
 
 Properties:
 - local only
-- never transmitted
+- the database is never transmitted (prompts are, for classification — see the README's *Security & privacy*)
+- directory is owner-only (`0700`); an existing `~/.claude-recall` is tightened on startup
 - fully user-controlled
 - exportable
 - deletable

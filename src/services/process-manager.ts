@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LoggingService } from './logging';
 import { ConfigService } from './config';
+import { ensurePrivateDir } from './private-dir';
 
 /**
  * ProcessManager
@@ -27,9 +28,7 @@ export class ProcessManager {
     this.pidDir = path.join(baseDir, 'pids');
 
     // Ensure PID directory exists
-    if (!fs.existsSync(this.pidDir)) {
-      fs.mkdirSync(this.pidDir, { recursive: true });
-    }
+    ensurePrivateDir(this.pidDir);
   }
 
   static getInstance(): ProcessManager {
