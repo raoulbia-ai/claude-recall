@@ -507,9 +507,10 @@ Defaults work out of the box; tune via environment variables as needed.
 
 ## Security & privacy
 
-- SQLite memory never leaves your machine — no prompts, code, or memory content is transmitted
+- The memory database never leaves your machine, and `~/.claude-recall` is private to your user account (`0700`)
+- **Prompts are classified by an LLM.** To decide what's worth remembering, capture sends each prompt to the agent's own LLM: headless `claude -p` on your Claude login under Claude Code, Kiro's LLM under Kiro, or the Anthropic API only if you opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. That's the same provider your session already talks to, but avoid pasting secrets into prompts
 - Full transparency via CLI (`stats`, `search`, `export`)
-- Never stores secrets (API keys, passwords, tokens)
+- Never intentionally stores secrets (API keys, passwords, tokens)
 
 Details in [docs/security.md](docs/security.md).
 
