@@ -63,6 +63,8 @@ export interface MemorySource {
   session?: string;
   transcript?: string;
   entry?: string;
+  /** The user's text the memory was extracted from. */
+  excerpt?: string;
 }
 
 export interface MemoryStoreRequest {
@@ -78,12 +80,17 @@ export interface MemoryStoreRequest {
 
 const SOURCE_ID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
 
+/** Longest excerpt kept: the most text a capture hook classifies. */
+export const MAX_SOURCE_EXCERPT_CHARS = 2000;
+
 /**
  * Keep only well-formed source fields. A source can arrive from an import
  * file, and search_memory hands the transcript path to the agent to read, so
  * it must look like a Claude Code transcript: an absolute path to a .jsonl.
  */
-export function sanitizeSource(source?: MemorySource): Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry'> {
+export function sanitizeSource(
+  source?: MemorySource,
+): Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'> {
   const id = (v: unknown) => (typeof v === 'string' && SOURCE_ID_SHAPE.test(v) ? v : null);
   const t = source?.transcript;
   const transcript = typeof t === 'string' && t.length <= 1024 && path.isAbsolute(t) && t.endsWith('.jsonl') ? t : null;
@@ -91,6 +98,9 @@ export function sanitizeSource(source?: MemorySource): Pick<Memory, 'source_sess
     source_session: id(source?.session),
     source_transcript: transcript,
     source_entry: id(source?.entry),
+    source_excerpt: typeof source?.excerpt === 'string' && source.excerpt.trim()
+      ? source.excerpt.slice(0, MAX_SOURCE_EXCERPT_CHARS)
+      : null,
   };
 }
 

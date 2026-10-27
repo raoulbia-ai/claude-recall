@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import Database from 'better-sqlite3';
 import { MemoryStorage } from '../../src/memory/storage';
-import { sanitizeSource } from '../../src/services/memory';
+import { sanitizeSource, MAX_SOURCE_EXCERPT_CHARS } from '../../src/services/memory';
+import { formatSource } from '../../src/mcp/tools/memory-tools';
 import { hookSource } from '../../src/hooks/shared';
 
 const TRANSCRIPT = '/home/u/.claude/projects/p/0b1c-session.jsonl';
@@ -27,8 +28,10 @@ describe('memory source provenance', () => {
       source_session: 'sess-1',
       source_transcript: TRANSCRIPT,
       source_entry: 'entry-uuid-1',
+      source_excerpt: 'from now on always use pnpm, never npm',
     });
     const m = storage.retrieve('src-1');
+    expect(m?.source_excerpt).toBe('from now on always use pnpm, never npm');
     expect(m?.source_session).toBe('sess-1');
     expect(m?.source_transcript).toBe(TRANSCRIPT);
     expect(m?.source_entry).toBe('entry-uuid-1');
@@ -40,6 +43,7 @@ describe('memory source provenance', () => {
     expect(m?.source_session).toBeNull();
     expect(m?.source_transcript).toBeNull();
     expect(m?.source_entry).toBeNull();
+    expect(m?.source_excerpt).toBeNull();
   });
 
   it('keeps the original source when the same key is re-saved without one', () => {
@@ -49,12 +53,14 @@ describe('memory source provenance', () => {
       type: 'preference',
       source_session: 'sess-2',
       source_transcript: TRANSCRIPT,
+      source_excerpt: 'the first words',
     });
     storage.save({ key: 'src-2', value: { content: 'second' }, type: 'preference' });
     const m = storage.retrieve('src-2');
     expect(m?.value).toEqual({ content: 'second' });
     expect(m?.source_session).toBe('sess-2');
     expect(m?.source_transcript).toBe(TRANSCRIPT);
+    expect(m?.source_excerpt).toBe('the first words');
   });
 
   it('adds the columns to a database created before they existed', () => {
@@ -80,8 +86,10 @@ describe('memory source provenance', () => {
           value: { content: 'fresh rule' },
           type: 'preference',
           source_transcript: TRANSCRIPT,
+          source_excerpt: 'fresh words',
         });
         expect(migrated.retrieve('fresh')?.source_transcript).toBe(TRANSCRIPT);
+        expect(migrated.retrieve('fresh')?.source_excerpt).toBe('fresh words');
       } finally {
         migrated.close();
       }
@@ -97,7 +105,15 @@ describe('sanitizeSource', () => {
       source_session: 'acb927f2-91d1',
       source_transcript: TRANSCRIPT,
       source_entry: '91bfcded-a32c',
+      source_excerpt: null,
     });
+  });
+
+  it('caps the excerpt and drops an empty one', () => {
+    const long = 'x'.repeat(MAX_SOURCE_EXCERPT_CHARS + 50);
+    expect(sanitizeSource({ excerpt: long }).source_excerpt).toHaveLength(MAX_SOURCE_EXCERPT_CHARS);
+    expect(sanitizeSource({ excerpt: '   ' }).source_excerpt).toBeNull();
+    expect(sanitizeSource({ excerpt: 7 as any }).source_excerpt).toBeNull();
   });
 
   it('drops a transcript that is relative or not a .jsonl', () => {
@@ -113,21 +129,22 @@ describe('sanitizeSource', () => {
   });
 
   it('returns all nulls for no source', () => {
-    expect(sanitizeSource()).toEqual({ source_session: null, source_transcript: null, source_entry: null });
+    expect(sanitizeSource()).toEqual({ source_session: null, source_transcript: null, source_entry: null, source_excerpt: null });
   });
 });
 
 describe('hookSource', () => {
   it('reads the session and transcript from hook input, the uuid from the entry', () => {
-    expect(hookSource({ session_id: 's1', transcript_path: TRANSCRIPT }, { uuid: 'e1' })).toEqual({
+    expect(hookSource({ session_id: 's1', transcript_path: TRANSCRIPT }, { uuid: 'e1' }, 'words')).toEqual({
       session: 's1',
       transcript: TRANSCRIPT,
       entry: 'e1',
+      excerpt: 'words',
     });
   });
 
   it('tolerates missing input', () => {
-    expect(hookSource(undefined)).toEqual({ session: undefined, transcript: undefined, entry: undefined });
+    expect(hookSource(undefined)).toEqual({ session: undefined, transcript: undefined, entry: undefined, excerpt: undefined });
   });
 });
 
@@ -148,16 +165,37 @@ describe('search_memory shows the source', () => {
   });
 
   it('prints the transcript and entry under a captured memory', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-recall-src-'));
+    const transcript = path.join(dir, 'session.jsonl');
+    fs.writeFileSync(transcript, '{}\n');
+    try {
+      const { MemoryService } = await import('../../src/services/memory');
+      MemoryService.getInstance().store({
+        key: 'with-source',
+        value: { content: 'zebrafish builds use the release profile' },
+        type: 'devops',
+        source: { session: 's1', transcript, entry: 'e1', excerpt: 'zebrafish: always release profile' },
+      });
+      const out = await search('zebrafish');
+      expect(out).toContain('zebrafish builds use the release profile');
+      expect(out).toContain(`  source: ${transcript}, entry e1`);
+      expect(out).not.toContain("user's words");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('quotes the saved excerpt once the transcript is deleted', async () => {
     const { MemoryService } = await import('../../src/services/memory');
     MemoryService.getInstance().store({
-      key: 'with-source',
-      value: { content: 'zebrafish builds use the release profile' },
+      key: 'gone-source',
+      value: { content: 'narwhal releases are tagged by hand' },
       type: 'devops',
-      source: { session: 's1', transcript: TRANSCRIPT, entry: 'e1' },
+      source: { session: 's1', transcript: TRANSCRIPT, entry: 'e1', excerpt: 'tag narwhal releases by hand please' },
     });
-    const out = await search('zebrafish');
-    expect(out).toContain('zebrafish builds use the release profile');
-    expect(out).toContain(`  source: ${TRANSCRIPT}, entry e1`);
+    const out = await search('narwhal');
+    expect(out).not.toContain(TRANSCRIPT);
+    expect(out).toContain(`  source (transcript deleted; user's words): "tag narwhal releases by hand please"`);
   });
 
   it('prints no source line for a memory without one', async () => {
@@ -170,5 +208,17 @@ describe('search_memory shows the source', () => {
     const out = await search('quokka');
     expect(out).toContain('quokka deploys go through staging first');
     expect(out).not.toContain('source:');
+  });
+});
+
+describe('formatSource', () => {
+  it('prints nothing for a deleted transcript with no excerpt', () => {
+    expect(formatSource({ source_transcript: TRANSCRIPT, source_entry: 'e1' })).toBe('');
+  });
+
+  it('shortens a long excerpt', () => {
+    const out = formatSource({ source_excerpt: 'y'.repeat(800) });
+    expect(out).toContain('y'.repeat(500) + '…');
+    expect(out).not.toContain('y'.repeat(501));
   });
 });

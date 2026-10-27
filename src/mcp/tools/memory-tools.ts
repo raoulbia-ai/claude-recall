@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
@@ -143,7 +144,7 @@ export class MemoryTools {
       },
       {
         name: 'search_memory',
-        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance. A captured memory may list its source: the Claude Code transcript (.jsonl) and entry uuid it came from. Read that entry when you need the user\'s exact words rather than the extracted summary.',
+        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance. A captured memory may list its source: the Claude Code transcript (.jsonl) and entry uuid it came from, or, once that transcript has been deleted, the user\'s words quoted. Read the entry when you need the user\'s exact words rather than the extracted summary.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -551,12 +552,7 @@ export class MemoryTools {
         const val = typeof r.value === 'object'
           ? (r.value.content || r.value.value || JSON.stringify(r.value))
           : r.value;
-        const line = `- [${r.type}] (id: ${r.key}) ${val}`;
-        if (!r.source_transcript) return line;
-        // Pointer back to the raw exchange: the extract is the classifier's
-        // summary, the transcript holds what the user actually said.
-        const entry = r.source_entry ? `, entry ${r.source_entry}` : '';
-        return `${line}\n  source: ${r.source_transcript}${entry}`;
+        return `- [${r.type}] (id: ${r.key}) ${val}${formatSource(r)}`;
       });
 
       return {
@@ -652,4 +648,32 @@ export class MemoryTools {
   getTools(): MCPTool[] {
     return this.tools;
   }
+}
+
+/** Excerpt shown in search results; the full one is in the DB. */
+const SHOWN_EXCERPT_CHARS = 500;
+
+/**
+ * Pointer back to the raw exchange: the stored value is the classifier's
+ * summary, the transcript holds what the user actually said. Claude Code
+ * deletes old transcripts, so once the file is gone the saved excerpt stands
+ * in for it instead of a dead path.
+ */
+export function formatSource(m: {
+  source_transcript?: string | null;
+  source_entry?: string | null;
+  source_excerpt?: string | null;
+}): string {
+  if (m.source_transcript && fs.existsSync(m.source_transcript)) {
+    const entry = m.source_entry ? `, entry ${m.source_entry}` : '';
+    return `\n  source: ${m.source_transcript}${entry}`;
+  }
+  if (m.source_excerpt) {
+    const shown = m.source_excerpt.length > SHOWN_EXCERPT_CHARS
+      ? m.source_excerpt.slice(0, SHOWN_EXCERPT_CHARS) + '…'
+      : m.source_excerpt;
+    const why = m.source_transcript ? 'transcript deleted; ' : '';
+    return `\n  source (${why}user's words): ${JSON.stringify(shown)}`;
+  }
+  return '';
 }

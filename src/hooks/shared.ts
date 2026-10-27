@@ -253,13 +253,15 @@ export function isDuplicate(
 
 /**
  * Source of a memory captured from a Claude Code hook: its session and
- * transcript, plus the transcript entry's uuid when the capture came from one.
+ * transcript, the transcript entry's uuid when the capture came from one, and
+ * the user's text (which outlives the transcript).
  */
-export function hookSource(input: any, entry?: any): MemorySource {
+export function hookSource(input: any, entry?: any, excerpt?: string): MemorySource {
   return {
     session: input?.session_id,
     transcript: input?.transcript_path,
     entry: entry?.uuid,
+    excerpt,
   };
 }
 

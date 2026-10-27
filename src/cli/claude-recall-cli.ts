@@ -993,6 +993,7 @@ class ClaudeRecallCLI {
               session: memory.source_session,
               transcript: memory.source_transcript,
               entry: memory.source_entry,
+              excerpt: memory.source_excerpt,
             },
           });
           imported++;

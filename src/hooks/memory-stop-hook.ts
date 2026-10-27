@@ -139,7 +139,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
     if (isDuplicate(result.extract, existing)) continue;
 
     storeMemory(result.extract, result.type, undefined, result.confidence, {
-      source: hookSource(input, entries[textsWithIndex[i].idx]),
+      source: hookSource(input, entries[textsWithIndex[i].idx], textsWithIndex[i].text),
     });
     stored++;
 
