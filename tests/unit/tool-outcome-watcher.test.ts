@@ -246,11 +246,17 @@ describe('tool-outcome-watcher', () => {
         tool_input: { file_path: '/etc/hosts', old_string: 'foo', new_string: 'bar' },
         error: 'permission denied for /etc/hosts',
         session_id: SESSION,
+        transcript_path: '/home/u/.claude/projects/p/s.jsonl',
       });
 
       expect(mockStore).toHaveBeenCalledTimes(1);
       const call = mockStore.mock.calls[0][0];
       expect(call.type).toBe('failure');
+      expect(call.source).toEqual({
+        session: SESSION,
+        transcript: '/home/u/.claude/projects/p/s.jsonl',
+        entry: undefined,
+      });
     });
   });
 

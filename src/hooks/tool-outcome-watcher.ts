@@ -21,11 +21,12 @@ import {
   hookStateDir,
   safeErrorMessage,
   storeMemory,
+  hookSource,
   searchExisting,
   isDuplicate,
   jaccardSimilarity,
 } from './shared';
-import { MemoryService } from '../services/memory';
+import { MemoryService, MemorySource } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 
 const HOOK_NAME = 'tool-outcome-watcher';
@@ -267,7 +268,7 @@ async function handleBashOutcome(input: any): Promise<void> {
   const isFailure = exitMatch && exitMatch[1] !== '0';
 
   if (isFailure) {
-    await handleBashFailure(command, exitMatch![1], output, sessionId);
+    await handleBashFailure(command, exitMatch![1], output, sessionId, hookSource(input));
   } else {
     await handleBashSuccess(command, sessionId);
   }
@@ -278,6 +279,7 @@ async function handleBashFailure(
   exitCode: string,
   output: string,
   sessionId: string,
+  source: MemorySource,
 ): Promise<void> {
   // Quality filter — skip low-signal failures
   if (!shouldCaptureFailure(command, exitCode, output)) {
@@ -315,6 +317,7 @@ async function handleBashFailure(
     type: 'failure',
     context: { timestamp: Date.now() },
     relevanceScore: 0.85,
+    source,
   });
 
   // Write outcome event
@@ -467,7 +470,7 @@ export async function handleToolFailure(input: any): Promise<void> {
       preventative_checks: ['Verify tool inputs are correct', 'Check preconditions'],
     };
 
-    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8);
+    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8, { source: hookSource(input) });
 
     // Record structured outcome event, attributed to the emitting session so
     // memory-stop only folds THIS session's failures into its episode

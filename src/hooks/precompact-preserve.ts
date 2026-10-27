@@ -13,6 +13,7 @@ import {
   classifyBatch,
   isDuplicate,
   storeMemory,
+  hookSource,
   searchExisting,
   hookLog,
   readTranscriptTail,
@@ -68,7 +69,9 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
     if (isDuplicate(result.extract, existing)) continue;
 
     const prefixed = `[PreCompact] ${result.extract}`;
-    storeMemory(prefixed, result.type, undefined, result.confidence);
+    storeMemory(prefixed, result.type, undefined, result.confidence, {
+      source: hookSource(input, entries[textsWithIndex[i].idx]),
+    });
     stored++;
 
     hookLog('precompact', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);

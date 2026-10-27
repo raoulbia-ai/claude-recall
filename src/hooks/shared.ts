@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { MemoryService } from '../services/memory';
+import { MemoryService, MemorySource } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { ScoredMemory } from '../core/retrieval';
 import { classifyWithLLM, classifyBatchWithLLM } from './llm-classifier';
@@ -252,6 +252,18 @@ export function isDuplicate(
 }
 
 /**
+ * Source of a memory captured from a Claude Code hook: its session and
+ * transcript, plus the transcript entry's uuid when the capture came from one.
+ */
+export function hookSource(input: any, entry?: any): MemorySource {
+  return {
+    session: input?.session_id,
+    transcript: input?.transcript_path,
+    entry: entry?.uuid,
+  };
+}
+
+/**
  * Store a memory via MemoryService (in-process, no subprocess).
  */
 export function storeMemory(
@@ -259,7 +271,7 @@ export function storeMemory(
   type: string,
   projectId?: string,
   confidence: number = 0.8,
-  opts?: { needsPrecision?: boolean; fuzzyNewestWins?: boolean },
+  opts?: { needsPrecision?: boolean; fuzzyNewestWins?: boolean; source?: MemorySource },
 ): void {
   const memoryService = MemoryService.getInstance();
   const key = `hook_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -281,6 +293,7 @@ export function storeMemory(
       timestamp: Date.now(),
     },
     relevanceScore: confidence,
+    source: opts?.source,
   }, { fuzzyNewestWins: opts?.fuzzyNewestWins });
 }
 

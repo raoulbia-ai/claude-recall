@@ -987,7 +987,13 @@ class ClaudeRecallCLI {
               ...(memory.context || {}),
               projectId: options.project ?? memory.project_id ?? memory.context?.projectId,
               scope: memory.scope ?? memory.context?.scope ?? null,
-            }
+            },
+            // sanitized in MemoryService.store: an import file is untrusted
+            source: {
+              session: memory.source_session,
+              transcript: memory.source_transcript,
+              entry: memory.source_entry,
+            },
           });
           imported++;
         } catch (error) {

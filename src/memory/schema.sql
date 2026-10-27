@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS memories (
   confidence_score REAL,
   sophistication_level INTEGER DEFAULT 1,
   scope TEXT CHECK(scope IS NULL OR scope IN ('universal', 'project')),
-  content_hash TEXT
+  content_hash TEXT,
+  source_session TEXT,
+  source_transcript TEXT,
+  source_entry TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);
