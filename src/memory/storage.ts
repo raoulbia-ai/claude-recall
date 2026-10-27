@@ -51,10 +51,13 @@ export interface Memory {
    * transcript file, and the transcript entry's uuid when known. Lets a reader
    * go back to the user's exact words instead of trusting the classifier's
    * extract. Null for memories stored without a hook input (MCP, CLI, legacy).
+   * source_excerpt is a copy of the user's text, kept because Claude Code
+   * deletes old transcripts (cleanupPeriodDays, 30 days by default).
    */
   source_session?: string | null;
   source_transcript?: string | null;
   source_entry?: string | null;
+  source_excerpt?: string | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -201,7 +204,7 @@ export class MemoryStorage {
       }
       // Add source provenance columns if missing (v0.46.0). No backfill: older
       // memories have no recorded source.
-      for (const col of ['source_session', 'source_transcript', 'source_entry']) {
+      for (const col of ['source_session', 'source_transcript', 'source_entry', 'source_excerpt']) {
         if (!columnNames.includes(col)) {
           this.db.exec(`ALTER TABLE memories ADD COLUMN ${col} TEXT`);
         }
@@ -610,8 +613,8 @@ export class MemoryStorage {
       INSERT INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
        preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash,
-       source_session, source_transcript, source_entry)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       source_session, source_transcript, source_entry, source_excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
         value = excluded.value,
         type = excluded.type,
@@ -631,7 +634,8 @@ export class MemoryStorage {
         -- a same-key re-save without a source keeps the original one
         source_session = COALESCE(excluded.source_session, memories.source_session),
         source_transcript = COALESCE(excluded.source_transcript, memories.source_transcript),
-        source_entry = COALESCE(excluded.source_entry, memories.source_entry)
+        source_entry = COALESCE(excluded.source_entry, memories.source_entry),
+        source_excerpt = COALESCE(excluded.source_excerpt, memories.source_excerpt)
     `);
 
     stmt.run(
@@ -653,7 +657,8 @@ export class MemoryStorage {
       contentHash,
       memory.source_session || null,
       memory.source_transcript || null,
-      memory.source_entry || null
+      memory.source_entry || null,
+      memory.source_excerpt || null
     );
 
     // Newest-wins: retire the fuzzy-matched old row in favor of the row just
@@ -796,6 +801,7 @@ export class MemoryStorage {
       source_session: row.source_session || null,
       source_transcript: row.source_transcript || null,
       source_entry: row.source_entry || null,
+      source_excerpt: row.source_excerpt || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };

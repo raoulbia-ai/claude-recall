@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS memories (
   content_hash TEXT,
   source_session TEXT,
   source_transcript TEXT,
-  source_entry TEXT
+  source_entry TEXT,
+  source_excerpt TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);

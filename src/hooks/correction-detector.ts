@@ -83,7 +83,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
     needsPrecision: result.precision === 'vague',
     fuzzyNewestWins: true,
     // no entry uuid: the prompt isn't written to the transcript yet
-    source: hookSource(input),
+    source: hookSource(input, undefined, prompt),
   });
 
   const summary = result.extract.length > 60
