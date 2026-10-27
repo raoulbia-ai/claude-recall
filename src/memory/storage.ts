@@ -46,6 +46,15 @@ export interface Memory {
   sophistication_level?: number;  // 1-4: Procedural → Compositional
   scope?: 'universal' | 'project' | null;  // v0.8.0: Memory scope
   content_hash?: string;
+  /**
+   * Where a captured memory came from (v0.46.0): the Claude Code session, its
+   * transcript file, and the transcript entry's uuid when known. Lets a reader
+   * go back to the user's exact words instead of trusting the classifier's
+   * extract. Null for memories stored without a hook input (MCP, CLI, legacy).
+   */
+  source_session?: string | null;
+  source_transcript?: string | null;
+  source_entry?: string | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -190,6 +199,14 @@ export class MemoryStorage {
           console.error('✅ Added content_hash column');
         }
       }
+      // Add source provenance columns if missing (v0.46.0). No backfill: older
+      // memories have no recorded source.
+      for (const col of ['source_session', 'source_transcript', 'source_entry']) {
+        if (!columnNames.includes(col)) {
+          this.db.exec(`ALTER TABLE memories ADD COLUMN ${col} TEXT`);
+        }
+      }
+
       // v0.18.0: Outcome-aware learning tables
       const outcomeTables = this.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','candidate_lessons','memory_stats')"
@@ -592,8 +609,9 @@ export class MemoryStorage {
     const stmt = this.db.prepare(`
       INSERT INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
-       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash,
+       source_session, source_transcript, source_entry)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
         value = excluded.value,
         type = excluded.type,
@@ -609,7 +627,11 @@ export class MemoryStorage {
         confidence_score = excluded.confidence_score,
         sophistication_level = excluded.sophistication_level,
         scope = excluded.scope,
-        content_hash = excluded.content_hash
+        content_hash = excluded.content_hash,
+        -- a same-key re-save without a source keeps the original one
+        source_session = COALESCE(excluded.source_session, memories.source_session),
+        source_transcript = COALESCE(excluded.source_transcript, memories.source_transcript),
+        source_entry = COALESCE(excluded.source_entry, memories.source_entry)
     `);
 
     stmt.run(
@@ -628,7 +650,10 @@ export class MemoryStorage {
       memory.confidence_score || null,
       memory.sophistication_level || 1,
       memory.scope || null,
-      contentHash
+      contentHash,
+      memory.source_session || null,
+      memory.source_transcript || null,
+      memory.source_entry || null
     );
 
     // Newest-wins: retire the fuzzy-matched old row in favor of the row just
@@ -768,6 +793,9 @@ export class MemoryStorage {
       sophistication_level: row.sophistication_level || 1,
       scope: row.scope || null,
       content_hash: row.content_hash || null,
+      source_session: row.source_session || null,
+      source_transcript: row.source_transcript || null,
+      source_entry: row.source_entry || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };

@@ -143,7 +143,7 @@ export class MemoryTools {
       },
       {
         name: 'search_memory',
-        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance.',
+        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance. A captured memory may list its source: the Claude Code transcript (.jsonl) and entry uuid it came from. Read that entry when you need the user\'s exact words rather than the extracted summary.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -551,7 +551,12 @@ export class MemoryTools {
         const val = typeof r.value === 'object'
           ? (r.value.content || r.value.value || JSON.stringify(r.value))
           : r.value;
-        return `- [${r.type}] (id: ${r.key}) ${val}`;
+        const line = `- [${r.type}] (id: ${r.key}) ${val}`;
+        if (!r.source_transcript) return line;
+        // Pointer back to the raw exchange: the extract is the classifier's
+        // summary, the transcript holds what the user actually said.
+        const entry = r.source_entry ? `, entry ${r.source_entry}` : '';
+        return `${line}\n  source: ${r.source_transcript}${entry}`;
       });
 
       return {

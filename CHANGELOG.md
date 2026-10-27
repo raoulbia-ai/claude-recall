@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Memories link back to where they came from.** Hook captures (corrections, preferences, PreCompact, Stop, tool failures) now record the Claude Code session, its transcript path and, when the capture came from a transcript entry, that entry's `uuid`, in three new columns (`source_session`, `source_transcript`, `source_entry`). `search_memory` prints the source under each memory and tells the agent it can read the original exchange: the stored text is the classifier's summary, and a stronger model can check it against what the user actually said. Existing databases gain the columns on startup, with no backfill. A same-key re-save without a source keeps the original one. Sources survive export → import, and are validated on the way in (ids must be uuid-shaped, the transcript an absolute `.jsonl` path), since the agent may be told to read that file.
+
 ## [0.45.1] - 2026-10-22
 
 ### Security

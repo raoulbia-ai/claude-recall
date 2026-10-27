@@ -357,6 +357,8 @@ Six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`
 - **Pi** — native extension (`recall_*` tools) + event handlers
 - **Kiro CLI** — custom agent bundling the MCP server + Kiro hooks ([details](docs/kiro.md))
 
+**Source links.** A memory captured by a Claude Code hook records the session, transcript file and transcript entry it came from. `search_memory` prints that source under the memory, so the agent can read the user's exact words when the one-line extract isn't enough. The link breaks once Claude Code deletes old transcripts (`cleanupPeriodDays`, 30 days by default). Memories stored through `store_memory`, the CLI, Pi or Kiro, and memories captured before 0.46.0, have no source.
+
 **Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`, plus auto-generated `.claude/skills/auto-*/` crystallized from accumulated memories), and a bundled skill file for Pi.
 
 **Outcome-aware learning.** Claude Recall tracks what happens *after* the agent acts:

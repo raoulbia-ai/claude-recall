@@ -10,6 +10,7 @@ import {
   classifyContent,
   isDuplicate,
   storeMemory,
+  hookSource,
   searchExisting,
   hookLog,
   safeErrorMessage,
@@ -81,6 +82,8 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   storeMemory(result.extract, result.type, undefined, result.confidence, {
     needsPrecision: result.precision === 'vague',
     fuzzyNewestWins: true,
+    // no entry uuid: the prompt isn't written to the transcript yet
+    source: hookSource(input),
   });
 
   const summary = result.extract.length > 60

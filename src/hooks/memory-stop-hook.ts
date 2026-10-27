@@ -10,6 +10,7 @@ import {
   classifyBatch,
   isDuplicate,
   storeMemory,
+  hookSource,
   searchExisting,
   hookLog,
   hookStateDir,
@@ -137,7 +138,9 @@ export async function handleMemoryStop(input: any): Promise<void> {
     const existing = searchExisting(result.extract.substring(0, 100));
     if (isDuplicate(result.extract, existing)) continue;
 
-    storeMemory(result.extract, result.type, undefined, result.confidence);
+    storeMemory(result.extract, result.type, undefined, result.confidence, {
+      source: hookSource(input, entries[textsWithIndex[i].idx]),
+    });
     stored++;
 
     hookLog('memory-stop', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { MemoryStorage, Memory } from '../memory/storage';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
@@ -57,6 +58,13 @@ export interface ComplianceReport {
   };
 }
 
+/** Where a captured memory came from (see Memory.source_* in storage). */
+export interface MemorySource {
+  session?: string;
+  transcript?: string;
+  entry?: string;
+}
+
 export interface MemoryStoreRequest {
   key: string;
   value: any;
@@ -65,6 +73,25 @@ export interface MemoryStoreRequest {
   relevanceScore?: number;
   preferenceKey?: string;
   isOverride?: boolean;
+  source?: MemorySource;
+}
+
+const SOURCE_ID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * Keep only well-formed source fields. A source can arrive from an import
+ * file, and search_memory hands the transcript path to the agent to read, so
+ * it must look like a Claude Code transcript: an absolute path to a .jsonl.
+ */
+export function sanitizeSource(source?: MemorySource): Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry'> {
+  const id = (v: unknown) => (typeof v === 'string' && SOURCE_ID_SHAPE.test(v) ? v : null);
+  const t = source?.transcript;
+  const transcript = typeof t === 'string' && t.length <= 1024 && path.isAbsolute(t) && t.endsWith('.jsonl') ? t : null;
+  return {
+    source_session: id(source?.session),
+    source_transcript: transcript,
+    source_entry: id(source?.entry),
+  };
 }
 
 export class MemoryService {
@@ -138,7 +165,8 @@ export class MemoryService {
         relevance_score: request.relevanceScore || 1.0,
         scope: scope,
         preference_key: request.preferenceKey,
-        is_active: true
+        is_active: true,
+        ...sanitizeSource(request.source),
       };
 
       this.storage.save(memory, opts);
