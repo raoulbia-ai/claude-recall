@@ -275,6 +275,17 @@ export class DatabaseManager {
       source.close();
     }
 
+    // `copyFileSync` carried the source permissions along; `VACUUM INTO` creates
+    // a new file under the process umask, which on a default umask is 0644. That
+    // would quietly undo owner-only access for a file holding every rule and
+    // secret the agent has learned, so the mode is copied from the database
+    // explicitly rather than left to the environment.
+    try {
+      fs.chmodSync(backupPath, fs.statSync(dbPath).mode & 0o777);
+    } catch (error) {
+      this.logger.error('DatabaseManager', 'Could not match backup permissions to the database', error);
+    }
+
     // A backup nobody verified is a guess. Reading it back costs milliseconds and
     // is the only thing that distinguishes a restore point from a copy of the
     // damage — and it must happen BEFORE rotation, or a corrupt new file silently

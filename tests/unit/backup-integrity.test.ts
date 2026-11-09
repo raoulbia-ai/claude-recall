@@ -147,6 +147,20 @@ describe('backup integrity', () => {
     expect(backups()).toHaveLength(0); // and no copy of the damage was retained
   });
 
+  it('does not widen permissions beyond the database it copies', async () => {
+    // The database is owner-only; a backup of it holds exactly the same rules and
+    // secrets. `VACUUM INTO` creates a fresh file under the umask, so without an
+    // explicit chmod a default umask publishes it as 0644.
+    fs.chmodSync(dbPath, 0o600);
+
+    await DatabaseManager.getInstance().compact();
+
+    const made = backups();
+    expect(made).toHaveLength(1);
+    const mode = fs.statSync(path.join(backupDir, made[0])).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
   it('keeps the previous backups when the new one cannot be verified', async () => {
     fs.mkdirSync(backupDir, { recursive: true });
     const keeper = path.join(backupDir, 'claude-recall-known-good.db');
