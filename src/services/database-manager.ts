@@ -152,6 +152,19 @@ export class DatabaseManager {
     let deduplicatedCount: number;
 
     try {
+      // VACUUM rewrites every page of the file. Running it over a B-tree that is
+      // already damaged turns a partial loss into a total one — and on 2026-11-09
+      // compaction did exactly that, start to finish, on a database SQLite was
+      // already calling malformed. Check first, refuse early, and leave the file
+      // untouched for recovery.
+      const health = this.integrityVerdict(dbPath);
+      if (health !== 'ok') {
+        this.logger.error('DatabaseManager', `Skipping compaction: integrity check failed (${health})`);
+        console.error(`⚠️  Skipping compaction — integrity check failed: ${health}`);
+        console.error('   Recover the database before compacting; the file was left untouched.');
+        throw new Error(`Database failed integrity check: ${health}`);
+      }
+
       // Create backup if not dry run
       if (!dryRun) {
         backupPath = await this.createBackup();
@@ -235,14 +248,72 @@ export class DatabaseManager {
     }
     
     const backupPath = path.join(backupDir, `claude-recall-${timestamp}.db`);
-    
-    // Copy database file
-    fs.copyFileSync(dbPath, backupPath);
-    
-    // Clean up old backups (keep last 3)
+
+    // `fs.copyFileSync` was wrong twice over, and a 2026-11-09 corruption proved
+    // both halves on a live database. (1) In WAL mode the committed tail lives in
+    // the -wal file, which the copy never touched, so a "backup" was the database
+    // minus its most recent transactions. (2) Other agent processes write while
+    // the copy runs: a plain byte copy of a moving file is a torn image, not a
+    // snapshot. All three retained backups were unreadable in exactly the same
+    // pages as the database they were supposed to rescue.
+    //
+    // `VACUUM INTO` takes a consistent snapshot through SQLite itself: it reads a
+    // single committed view (WAL included) under proper locking and writes a
+    // fresh, defragmented database. Available since SQLite 3.27 (2019); older
+    // engines fall back to the online backup API, which is also snapshot-correct.
+    const source = new Database(dbPath, { readonly: true });
+    try {
+      try {
+        source.exec(`VACUUM INTO ${this.quoteSqlString(backupPath)}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/near "INTO"|syntax error/i.test(message)) throw error;
+        this.logger.info('DatabaseManager', 'VACUUM INTO unavailable, using the online backup API');
+        await (source as any).backup(backupPath);
+      }
+    } finally {
+      source.close();
+    }
+
+    // A backup nobody verified is a guess. Reading it back costs milliseconds and
+    // is the only thing that distinguishes a restore point from a copy of the
+    // damage — and it must happen BEFORE rotation, or a corrupt new file silently
+    // evicts the last good one (which is how the 2026-11-09 incident ran out of
+    // clean copies: keep-3, all three written after the damage).
+    const verdict = this.integrityVerdict(backupPath);
+    if (verdict !== 'ok') {
+      this.logger.error('DatabaseManager', `Backup failed integrity check: ${verdict}`);
+      try { fs.unlinkSync(backupPath); } catch { /* best effort */ }
+      throw new Error(`Refusing to keep an unverifiable backup (${verdict}); existing backups left untouched`);
+    }
+
+    // Clean up old backups (keep last 3) — only now that the new one is known good
     this.cleanupOldBackups(backupDir, 3);
     
     return backupPath;
+  }
+
+  /**
+   * `PRAGMA integrity_check` reduced to a single verdict: 'ok', or the first
+   * problem reported. Used to gate both backup rotation and VACUUM.
+   */
+  private integrityVerdict(dbPath: string): string {
+    let db: Database.Database | undefined;
+    try {
+      db = new Database(dbPath, { readonly: true });
+      const rows = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
+      const first = rows?.[0]?.integrity_check ?? 'no result';
+      return first === 'ok' ? 'ok' : first;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    } finally {
+      try { db?.close(); } catch { /* best effort */ }
+    }
+  }
+
+  /** Single-quoted SQL string literal (VACUUM INTO takes no bound parameters). */
+  private quoteSqlString(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
   }
   
   /**
