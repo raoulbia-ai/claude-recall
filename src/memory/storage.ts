@@ -68,6 +68,9 @@ export interface Memory {
   bm25Score?: number;
 }
 
+/** The provenance columns, as returned alongside rule rows. */
+export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
+
 export class MemoryStorage {
   private db: Database.Database;
 
@@ -1247,7 +1250,7 @@ export class MemoryStorage {
    * All active rule-type rows, for the memory janitor's review pass.
    * Scoped like loadActiveRules: the given project, universal, or unscoped.
    */
-  getActiveRules(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}> {
+  getActiveRules(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number} & SourceColumns> {
     const typePlaceholders = MemoryStorage.RULE_TYPES.map(() => '?').join(',');
     const params: any[] = [...MemoryStorage.RULE_TYPES];
     let scopeClause = `AND (project_id IS NULL OR project_id = '' OR scope = 'universal')`;
@@ -1256,11 +1259,12 @@ export class MemoryStorage {
       params.push(projectId);
     }
     return this.db.prepare(`
-      SELECT id, key, type, value, load_count, cite_count, timestamp
+      SELECT id, key, type, value, load_count, cite_count, timestamp,
+             source_session, source_transcript, source_entry, source_excerpt
       FROM memories
       WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
       ORDER BY timestamp ASC
-    `).all(...params) as Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}>;
+    `).all(...params) as Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number} & SourceColumns>;
   }
 
   /**

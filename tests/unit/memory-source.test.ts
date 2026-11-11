@@ -63,6 +63,20 @@ describe('memory source provenance', () => {
     expect(m?.source_excerpt).toBe('the first words');
   });
 
+  it('returns the source fields with active rules, for the janitor', () => {
+    storage.save({
+      key: 'src-rule',
+      value: { content: 'always use pnpm' },
+      type: 'preference',
+      source_session: 'sess-3',
+      source_excerpt: 'always use pnpm',
+    });
+    const r = storage.getActiveRules().find(x => x.key === 'src-rule');
+    expect(r?.source_session).toBe('sess-3');
+    expect(r?.source_excerpt).toBe('always use pnpm');
+    expect(r?.source_transcript).toBeNull();
+  });
+
   it('adds the columns to a database created before they existed', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-recall-src-'));
     const dbPath = path.join(dir, 'old.db');
