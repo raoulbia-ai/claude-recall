@@ -338,9 +338,11 @@ export class MemoryTools {
       // Token budget — cap the load_rules payload so it doesn't dominate the host's
       // context window (CC precedent: CAPPED_DEFAULT_MAX_TOKENS = 8_000 in utils/context.ts).
       // Priority order of inclusion: corrections > preferences (by cite) > devops (by cite) > failures.
-      // Within each category, high-cited rules sink to the top so the first-to-drop are uncited.
+      // Within each category, confirmed rules (checked against the user's words)
+      // come first, then high-cited ones, so the first-to-drop are unconfirmed and uncited.
       const BUDGET = Number(process.env.CLAUDE_RECALL_LOAD_BUDGET_TOKENS ?? 2000);
-      const byCiteThenFresh = (a: any, b: any) =>
+      const byConfirmedThenCite = (a: any, b: any) =>
+        (b.confirmed_at ? 1 : 0) - (a.confirmed_at ? 1 : 0) ||
         (b.cite_count || 0) - (a.cite_count || 0) ||
         (b.timestamp || 0) - (a.timestamp || 0);
 
@@ -368,9 +370,9 @@ export class MemoryTools {
 
       // Allocate in priority order (corrections + solutions first to protect high-signal items).
       const keptCorrections = takeBounded(rules.corrections);
-      const keptSolutions = takeBounded([...(rules.solutions ?? [])].sort(byCiteThenFresh));
-      const keptPreferences = takeBounded([...rules.preferences].sort(byCiteThenFresh));
-      const keptDevops = takeBounded([...rules.devops].sort(byCiteThenFresh));
+      const keptSolutions = takeBounded([...(rules.solutions ?? [])].sort(byConfirmedThenCite));
+      const keptPreferences = takeBounded([...rules.preferences].sort(byConfirmedThenCite));
+      const keptDevops = takeBounded([...rules.devops].sort(byConfirmedThenCite));
       const keptFailures = takeBounded(rules.failures, 3);
 
       // Format categorized markdown sections (output order stays user-familiar).

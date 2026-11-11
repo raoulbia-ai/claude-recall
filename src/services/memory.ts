@@ -598,19 +598,24 @@ export class MemoryService {
 
       // All categories filter is_active so auto-demoted rules are excluded uniformly.
       const isActive = (m: Memory) => m.is_active !== false;
+      // Capped categories keep confirmed rules first, so the cap cuts
+      // unconfirmed ones before rules checked against the user's words.
+      const confirmedThenNewest = (a: Memory, b: Memory) =>
+        (b.confirmed_at ? 1 : 0) - (a.confirmed_at ? 1 : 0) ||
+        (b.timestamp || 0) - (a.timestamp || 0);
 
       // Preferences: active only
       const allPreferences = this.storage.searchByContext({ ...searchContext, type: 'preference' });
       const preferences = allPreferences.filter(isActive);
 
-      // Corrections: top 10 by timestamp
+      // Corrections: top 10, confirmed first, then newest
       const allCorrections = this.storage.searchByContext({ ...searchContext, type: 'correction' });
       const corrections = allCorrections
         .filter(isActive)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .sort(confirmedThenNewest)
         .slice(0, 10);
 
-      // Failures: top 5 by timestamp
+      // Failures: top 5, confirmed first, then newest
       const allFailures = this.storage.searchByContext({ ...searchContext, type: 'failure' });
       const failures = allFailures
         .filter(isActive)
@@ -618,17 +623,17 @@ export class MemoryService {
         // or counted. Same predicate memory-sync uses for the file index —
         // otherwise the surfaces contradict each other ("3 rules" vs "none synced").
         .filter(m => !isBoilerplateFailureValue(m.value))
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .sort(confirmedThenNewest)
         .slice(0, 5);
 
       // DevOps: all active rules
       const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' }).filter(isActive);
 
-      // Solutions: hard-won reusable resolutions, top 5 by timestamp
+      // Solutions: hard-won reusable resolutions, top 5, confirmed first, then newest
       const allSolutions = this.storage.searchByContext({ ...searchContext, type: 'solution' });
       const solutions = allSolutions
         .filter(isActive)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .sort(confirmedThenNewest)
         .slice(0, 5);
 
       const counts = [

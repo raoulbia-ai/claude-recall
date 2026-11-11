@@ -286,6 +286,27 @@ describe('MemoryService', () => {
         .get('rule_corr_active') as { load_count: number };
       expect(row.load_count).toBeGreaterThanOrEqual(1);
     });
+
+    it('keeps a confirmed correction ahead of newer unconfirmed ones when the cap cuts', () => {
+      const storage = service.getStorage();
+      const base = Date.now() - 100000;
+      storage.save({
+        key: 'rule_corr_confirmed', value: { content: 'old but confirmed correction' },
+        type: 'correction', project_id: PROJECT, timestamp: base, source_excerpt: 'old but confirmed',
+      });
+      const id = (storage.retrieve('rule_corr_confirmed') as any).id;
+      expect(storage.confirmRulesByIds([id])).toBe(1);
+      for (let i = 0; i < 12; i++) {
+        storage.save({
+          key: `rule_corr_new_${i}`, value: { content: `newer unconfirmed correction number ${i}` },
+          type: 'correction', project_id: PROJECT, timestamp: base + 1000 * (i + 1),
+        });
+      }
+
+      const corrections = service.loadActiveRules().corrections;
+      expect(corrections).toHaveLength(10);
+      expect(corrections[0].key).toBe('rule_corr_confirmed');
+    });
   });
 
   describe('mergeIntoValue', () => {

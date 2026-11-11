@@ -58,6 +58,13 @@ export interface Memory {
   source_transcript?: string | null;
   source_entry?: string | null;
   source_excerpt?: string | null;
+  /**
+   * When the memory janitor checked this rule against source_excerpt and found
+   * the user's words state it (v0.47.0). Null = unconfirmed: inferred by a
+   * classifier, stored without a source, or not yet reviewed. Cleared when the
+   * content changes. Confirmed rules load first.
+   */
+  confirmed_at?: number | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -70,6 +77,12 @@ export interface Memory {
 
 /** The provenance columns, as returned alongside rule rows. */
 export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
+
+/** Rule rows as getActiveRules returns them. */
+export type ActiveRuleRow = {
+  id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number;
+  confirmed_at?: number | null;
+} & SourceColumns;
 
 export class MemoryStorage {
   private db: Database.Database;
@@ -211,6 +224,10 @@ export class MemoryStorage {
         if (!columnNames.includes(col)) {
           this.db.exec(`ALTER TABLE memories ADD COLUMN ${col} TEXT`);
         }
+      }
+      // Add confirmed_at if missing (v0.47.0). Everything starts unconfirmed.
+      if (!columnNames.includes('confirmed_at')) {
+        this.db.exec('ALTER TABLE memories ADD COLUMN confirmed_at INTEGER');
       }
 
       // v0.18.0: Outcome-aware learning tables
@@ -638,7 +655,10 @@ export class MemoryStorage {
         source_session = COALESCE(excluded.source_session, memories.source_session),
         source_transcript = COALESCE(excluded.source_transcript, memories.source_transcript),
         source_entry = COALESCE(excluded.source_entry, memories.source_entry),
-        source_excerpt = COALESCE(excluded.source_excerpt, memories.source_excerpt)
+        source_excerpt = COALESCE(excluded.source_excerpt, memories.source_excerpt),
+        -- a confirmation covers the content that was checked; new content starts unconfirmed
+        confirmed_at = CASE WHEN excluded.content_hash IS memories.content_hash
+                            THEN memories.confirmed_at ELSE NULL END
     `);
 
     stmt.run(
@@ -805,6 +825,7 @@ export class MemoryStorage {
       source_transcript: row.source_transcript || null,
       source_entry: row.source_entry || null,
       source_excerpt: row.source_excerpt || null,
+      confirmed_at: row.confirmed_at || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };
@@ -1250,7 +1271,7 @@ export class MemoryStorage {
    * All active rule-type rows, for the memory janitor's review pass.
    * Scoped like loadActiveRules: the given project, universal, or unscoped.
    */
-  getActiveRules(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number} & SourceColumns> {
+  getActiveRules(projectId?: string): ActiveRuleRow[] {
     const typePlaceholders = MemoryStorage.RULE_TYPES.map(() => '?').join(',');
     const params: any[] = [...MemoryStorage.RULE_TYPES];
     let scopeClause = `AND (project_id IS NULL OR project_id = '' OR scope = 'universal')`;
@@ -1260,11 +1281,30 @@ export class MemoryStorage {
     }
     return this.db.prepare(`
       SELECT id, key, type, value, load_count, cite_count, timestamp,
-             source_session, source_transcript, source_entry, source_excerpt
+             source_session, source_transcript, source_entry, source_excerpt, confirmed_at
       FROM memories
       WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
       ORDER BY timestamp ASC
-    `).all(...params) as Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number} & SourceColumns>;
+    `).all(...params) as ActiveRuleRow[];
+  }
+
+  /**
+   * Mark rules confirmed: the janitor found the user's source words state
+   * them. Only active rules that have a source excerpt and aren't already
+   * confirmed are touched. Returns the number of rows marked.
+   */
+  confirmRulesByIds(ids: number[]): number {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db.prepare(
+      `UPDATE memories SET confirmed_at = ?
+       WHERE id IN (${placeholders}) AND is_active = 1
+         AND confirmed_at IS NULL AND source_excerpt IS NOT NULL`
+    ).run(Date.now(), ...ids);
+    if (result.changes > 0) {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return result.changes;
   }
 
   /**
