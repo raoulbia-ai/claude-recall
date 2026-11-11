@@ -202,7 +202,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 | **Hard-won success** | A goal that failed repeatedly then finally worked is captured as a reusable `solution` ([details](#success-capture)) | ✓ | ✓ |  |
-| **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules ([details](#memory-janitor)) | ✓ |  | ✓ |
+| **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules, checks rules against the user's own words and confirms the ones they state ([details](#memory-janitor)) | ✓ |  | ✓ |
 
 Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
 
@@ -516,6 +516,7 @@ Defaults work out of the box; tune via environment variables as needed.
 
 - The memory database never leaves your machine, and `~/.claude-recall` is private to your user account (`0700`)
 - **Prompts are classified by an LLM.** To decide what's worth remembering, capture sends each prompt to the agent's own LLM: headless `claude -p` on your Claude login under Claude Code, Kiro's LLM under Kiro, or the Anthropic API only if you opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. That's the same provider your session already talks to, but avoid pasting secrets into prompts
+- **Captured memories keep a copy of your words.** Since 0.46.0, a hook capture stores the message it came from (up to 2,000 chars, including anything pasted into it) and the path of the Claude Code transcript. That text stays in the local database and in `export` files. The daily janitor sends it, shortened to 400 chars per rule, to the same LLM as capture
 - Full transparency via CLI (`stats`, `search`, `export`)
 - Never intentionally stores secrets (API keys, passwords, tokens)
 
