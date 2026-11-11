@@ -119,6 +119,85 @@ npx claude-recall clear --type preference --force
 | `-t, --type <type>` | Clear only this memory type |
 | `--force` | Required confirmation flag |
 
+## Rule Hygiene Commands
+
+These keep the active rule set small and accurate. None of them deletes a
+memory: a demoted rule is excluded from `load_rules` and injection, and
+`rules promote <id>` brings it back. Re-teaching a demoted rule also revives it.
+
+### janitor
+
+Review the stored rules with the runtime's own LLM (`claude -p` under Claude
+Code, `kiro-cli` under Kiro). It runs automatically once a day; this command
+runs it now. See the README's [Memory janitor](../README.md#memory-janitor).
+
+```bash
+npx claude-recall janitor --dry-run   # preview, change nothing
+npx claude-recall janitor             # run now
+npx claude-recall janitor --status    # show the last run's report
+npx claude-recall janitor --runtime kiro
+```
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview actions without changing anything |
+| `--runtime <cc\|kiro>` | LLM backend to use (default: `cc`) |
+| `--status` | Show the last report instead of running |
+
+Each action in the report is one of:
+
+| Action | Effect |
+|---|---|
+| `demote` | Noise, or a rule its source words don't support (such as a fragment of pasted text) |
+| `merge` | Several rules saying the same thing become one; the originals are demoted |
+| `rewrite` | A vague rule is replaced by a precise one; the original is demoted |
+| `confirm` | The user's source words plainly state the rule; confirmed rules load first |
+
+Rules younger than `CLAUDE_RECALL_JANITOR_GRACE_HOURS` (default 24) are not
+reviewed, and a run applies at most 10 actions. Disable the daily run with
+`CLAUDE_RECALL_JANITOR=off`.
+
+### rules demote
+
+Demote rules that are loaded often but never cited, the counter-based
+counterpart to the janitor. Runs on MCP startup when
+`CLAUDE_RECALL_AUTO_DEMOTE=true`; this command runs it on demand.
+
+```bash
+npx claude-recall rules demote --dry-run
+npx claude-recall rules demote --min-loads 30 --min-age-days 14
+```
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview without changing anything |
+| `--min-loads <n>` | Minimum load count to qualify (default: 20) |
+| `--min-age-days <n>` | Minimum rule age in days (default: 7) |
+
+### rules dedup
+
+Collapse near-duplicate rules that predate write-time dedup. In each group
+the oldest rule is kept and takes over the others' load and cite counts.
+
+```bash
+npx claude-recall rules dedup --dry-run
+npx claude-recall rules dedup --threshold 0.75
+```
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview without changing anything |
+| `--threshold <n>` | Jaccard similarity threshold 0-1 (default: 0.65) |
+
+### rules promote
+
+Restore a rule demoted by `rules demote`, `rules dedup` or the janitor. Ids are
+shown by `janitor --status` and the dry-run output of each command.
+
+```bash
+npx claude-recall rules promote 42
+```
+
 ## Setup Commands
 
 ### setup

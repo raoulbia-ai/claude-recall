@@ -2334,7 +2334,7 @@ async function main() {
   // Janitor: LLM-driven hygiene pass (the judgment layer above rules demote/dedup)
   program
     .command('janitor')
-    .description('Review stored rules with the runtime LLM: demote noise, merge duplicates, rewrite vague rules')
+    .description('Review stored rules with the runtime LLM: demote noise, merge duplicates, rewrite vague rules, confirm rules the user stated')
     .option('--dry-run', 'Preview actions without mutating', false)
     .option('--runtime <cc|kiro>', 'Which LLM backend to use (claude -p or kiro-cli)', 'cc')
     .option('--status', 'Show the last janitor report instead of running', false)
