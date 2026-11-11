@@ -77,6 +77,35 @@ describe('memory source provenance', () => {
     expect(r?.source_transcript).toBeNull();
   });
 
+  describe('confirmed rules', () => {
+    const idOf = (key: string) => (storage.retrieve(key) as any).id as number;
+
+    it('confirms only active rules that have a source excerpt, once', () => {
+      storage.save({ key: 'c-ev', value: { content: 'always use pnpm' }, type: 'preference', source_excerpt: 'always use pnpm' });
+      storage.save({ key: 'c-none', value: { content: 'no evidence here' }, type: 'preference' });
+      storage.save({ key: 'c-off', value: { content: 'inactive rule' }, type: 'preference', source_excerpt: 'x', is_active: false });
+
+      expect(storage.retrieve('c-ev')?.confirmed_at).toBeNull();
+      expect(storage.confirmRulesByIds([idOf('c-ev'), idOf('c-none'), idOf('c-off')])).toBe(1);
+      expect(storage.retrieve('c-ev')?.confirmed_at).toEqual(expect.any(Number));
+      expect(storage.retrieve('c-none')?.confirmed_at).toBeNull();
+      expect(storage.retrieve('c-off')?.confirmed_at).toBeNull();
+      expect(storage.confirmRulesByIds([idOf('c-ev')])).toBe(0);
+      expect(storage.getActiveRules().find(r => r.key === 'c-ev')?.confirmed_at).toEqual(expect.any(Number));
+    });
+
+    it('keeps the confirmation on a same-content re-save and clears it when the content changes', () => {
+      storage.save({ key: 'c-1', value: { content: 'always use pnpm' }, type: 'preference', source_excerpt: 'always use pnpm' });
+      storage.confirmRulesByIds([idOf('c-1')]);
+
+      storage.save({ key: 'c-1', value: { content: 'always use pnpm' }, type: 'preference' });
+      expect(storage.retrieve('c-1')?.confirmed_at).toEqual(expect.any(Number));
+
+      storage.save({ key: 'c-1', value: { content: 'always use yarn' }, type: 'preference' });
+      expect(storage.retrieve('c-1')?.confirmed_at).toBeNull();
+    });
+  });
+
   it('adds the columns to a database created before they existed', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-recall-src-'));
     const dbPath = path.join(dir, 'old.db');
@@ -95,6 +124,7 @@ describe('memory source provenance', () => {
       const migrated = new MemoryStorage(dbPath);
       try {
         expect(migrated.retrieve('legacy')?.source_transcript).toBeNull();
+        expect(migrated.retrieve('legacy')?.confirmed_at).toBeNull();
         migrated.save({
           key: 'fresh',
           value: { content: 'fresh rule' },

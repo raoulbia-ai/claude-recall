@@ -21,12 +21,14 @@ jest.mock('child_process', () => ({
 
 const mockGetActiveRules = jest.fn();
 const mockDemoteByIds = jest.fn();
+const mockConfirmByIds = jest.fn();
 jest.mock('../../src/services/memory', () => ({
   MemoryService: {
     getInstance: () => ({
       getStorage: () => ({
         getActiveRules: mockGetActiveRules,
         demoteRulesByIds: mockDemoteByIds,
+        confirmRulesByIds: mockConfirmByIds,
       }),
     }),
   },
@@ -77,6 +79,7 @@ import {
   evidenceForReview,
   renderRuleForReview,
   sourceOf,
+  confirmableIds,
 } from '../../src/hooks/memory-janitor';
 
 // State files live under CLAUDE_RECALL_DB_PATH (hookStateDir) — isolate from
@@ -127,6 +130,7 @@ beforeEach(() => {
   mockSpawn.mockReset().mockReturnValue(fakeChild());
   mockGetActiveRules.mockReset();
   mockDemoteByIds.mockReset().mockReturnValue(1);
+  mockConfirmByIds.mockReset();
   mockStoreMemory.mockReset();
   mockCcComplete.mockReset();
   mockKiroComplete.mockReset();
@@ -511,5 +515,58 @@ describe('source evidence', () => {
     expect(mockStoreMemory).toHaveBeenCalledWith(
       'Use pnpm for every install', 'preference', undefined, 0.9, { fuzzyNewestWins: true, source: src },
     );
+  });
+});
+
+describe('confirm', () => {
+  const withEvidence = (id: number, extra: object = {}) =>
+    ({ ...rule(id, 3 * DAY, `rule ${id}`), source_excerpt: `the user said rule ${id}`, ...extra });
+
+  it('only rules with evidence that are not yet confirmed are confirmable', () => {
+    const ids = confirmableIds([
+      withEvidence(1),
+      rule(2, 3 * DAY, 'no evidence'),
+      withEvidence(3, { confirmed_at: Date.now() }),
+    ] as any);
+    expect([...ids]).toEqual([1]);
+  });
+
+  it('parse keeps confirm ids that are confirmable and drops the rest', () => {
+    const raw = '{"actions":[{"action":"confirm","ids":[1,2,99],"reason":"stated"}]}';
+    expect(parseJanitorActions(raw, new Set([1, 2]), new Set([1]))).toEqual([
+      { action: 'confirm', ids: [1], replacement: undefined, type: undefined, reason: 'stated' },
+    ]);
+    // without a confirmable set nothing can be confirmed
+    expect(parseJanitorActions(raw, new Set([1, 2]))).toEqual([]);
+  });
+
+  it('apply marks the rules confirmed and never demotes or stores', () => {
+    mockConfirmByIds.mockReturnValue(1);
+    const results = applyJanitorActions([{ action: 'confirm', ids: [1], reason: 'stated' }], new Map());
+    expect(mockConfirmByIds).toHaveBeenCalledWith([1]);
+    expect(mockDemoteByIds).not.toHaveBeenCalled();
+    expect(mockStoreMemory).not.toHaveBeenCalled();
+    expect(results[0].applied).toBe(true);
+  });
+
+  it('a confirm that marks nothing is reported as not applied', () => {
+    mockConfirmByIds.mockReturnValue(0);
+    const results = applyJanitorActions([{ action: 'confirm', ids: [1], reason: 'stated' }], new Map());
+    expect(results[0].applied).toBe(false);
+  });
+
+  it('shows already-confirmed rules as confirmed in the prompt', () => {
+    expect(JSON.parse(renderRuleForReview(withEvidence(1, { confirmed_at: 1 }) as any, Date.now())).confirmed).toBe(true);
+    expect(JSON.parse(renderRuleForReview(withEvidence(1) as any, Date.now()))).not.toHaveProperty('confirmed');
+  });
+
+  it('the worker confirms through the full path', async () => {
+    mockGetActiveRules.mockReturnValue([withEvidence(1), rule(2, 3 * DAY, 'b')]);
+    mockCcComplete.mockResolvedValue('{"actions":[{"action":"confirm","ids":[1,2],"reason":"stated by user"}]}');
+    mockConfirmByIds.mockReturnValue(1);
+    const report = await handleMemoryJanitorWorker({}, { runtime: 'cc' });
+    expect(mockConfirmByIds).toHaveBeenCalledWith([1]);
+    expect(report?.actions[0]).toMatchObject({ action: 'confirm', ids: [1], applied: true });
+    expect(mockCcComplete.mock.calls[0][0]).toContain('- confirm:');
   });
 });

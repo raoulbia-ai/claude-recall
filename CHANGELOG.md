@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The memory janitor checks rules against the user's words.** Each rule with a source (0.46.0+) goes to the janitor's LLM with its `source_excerpt` as evidence, shortened to 400 chars with the original length noted, so a fragment mined from a long paste is visible as one. The prompt tells the reviewer to demote rules the evidence doesn't support, mainly text the user was showing rather than stating, and not to demote rules the evidence plainly states. Merge and rewrite replacements keep the first source rule's provenance, so later passes can still check them. Rules without a source are reviewed as before.
 
+### Added
+
+- **Confirmed rules load first.** The janitor has a new `confirm` action for rules whose source text plainly states them. It sets a new `confirmed_at` column. Only active rules with a `source_excerpt` can be confirmed, and the parser drops confirm ids that have no evidence. `loadActiveRules` sorts corrections, failures and solutions confirmed-first before their caps, and `load_rules` puts confirmed rules first within each section, so the token budget cuts unconfirmed rules first. A same-key re-save with identical content keeps the confirmation, and changed content clears it. Existing databases gain the column on startup, with every rule unconfirmed. Export → import doesn't carry the confirmation, so imported rules start unconfirmed.
+
 ## [0.46.0] - 2026-10-27
 
 ### Added

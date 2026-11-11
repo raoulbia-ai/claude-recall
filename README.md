@@ -389,8 +389,11 @@ Automatic capture inevitably stores some noise — a conversational fragment mis
 - **demote** noise — misfiled conversation, malformed junk, zero-content platitudes
 - **merge** duplicates into the single best phrasing
 - **rewrite** vague rules into precise trigger-plus-pattern form
+- **confirm** rules whose source shows the user stated them
 
 When a rule has a [source](#how-it-works), the janitor sees the user's words it was captured from next to the rule, and demotes rules those words don't support. The usual case is a fragment of something the user pasted (a log, a document, a bug report) that the classifier mistook for a preference. A merged or rewritten rule keeps the source of the rule it replaces.
+
+When the user's words plainly state a rule, the janitor marks it **confirmed**. Confirmed rules load first: `load_rules` puts them ahead of unconfirmed ones in every section, and when a section's cap or the token budget cuts rules, unconfirmed ones go first. A rule stays unconfirmed when it has no source, was only inferred by a classifier, or hasn't been reviewed yet. Changing a rule's content clears its confirmation.
 
 Guardrails: nothing is ever deleted (demotions are reversible via `rules promote <id>`, and re-teaching a demoted rule revives it); memories younger than 24h are never reviewed; at most 10 actions per run; malformed LLM output does nothing.
 
