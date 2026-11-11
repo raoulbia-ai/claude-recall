@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The memory janitor checks rules against the user's words.** Each rule with a source (0.46.0+) goes to the janitor's LLM with its `source_excerpt` as evidence, shortened to 400 chars with the original length noted, so a fragment mined from a long paste is visible as one. The prompt tells the reviewer to demote rules the evidence doesn't support, mainly text the user was showing rather than stating, and not to demote rules the evidence plainly states. Merge and rewrite replacements keep the first source rule's provenance, so later passes can still check them. Rules without a source are reviewed as before.
+
 ## [0.46.0] - 2026-10-27
 
 ### Added

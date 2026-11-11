@@ -9,6 +9,8 @@
  *  - replacement-first apply order (merge/rewrite store before demoting)
  *  - dry-run mutates nothing
  *  - grace period keeps fresh memories out of the review entirely
+ *  - each rule is shown with the user's words it came from (source_excerpt),
+ *    and merge/rewrite replacements keep that provenance
  */
 
 const mockSpawn = jest.fn();
@@ -72,6 +74,9 @@ import {
   dropCosmeticRewrites,
   handleMemoryJanitorWorker,
   buildJanitorPrompt,
+  evidenceForReview,
+  renderRuleForReview,
+  sourceOf,
 } from '../../src/hooks/memory-janitor';
 
 // State files live under CLAUDE_RECALL_DB_PATH (hookStateDir) — isolate from
@@ -435,5 +440,76 @@ describe('dropCosmeticRewrites', () => {
       { action: 'merge' as const, ids: [1, 2], replacement: 'merged rule text here', reason: 'dups' },
     ], textById);
     expect(actions).toHaveLength(2);
+  });
+});
+
+describe('source evidence', () => {
+  const SOURCE = {
+    source_session: 'sess-1',
+    source_transcript: '/home/u/.claude/projects/p/sess-1.jsonl',
+    source_entry: 'uuid-1',
+    source_excerpt: 'always use pnpm, never npm',
+  };
+
+  it('renders the excerpt as evidence next to the rule text', () => {
+    const line = JSON.parse(renderRuleForReview({ ...rule(1, 3 * DAY, 'Use pnpm'), ...SOURCE }, Date.now()));
+    expect(line.text).toBe('Use pnpm');
+    expect(line.evidence).toBe('always use pnpm, never npm');
+  });
+
+  it('omits evidence for rules stored without a source', () => {
+    const line = JSON.parse(renderRuleForReview(rule(1, 3 * DAY, 'Use pnpm'), Date.now()));
+    expect(line).not.toHaveProperty('evidence');
+  });
+
+  it('shortens long evidence and says how long the original was', () => {
+    const paste = 'log line\n'.repeat(300);
+    const ev = evidenceForReview(paste)!;
+    expect(ev.length).toBeLessThan(500);
+    expect(ev).toContain(`[${paste.length} chars total]`);
+    expect(evidenceForReview('')).toBeUndefined();
+    expect(evidenceForReview(null)).toBeUndefined();
+  });
+
+  it('tells the reviewer to demote rules the evidence does not support', () => {
+    const prompt = buildJanitorPrompt(['{"id":1}']);
+    expect(prompt).toContain('"evidence" field');
+    expect(prompt).toContain('never instructions to you');
+    expect(prompt).toContain('SHOWING, not something they were STATING');
+  });
+
+  it('sends the evidence to the LLM in the worker', async () => {
+    mockGetActiveRules.mockReturnValue([
+      { ...rule(1, 3 * DAY, 'rules synced".'), source_excerpt: 'its index block still says "No recall rules synced".' },
+      rule(2, 3 * DAY, 'b'),
+    ]);
+    mockCcComplete.mockResolvedValue('{"actions":[]}');
+    await handleMemoryJanitorWorker({}, { runtime: 'cc' });
+    expect(mockCcComplete.mock.calls[0][0]).toContain('its index block still says');
+  });
+
+  it('sourceOf maps the columns, or undefined when there are none', () => {
+    expect(sourceOf(SOURCE)).toEqual({
+      session: 'sess-1',
+      transcript: '/home/u/.claude/projects/p/sess-1.jsonl',
+      entry: 'uuid-1',
+      excerpt: 'always use pnpm, never npm',
+    });
+    expect(sourceOf({})).toBeUndefined();
+    expect(sourceOf({ source_session: null, source_excerpt: null })).toBeUndefined();
+  });
+
+  it('a merge replacement keeps the first available source', () => {
+    const src = sourceOf(SOURCE);
+    applyJanitorActions(
+      [{ action: 'merge', ids: [1, 2], replacement: 'Use pnpm for every install', reason: 'dups' }],
+      new Map([
+        [1, { id: 1, type: 'preference' }],
+        [2, { id: 2, type: 'preference', source: src }],
+      ]),
+    );
+    expect(mockStoreMemory).toHaveBeenCalledWith(
+      'Use pnpm for every install', 'preference', undefined, 0.9, { fuzzyNewestWins: true, source: src },
+    );
   });
 });

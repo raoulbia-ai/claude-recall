@@ -390,6 +390,8 @@ Automatic capture inevitably stores some noise — a conversational fragment mis
 - **merge** duplicates into the single best phrasing
 - **rewrite** vague rules into precise trigger-plus-pattern form
 
+When a rule has a [source](#how-it-works), the janitor sees the user's words it was captured from next to the rule, and demotes rules those words don't support. The usual case is a fragment of something the user pasted (a log, a document, a bug report) that the classifier mistook for a preference. A merged or rewritten rule keeps the source of the rule it replaces.
+
 Guardrails: nothing is ever deleted (demotions are reversible via `rules promote <id>`, and re-teaching a demoted rule revives it); memories younger than 24h are never reviewed; at most 10 actions per run; malformed LLM output does nothing.
 
 ```bash
