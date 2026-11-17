@@ -75,3 +75,14 @@ describe('StatuslineCommands.run', () => {
     expect(out.restore().trim()).toBe('🧠 Recall');
   });
 });
+
+describe('StatuslineCommands — rules vs auto-captured failures', () => {
+  it('does not call auto-captured failures "rules"', () => {
+    // 2 taught rules + 3 failures must not read as "5 rules"
+    expect(StatuslineCommands.format('my-proj', 2, 3)).toBe('🧠 Recall · 2 rules · 3 failures · my-proj');
+    expect(StatuslineCommands.format('my-proj', 0, 1)).toBe('🧠 Recall · 0 rules · 1 failure · my-proj');
+  });
+  it('omits the failure segment when there are none', () => {
+    expect(StatuslineCommands.format('my-proj', 2, 0)).toBe('🧠 Recall · 2 rules · my-proj');
+  });
+});

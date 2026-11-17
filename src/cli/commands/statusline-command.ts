@@ -19,8 +19,10 @@ import type { Command } from 'commander';
  */
 export class StatuslineCommands {
   /** Pure, testable formatter for the status line text. */
-  static format(projectId: string, ruleCount: number): string {
-    return `🧠 Recall · ${ruleCount} rule${ruleCount === 1 ? '' : 's'} · ${projectId}`;
+  static format(projectId: string, ruleCount: number, failureCount = 0): string {
+    const parts = [`${ruleCount} rule${ruleCount === 1 ? '' : 's'}`];
+    if (failureCount > 0) parts.push(`${failureCount} failure${failureCount === 1 ? '' : 's'}`);
+    return `🧠 Recall · ${parts.join(' · ')} · ${projectId}`;
   }
 
   /**
@@ -65,10 +67,11 @@ export class StatuslineCommands {
       // bar — it just shows the minimal indicator below.
       const { MemoryService } = require('../../services/memory');
       const r = MemoryService.getInstance().loadActiveRules(projectId);
-      const n =
-        r.preferences.length + r.corrections.length + r.failures.length +
-        r.devops.length + (r.solutions ?? []).length;
-      process.stdout.write(StatuslineCommands.format(projectId, n) + '\n');
+      // "rules" = what you actually taught it. Auto-captured failures are shown
+      // separately: counting them as "rules" overstates what the user stated.
+      const taught =
+        r.preferences.length + r.corrections.length + r.devops.length + (r.solutions ?? []).length;
+      process.stdout.write(StatuslineCommands.format(projectId, taught, r.failures.length) + '\n');
     } catch {
       // Never emit an error into the status bar.
       process.stdout.write('🧠 Recall\n');

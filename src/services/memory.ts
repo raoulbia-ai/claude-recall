@@ -1,9 +1,11 @@
+import * as path from 'path';
 import { MemoryStorage, Memory } from '../memory/storage';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { ExtractedPreference } from './preference-extractor';
 import { isTestPollution } from './test-pollution';
+import { isBoilerplateFailureValue } from './memory-quality';
 
 export interface MemoryServiceContext {
   projectId?: string;
@@ -56,6 +58,15 @@ export interface ComplianceReport {
   };
 }
 
+/** Where a captured memory came from (see Memory.source_* in storage). */
+export interface MemorySource {
+  session?: string;
+  transcript?: string;
+  entry?: string;
+  /** The user's text the memory was extracted from. */
+  excerpt?: string;
+}
+
 export interface MemoryStoreRequest {
   key: string;
   value: any;
@@ -64,6 +75,33 @@ export interface MemoryStoreRequest {
   relevanceScore?: number;
   preferenceKey?: string;
   isOverride?: boolean;
+  source?: MemorySource;
+}
+
+const SOURCE_ID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** Longest excerpt kept: the most text a capture hook classifies. */
+export const MAX_SOURCE_EXCERPT_CHARS = 2000;
+
+/**
+ * Keep only well-formed source fields. A source can arrive from an import
+ * file, and search_memory hands the transcript path to the agent to read, so
+ * it must look like a Claude Code transcript: an absolute path to a .jsonl.
+ */
+export function sanitizeSource(
+  source?: MemorySource,
+): Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'> {
+  const id = (v: unknown) => (typeof v === 'string' && SOURCE_ID_SHAPE.test(v) ? v : null);
+  const t = source?.transcript;
+  const transcript = typeof t === 'string' && t.length <= 1024 && path.isAbsolute(t) && t.endsWith('.jsonl') ? t : null;
+  return {
+    source_session: id(source?.session),
+    source_transcript: transcript,
+    source_entry: id(source?.entry),
+    source_excerpt: typeof source?.excerpt === 'string' && source.excerpt.trim()
+      ? source.excerpt.slice(0, MAX_SOURCE_EXCERPT_CHARS)
+      : null,
+  };
 }
 
 export class MemoryService {
@@ -137,7 +175,8 @@ export class MemoryService {
         relevance_score: request.relevanceScore || 1.0,
         scope: scope,
         preference_key: request.preferenceKey,
-        is_active: true
+        is_active: true,
+        ...sanitizeSource(request.source),
       };
 
       this.storage.save(memory, opts);
@@ -559,33 +598,42 @@ export class MemoryService {
 
       // All categories filter is_active so auto-demoted rules are excluded uniformly.
       const isActive = (m: Memory) => m.is_active !== false;
+      // Capped categories keep confirmed rules first, so the cap cuts
+      // unconfirmed ones before rules checked against the user's words.
+      const confirmedThenNewest = (a: Memory, b: Memory) =>
+        (b.confirmed_at ? 1 : 0) - (a.confirmed_at ? 1 : 0) ||
+        (b.timestamp || 0) - (a.timestamp || 0);
 
       // Preferences: active only
       const allPreferences = this.storage.searchByContext({ ...searchContext, type: 'preference' });
       const preferences = allPreferences.filter(isActive);
 
-      // Corrections: top 10 by timestamp
+      // Corrections: top 10, confirmed first, then newest
       const allCorrections = this.storage.searchByContext({ ...searchContext, type: 'correction' });
       const corrections = allCorrections
         .filter(isActive)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .sort(confirmedThenNewest)
         .slice(0, 10);
 
-      // Failures: top 5 by timestamp
+      // Failures: top 5, confirmed first, then newest
       const allFailures = this.storage.searchByContext({ ...searchContext, type: 'failure' });
       const failures = allFailures
         .filter(isActive)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        // Boilerplate-only lessons teach nothing, so they must not be injected
+        // or counted. Same predicate memory-sync uses for the file index —
+        // otherwise the surfaces contradict each other ("3 rules" vs "none synced").
+        .filter(m => !isBoilerplateFailureValue(m.value))
+        .sort(confirmedThenNewest)
         .slice(0, 5);
 
       // DevOps: all active rules
       const devops = this.storage.searchByContext({ ...searchContext, type: 'devops' }).filter(isActive);
 
-      // Solutions: hard-won reusable resolutions, top 5 by timestamp
+      // Solutions: hard-won reusable resolutions, top 5, confirmed first, then newest
       const allSolutions = this.storage.searchByContext({ ...searchContext, type: 'solution' });
       const solutions = allSolutions
         .filter(isActive)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .sort(confirmedThenNewest)
         .slice(0, 5);
 
       const counts = [

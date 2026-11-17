@@ -21,11 +21,12 @@ import {
   hookStateDir,
   safeErrorMessage,
   storeMemory,
+  hookSource,
   searchExisting,
   isDuplicate,
   jaccardSimilarity,
 } from './shared';
-import { MemoryService } from '../services/memory';
+import { MemoryService, MemorySource } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 
 const HOOK_NAME = 'tool-outcome-watcher';
@@ -162,12 +163,72 @@ export async function handleToolOutcomeWatcher(input: any): Promise<void> {
 export const handleBashFailureWatcher = handleToolOutcomeWatcher;
 
 /**
+ * Commands where a NON-ZERO exit is a normal result rather than a failure.
+ * A large family of Unix tools use exit 1 as a boolean/query answer:
+ *   grep/rg → no match · test,[ → false · diff/cmp → differs
+ *   pgrep/pidof → no match · jq -e → null · git config --get → not set
+ *   git diff --quiet → there are changes · git ls-files --error-unmatch → untracked
+ * Capturing these as "failures" is pure noise (`git config --get tag.gpgsign`
+ * exiting 1 only means the key is unset). Only exit 1 is treated as benign for
+ * these — grep's exit 2, for instance, IS a real error.
+ *
+ * Separately, transient network/timeout exits are environmental, not durable
+ * lessons: a curl that timed out once against a service that is actually fine
+ * teaches nothing.
+ */
+const QUERY_EXIT1 = /^(grep|egrep|fgrep|rg|ag|diff|cmp|pgrep|pidof|jq|test)\b/i;
+const GIT_QUERY = /^git\s+(diff\s+--quiet|diff\s+--exit-code|rev-parse\s+--verify|ls-files\s+--error-unmatch|check-ignore|merge-base\s+--is-ancestor|describe\s+--exact-match)/i;
+/**
+ * `git config` in READ mode. Flag order varies in practice
+ * (`git config --show-origin --show-scope --get-regexp …`), so match the
+ * subcommand and look for any read-only flag anywhere — not a fixed sequence.
+ */
+const GIT_CONFIG_READ = /^git\s+config\b/i;
+const GIT_CONFIG_READ_FLAG = /(^|\s)(--get(-all|-regexp|-urlmatch)?|--list|-l|--show-origin|--show-scope)(\s|$)/i;
+const TRANSIENT_EXITS: Record<string, Set<string>> = {
+  curl: new Set(['6', '7', '28', '35', '52', '56']),
+  wget: new Set(['4']),
+  ping: new Set(['1', '2']),
+  timeout: new Set(['124', '137']),
+  // 255 is ssh's OWN connection error. A remote command's exit code passes
+  // through unchanged, so genuine remote failures are still captured.
+  ssh: new Set(['255']),
+};
+
+function leadingProgram(segment: string): string {
+  const first = segment.trim().split(/\s+/)[0] || '';
+  return (first.split('/').pop() || '').toLowerCase();
+}
+
+export function isBenignNonZeroExit(command: string, exitCode: string): boolean {
+  const cmd = command.trim();
+  if (exitCode === '1') {
+    if (/^\[\s/.test(cmd) || /^test\s/.test(cmd)) return true;
+    // Check the leading program AND the tail of a pipeline — `… | grep x` is
+    // extremely common and its exit status is grep's.
+    const segs = cmd.split('|');
+    for (const seg of [segs[0], segs[segs.length - 1]]) {
+      if (!seg) continue;
+      const t = seg.trim();
+      if (QUERY_EXIT1.test(t) || GIT_QUERY.test(t)) return true;
+      if (GIT_CONFIG_READ.test(t) && GIT_CONFIG_READ_FLAG.test(t)) return true;
+    }
+  }
+  const transient = TRANSIENT_EXITS[leadingProgram(cmd)];
+  return !!(transient && transient.has(exitCode));
+}
+
+/**
  * Quality filter: should this bash failure be captured as a memory?
  * Returns false for exploratory probes, command-not-found, and other low-signal failures.
  */
 export function shouldCaptureFailure(command: string, exitCode: string, output: string): boolean {
   // Very short commands (ls, cd, etc.) — not worth capturing
   if (command.trim().length < 5) return false;
+
+  // Non-zero exit that is a normal query answer (or a transient network blip)
+  // is not a failure — this is the single largest source of capture noise.
+  if (isBenignNonZeroExit(command, exitCode)) return false;
 
   // Exploratory probes: commands ending in 2>/dev/null are intentionally suppressing errors
   if (/2>\s*\/dev\/null\s*$/.test(command)) return false;
@@ -183,7 +244,7 @@ export function shouldCaptureFailure(command: string, exitCode: string, output: 
 
   // No useful output — nothing to learn from
   const cleanOutput = output.replace(/\(no output\)/gi, '').trim();
-  if (cleanOutput.length < 10 && !/^(npm|npx|node|python|pip|cargo|go|make|docker|git)\s/.test(trimmed)) return false;
+  if (cleanOutput.length < 10 && !/^(npm|npx|node|python|pip|cargo|go|make|docker)\s/.test(trimmed)) return false;
 
   // EISDIR / "Is a directory" — file read probes
   if (/is a directory/i.test(output) || /EISDIR/i.test(output)) return false;
@@ -207,7 +268,7 @@ async function handleBashOutcome(input: any): Promise<void> {
   const isFailure = exitMatch && exitMatch[1] !== '0';
 
   if (isFailure) {
-    await handleBashFailure(command, exitMatch![1], output, sessionId);
+    await handleBashFailure(command, exitMatch![1], output, sessionId, hookSource(input));
   } else {
     await handleBashSuccess(command, sessionId);
   }
@@ -218,6 +279,7 @@ async function handleBashFailure(
   exitCode: string,
   output: string,
   sessionId: string,
+  source: MemorySource,
 ): Promise<void> {
   // Quality filter — skip low-signal failures
   if (!shouldCaptureFailure(command, exitCode, output)) {
@@ -255,6 +317,7 @@ async function handleBashFailure(
     type: 'failure',
     context: { timestamp: Date.now() },
     relevanceScore: 0.85,
+    source,
   });
 
   // Write outcome event
@@ -407,7 +470,7 @@ export async function handleToolFailure(input: any): Promise<void> {
       preventative_checks: ['Verify tool inputs are correct', 'Check preconditions'],
     };
 
-    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8);
+    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8, { source: hookSource(input) });
 
     // Record structured outcome event, attributed to the emitting session so
     // memory-stop only folds THIS session's failures into its episode
