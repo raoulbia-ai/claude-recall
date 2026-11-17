@@ -17,8 +17,6 @@
 import * as os from 'os';
 import { completeWithRuntimeCli } from './runtime-cli';
 
-const DEFAULT_TIMEOUT_MS = 30000;
-
 /**
  * Whether this process is a Pi host. Set by the Pi extension when it loads.
  *
@@ -49,10 +47,13 @@ export function piBackendEnabled(): boolean {
 /**
  * One completion from Pi's headless mode. Returns null on any failure (pi not
  * on PATH, timeout, non-zero exit) so the caller falls through. Never throws.
+ *
+ * The deadline is the caller's: every use of this runs inline at the end of a
+ * session, where only the caller knows how long the user can be kept waiting.
  */
 export function completeWithPiCli(
   prompt: string,
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs: number },
 ): Promise<string | null> {
   const model = process.env.CLAUDE_RECALL_PI_MODEL;
 
@@ -70,7 +71,7 @@ export function completeWithPiCli(
 
   return completeWithRuntimeCli('pi', args, {
     tag: 'pi-classifier',
-    timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: opts.timeoutMs,
     // Temp cwd: the nested session must load no project settings.
     cwd: os.tmpdir(),
     env: { ...process.env, CLAUDE_RECALL_NESTED: '1' },

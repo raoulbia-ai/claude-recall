@@ -106,7 +106,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
   // summarise a session would itself become a session to summarise. The
   // backend prefers `--no-extensions`, which makes this moot, but a host whose
   // models come from an extension has to load them.
-  if (process.env.CLAUDE_RECALL_NESTED === '1') return;
+  if (process.env.CLAUDE_RECALL_NESTED) return;
 
   // Tell the LLM backends this process is a Pi host, so Pi's headless mode is
   // theirs to use if the user opted in. In-process on purpose — see

@@ -4,6 +4,14 @@ jest.mock('child_process', () => ({ spawn: (...args: unknown[]) => mockSpawn(...
 import { EventEmitter } from 'events';
 import * as os from 'os';
 
+const savedEnv = { ...process.env };
+afterAll(() => { process.env = savedEnv; });
+
+/** Every test starts from an environment that says nothing about claude-recall. */
+function clearRecallEnv(): void {
+  for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE_RECALL_')) delete process.env[k];
+}
+
 /** A child that prints `stdout` (if any) and exits with `code` on the next tick. */
 function fakeChild(opts: { stdout?: string; code?: number } = {}) {
   const child: any = new EventEmitter();
@@ -21,22 +29,20 @@ function fakeChild(opts: { stdout?: string; code?: number } = {}) {
  * the model the user already configured, so no API key is needed here either.
  */
 describe('Pi LLM backend', () => {
-  const prev = { ...process.env };
 
   beforeEach(() => {
     jest.resetModules();
     mockSpawn.mockReset();
-    for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE_RECALL_')) delete process.env[k];
+    clearRecallEnv();
   });
 
-  afterAll(() => { process.env = prev; });
-
-  const load = () => require('../../src/hooks/pi-classifier');
+  const complete = (prompt: string, timeoutMs = 5000): Promise<string | null> =>
+    require('../../src/hooks/pi-classifier').completeWithPiCli(prompt, { timeoutMs });
 
   it('runs Pi headless and returns its answer', async () => {
     mockSpawn.mockReturnValue(fakeChild({ stdout: '  a lesson  ' }));
 
-    await expect(load().completeWithPiCli('why did it fail?')).resolves.toBe('a lesson');
+    await expect(complete('why did it fail?')).resolves.toBe('a lesson');
 
     const [command, args] = mockSpawn.mock.calls[0];
     expect(command).toBe('pi');
@@ -46,7 +52,7 @@ describe('Pi LLM backend', () => {
   it('disables extensions in the child, so it cannot re-enter claude-recall', async () => {
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
 
-    await load().completeWithPiCli('prompt');
+    await complete('prompt');
 
     const [, args, options] = mockSpawn.mock.calls[0];
     expect(args).toContain('--no-extensions');
@@ -58,7 +64,7 @@ describe('Pi LLM backend', () => {
     process.env.CLAUDE_RECALL_PI_EXTENSIONS = '1';
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
 
-    await load().completeWithPiCli('prompt');
+    await complete('prompt');
 
     const [, args, options] = mockSpawn.mock.calls[0];
     expect(args).not.toContain('--no-extensions');
@@ -70,7 +76,7 @@ describe('Pi LLM backend', () => {
     process.env.CLAUDE_RECALL_PI_MODEL = 'airpx-static/claude-sonnet-5';
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
 
-    await load().completeWithPiCli('prompt');
+    await complete('prompt');
 
     expect(mockSpawn.mock.calls[0][1]).toEqual([
       '--no-extensions', '--model', 'airpx-static/claude-sonnet-5', '-p', 'prompt',
@@ -82,13 +88,13 @@ describe('Pi LLM backend', () => {
     // backends always received it; trimming is this backend's own decision.
     mockSpawn.mockReturnValue(fakeChild({ stdout: '  \n' }));
 
-    await expect(load().completeWithPiCli('prompt')).resolves.toBeNull();
+    await expect(complete('prompt')).resolves.toBeNull();
   });
 
   it('returns null on a non-zero exit rather than throwing', async () => {
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'partial', code: 1 }));
 
-    await expect(load().completeWithPiCli('prompt')).resolves.toBeNull();
+    await expect(complete('prompt')).resolves.toBeNull();
   });
 
   it('returns null when pi is not on PATH', async () => {
@@ -98,7 +104,7 @@ describe('Pi LLM backend', () => {
     setImmediate(() => child.emit('error', Object.assign(new Error('not found'), { code: 'ENOENT' })));
     mockSpawn.mockReturnValue(child);
 
-    await expect(load().completeWithPiCli('prompt')).resolves.toBeNull();
+    await expect(complete('prompt')).resolves.toBeNull();
   });
 
   it('kills the child when it outlives the deadline', async () => {
@@ -108,7 +114,7 @@ describe('Pi LLM backend', () => {
     child.kill = jest.fn();
     mockSpawn.mockReturnValue(child);
 
-    const pending = load().completeWithPiCli('prompt', { timeoutMs: 1000 });
+    const pending = complete('prompt', 1000);
     jest.advanceTimersByTime(1001);
 
     await expect(pending).resolves.toBeNull();
@@ -118,7 +124,6 @@ describe('Pi LLM backend', () => {
 });
 
 describe('backend selection', () => {
-  const prev = { ...process.env };
   const HINT = JSON.stringify({ hint_text: 'check the path first', hint_kind: 'failure_preventer', applies_when: ['fs'] });
 
   /** `claude` is absent (exits non-zero); `pi` answers. */
@@ -137,11 +142,9 @@ describe('backend selection', () => {
     jest.resetModules();
     mockSpawn.mockReset();
     mockSpawn.mockImplementation(claudeMissingPiAnswers);
-    for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE_RECALL_')) delete process.env[k];
+    clearRecallEnv();
     delete process.env.ANTHROPIC_API_KEY;
   });
-
-  afterAll(() => { process.env = prev; });
 
   it('falls through to Pi on a Pi host that opted in', async () => {
     process.env.CLAUDE_RECALL_PI_LLM = '1';
