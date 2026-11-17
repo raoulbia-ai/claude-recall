@@ -8,7 +8,7 @@
 import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { MemoryService } from './memory';
-import { ConfigService } from './config';
+import { ConfigService, DEFAULT_TELEMETRY_DAYS } from './config';
 import { presentTables } from './sqlite-tables';
 
 export interface EpisodeData {
@@ -402,12 +402,16 @@ export interface PruneCounts {
   injections: number;
 }
 
-/** Days of raw telemetry to keep; -1 keeps all. */
-export const DEFAULT_TELEMETRY_DAYS = 30;
-
 /** Rejected and archived lessons are dropped on their own, shorter clock. */
 const DEAD_LESSON_DAYS = 14;
 
+/**
+ * The telemetry window, in days; -1 keeps all.
+ *
+ * The one place the setting is read. A value that is missing or does not parse
+ * falls back to the default rather than to "keep everything" or "keep nothing"
+ * — both callers go through here, so they cannot come to different answers.
+ */
 export function telemetryRetentionDays(): number {
   try {
     const configured = ConfigService.getInstance().getConfig()
@@ -434,9 +438,9 @@ export function telemetryRetentionDays(): number {
  */
 export function pruneOutcomeData(
   db: Database.Database,
-  opts: { retentionDays?: number; dryRun?: boolean } = {},
+  opts: { retentionDays: number; dryRun?: boolean },
 ): PruneCounts {
-  const retentionDays = opts.retentionDays ?? DEFAULT_TELEMETRY_DAYS;
+  const { retentionDays } = opts;
   const dryRun = opts.dryRun === true;
   const counts: PruneCounts = { episodes: 0, events: 0, lessons: 0, stats: 0, injections: 0 };
 

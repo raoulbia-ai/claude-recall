@@ -5,7 +5,7 @@ import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { MemoryRetrieval } from '../core/retrieval';
 import { Memory } from '../memory/storage';
-import { pruneOutcomeData } from './outcome-storage';
+import { pruneOutcomeData, telemetryRetentionDays } from './outcome-storage';
 import { presentTables, tableColumns } from './sqlite-tables';
 
 export interface CompactionConfig {
@@ -18,7 +18,6 @@ export interface CompactionConfig {
     preferences: number;
     projectKnowledge: number;
     failures: number;
-    telemetryDays: number;
   };
 }
 
@@ -57,7 +56,6 @@ export class DatabaseManager {
       preferences: -1, // Keep forever
       projectKnowledge: -1, // Keep forever
       failures: 1000,
-      telemetryDays: 30,
     },
   };
 
@@ -186,7 +184,7 @@ export class DatabaseManager {
       // 3. Prune the outcome tables past their retention window — the same
       //    pass the hooks run, so there is one window, not two.
       const pruned = pruneOutcomeData(db, {
-        retentionDays: config.retention.telemetryDays,
+        retentionDays: telemetryRetentionDays(),
         dryRun,
       });
       const prunedRows = pruned.episodes + pruned.events + pruned.injections
@@ -459,7 +457,9 @@ export class DatabaseManager {
    * had never fired.
    */
   private pruneByType(db: Database.Database, type: string, keepCount: number, dryRun: boolean): number {
-    if (keepCount < 0) return 0; // Keep all
+    // -1 keeps all. So does a cap that did not parse: NaN must never reach the
+    // slice below, where it would read as zero.
+    if (!(keepCount >= 0)) return 0;
 
     try {
       const columns = tableColumns(db, 'memories');

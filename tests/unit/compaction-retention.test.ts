@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DatabaseManager } from '../../src/services/database-manager';
 import { ConfigService } from '../../src/services/config';
-import { pruneOutcomeData } from '../../src/services/outcome-storage';
+import { pruneOutcomeData, telemetryRetentionDays } from '../../src/services/outcome-storage';
 
 /**
  * Retention coverage for the types and tables that actually grow.
@@ -238,6 +238,34 @@ describe('compaction retention', () => {
 
     expect(rows('SELECT id FROM outcome_events').map(r => r.id)).toEqual(['ev-fresh']);
     expect(rows('SELECT id FROM episodes').map(r => r.id)).toEqual(['ep-live']);
+  });
+
+  it('prunes by the same window as the hook path when the setting is unreadable', async () => {
+    // CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS=abc reaches the config as NaN. The
+    // hook path reads that as the default; compaction must not read it as
+    // "keep everything", or the two cleanups disagree again.
+    configure({ toolUse: -1, corrections: -1, failures: -1, telemetryDays: NaN });
+
+    await DatabaseManager.getInstance().compact();
+
+    expect(telemetryRetentionDays()).toBe(30);
+    expect(rows('SELECT id FROM outcome_events').map(r => r.id)).toEqual(['ev-fresh']);
+  });
+
+  it('keeps every row of a type whose cap is unreadable', async () => {
+    // CLAUDE_RECALL_RETAIN_CORRECTIONS=abc is NaN, and `slice(NaN)` is
+    // `slice(0)`: read as a cap, it selects every row for deletion.
+    const db = new Database(dbPath);
+    const add = db.prepare(`INSERT INTO memories (key, value, type, timestamp) VALUES (?, ?, 'correction', ?)`);
+    for (let i = 0; i < 4; i++) add.run(`corr-${i}`, JSON.stringify({ content: `use pnpm ${i}` }), daysAgo(i));
+    db.close();
+
+    configure({ toolUse: -1, corrections: NaN, failures: NaN, telemetryDays: -1 });
+
+    await DatabaseManager.getInstance().compact();
+
+    expect(rows(`SELECT id FROM memories WHERE type = 'correction'`)).toHaveLength(4);
+    expect(rows(`SELECT id FROM memories WHERE type = 'failure'`)).toHaveLength(10);
   });
 
   it('keeps everything when retention is disabled', async () => {
