@@ -103,10 +103,10 @@ export default function(pi: PiTypes.ExtensionAPI) {
   process.env.CLAUDE_RECALL_RUNTIME = 'pi';
 
   // A nested session spawned by our own LLM backend must stay a plain Pi run:
-  // no capture, no citations — otherwise asking the model to classify a prompt
-  // would itself become a session that captures a prompt. The backend prefers
-  // `--no-extensions`, which makes this moot, but a host whose models come
-  // from an extension has to load them.
+  // no rules injected, nothing captured — otherwise asking the model to
+  // summarise a session would itself become a session to summarise. The
+  // backend prefers `--no-extensions`, which makes this moot, but a host whose
+  // models come from an extension has to load them.
   if (process.env.CLAUDE_RECALL_NESTED === '1') return;
 
   let projectId: string = '';

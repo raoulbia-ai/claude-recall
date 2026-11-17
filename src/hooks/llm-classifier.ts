@@ -153,12 +153,15 @@ function parseJSON(text: string): any {
  * `claude -p`) is the only default backend — a personally-exported
  * ANTHROPIC_API_KEY is STRICTLY OPT-IN via CLAUDE_RECALL_PREFER_API_KEY and
  * never consulted otherwise, not even as a fallback. The opt-in exists for
- * Pi-only users (no `claude` binary; their key is how they run Pi itself)
- * and anyone deliberately paying for a stronger model.
+ * anyone deliberately paying for a stronger model.
  *
- * The CLI backend is skipped inside a nested headless session
- * (CLAUDE_RECALL_NESTED): if `claude -p` fires user-scope hooks of its own,
- * those hooks must not spawn further `claude -p` calls.
+ * A Pi host has no `claude` binary; there the same role is played by Pi's
+ * own headless mode (`pi -p`), tried after `claude -p` and only when the Pi
+ * extension has announced the runtime.
+ *
+ * Both CLI backends are skipped inside a nested headless session
+ * (CLAUDE_RECALL_NESTED): if the child fires hooks or extensions of its own,
+ * they must not spawn further headless calls.
  */
 async function completeText(
   systemPrompt: string,

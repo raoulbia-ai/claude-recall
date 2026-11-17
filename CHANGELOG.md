@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Pi hosts can use an LLM — through Pi itself.** Session learnings, checkpoint extraction and the batch classification that runs at session end and before compaction all need a model, and the backends were `claude -p`, `kiro-cli` and an opt-in Anthropic key. A Pi-only machine has none of those, so each of those features was silently inert there. Pi ships the same affordance the other runtimes do — `pi -p` answers on the model the user already configured — so it needs no API key either. Per-prompt capture is unchanged: it stays on the regex path, since a model call per prompt is a different cost.
+
+  The backend is gated on the Pi extension announcing the runtime (`CLAUDE_RECALL_RUNTIME=pi`), not on `pi` being on PATH — a Claude Code user who also has Pi installed must not have their hooks quietly answered by a different agent. The nested call runs with `--no-extensions`, a stronger recursion guard than an environment flag: the child cannot load claude-recall at all. A host whose models come from an extension sets `CLAUDE_RECALL_PI_EXTENSIONS=1`; the extension then stands down in the child on `CLAUDE_RECALL_NESTED`. `CLAUDE_RECALL_PI_MODEL` picks the model.
+
+### Changed
+
+- **The three runtime CLI backends share one implementation** (`src/hooks/runtime-cli.ts`). `completeWithClaudeCli` and `completeWithKiroCli` were the same spawn, timeout, kill and stdout handling with different argv; adding a third copy for Pi would have made three.
+
 ### Fixed
 
 - **Backups now survive WAL, get verified, and compaction refuses a damaged file.** A shared database went malformed on 2026-11-09 and every retained backup turned out to be unreadable in the same pages as the database itself — there was nothing to restore from. `createBackup()` was `fs.copyFileSync` of the `.db` file alone: in WAL mode the committed tail lives in the `-wal` file, so a "backup" was the database minus its newest transactions, and torn besides, because other agent processes write while the copy runs. It now uses `VACUUM INTO` (online backup API as fallback below SQLite 3.27), and an `integrity_check` gates the new file **before** rotation — otherwise a corrupt backup silently evicts the last good one under keep-3, which is exactly how this incident ran out of clean copies. `compact()` also checked nothing: it VACUUMed — rewriting every page — a database SQLite was already calling malformed. It now verifies first and refuses, leaving the file untouched for recovery. Not changed: `busy_timeout`, which better-sqlite3 already defaults to 5000ms.
@@ -65,17 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Benign non-zero exits are no longer captured as "failures" — the biggest source of capture noise.** The watcher treated *any* non-zero Bash exit as a failure, but a large family of Unix tools use non-zero as a normal query answer: `git config --get x` exits 1 when the key is simply **unset**, `grep`/`rg` exit 1 on **no match**, `test`/`[` on **false**, `diff`/`cmp` on **differs**, `git diff --quiet` when there **are** changes, plus `pgrep`/`pidof`/`jq -e`. These are now recognised as benign (exit 1 only — `grep`'s exit 2 is still a real error), including when they end a pipeline (`… | grep x`). Transient network/timeout exits (`curl` 6/7/28/35, `wget` 4, `timeout` 124/137) are likewise not durable lessons. Also closed an own-goal: the low-output skip **exempted `git`**, so an output-less `git config --get` was captured *because* it started with `git` — real git failures always print to stderr, so the exemption is gone. Reported from the field: a project showed three "rules" that were all noise of exactly this kind.
 - **Auto-captured failures are no longer labelled "rules".** The statusline counted preferences + corrections + devops + solutions **+ failures** and called the total "rules", so a user who had taught it nothing could still see `🧠 Recall · 3 rules`. It now reports them separately — `🧠 Recall · 2 rules · 3 failures` — and omits the failure segment when there are none. The session-start banner counts consistently.
 - **The surfaces can no longer contradict each other.** `memory-sync` already refused to sync boilerplate-only failures into `MEMORY.md`, but `loadActiveRules` had no such filter — so the same memories were injected, counted and advertised as "rules" while the file index said "No recall rules synced". That predicate now lives in `services/memory-quality.ts` and is applied by **both**, so injection, `load_rules`, the statusline and the file index agree. Boilerplate failures are no longer injected at all (they cost context and teach nothing); the underlying failure still lives in the DB, so fix-pairing and evidence counting are unaffected, and a lesson enriched by a real fix becomes active again.
-
-### Added
-
-- **Pi hosts can use an LLM again — through Pi itself.** Capture classification, session learnings, checkpoint extraction and hindsight hints all need a model, and the backends were `claude -p`, `kiro-cli` and an opt-in Anthropic key. A Pi-only machine has none of those, so every one of those features was silently inert there. Pi ships the same affordance the other runtimes do — `pi -p` answers on the model the user already configured — so it needs no API key either. The nested call runs with `--no-extensions`, which is a stronger recursion guard than an environment flag: the child cannot load claude-recall at all. New: `CLAUDE_RECALL_PI_MODEL`, `CLAUDE_RECALL_PI_LLM_TIMEOUT_MS`.
-
-  The backend is gated on the Pi extension announcing the runtime, not on `pi` being on PATH — a Claude Code user who also has Pi installed must not have their hooks quietly answered by a different agent.
-
-### Changed
-
-- **The three runtime CLI backends share one implementation** (`src/hooks/runtime-cli.ts`). `completeWithClaudeCli` and `completeWithKiroCli` were the same spawn, timeout, kill and stdout handling with different argv; adding a third copy for Pi would have made three.
-
 
 ## [0.43.0] - 2026-09-30
 
