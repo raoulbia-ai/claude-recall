@@ -6,6 +6,9 @@
  * is opt-in (CLAUDE_RECALL_PI_LLM=1): unlike a Claude subscription, a Pi
  * model is often billed per call.
  *
+ * The nested session is sealed — no tools, no session file, no user context;
+ * see SEALED below.
+ *
  * `--no-extensions` is the recursion guard: the nested session loads no
  * extensions at all, so claude-recall cannot re-enter itself. That is stronger
  * than the environment flag the Claude Code backend relies on — but note what
@@ -16,6 +19,33 @@
 
 import * as os from 'os';
 import { completeWithRuntimeCli } from './runtime-cli';
+
+/**
+ * What the nested session is denied. It is asked one question and must be able
+ * to do nothing else.
+ *
+ * The prompt carries session text — tool output, fetched pages — so it has to
+ * be treated as hostile, and Pi has no permission prompts: with its default
+ * tools on, an instruction planted in that text could run a shell command in
+ * this background call with the user's rights. Checked on Pi 1.5.2: without
+ * `--no-tools` the nested call ran `touch` when told to; with it, it could not.
+ */
+const SEALED: readonly string[] = [
+  // No bash, edit or write — and no extension or MCP tools either, which
+  // matters when CLAUDE_RECALL_PI_EXTENSIONS=1 lets extensions load.
+  '--no-tools',
+  // No MCP server is even connected to for a one-line answer.
+  '--no-mcp',
+  // The prompt is session text; it is not left behind in a session file.
+  '--no-session',
+  // The user's own context stays out of a classifier's answer.
+  '--no-skills',
+  '--no-prompt-templates',
+  '--no-context-files',
+  // The call runs from the temp directory, which other local users can write
+  // to: nothing found there is to be trusted as project configuration.
+  '--no-approve',
+];
 
 /**
  * Whether this process is a Pi host. Set by the Pi extension when it loads.
@@ -64,6 +94,7 @@ export function completeWithPiCli(
   const isolated = process.env.CLAUDE_RECALL_PI_EXTENSIONS !== '1';
   const args = [
     ...(isolated ? ['--no-extensions'] : []),
+    ...SEALED,
     ...(model ? ['--model', model] : []),
     '-p',
     prompt,

@@ -12,6 +12,13 @@ function clearRecallEnv(): void {
   for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE_RECALL_')) delete process.env[k];
 }
 
+/** The flags every nested call must carry, spelled out here on purpose: a
+ *  test that imported the list would pass with the list empty. */
+const SEALED = [
+  '--no-tools', '--no-mcp', '--no-session',
+  '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-approve',
+];
+
 /** A child that prints `stdout` (if any) and exits with `code` on the next tick. */
 function fakeChild(opts: { stdout?: string; stderr?: string; code?: number } = {}) {
   const child: any = new EventEmitter();
@@ -48,7 +55,37 @@ describe('Pi LLM backend', () => {
 
     const [command, args] = mockSpawn.mock.calls[0];
     expect(command).toBe('pi');
-    expect(args).toEqual(['--no-extensions', '-p', 'why did it fail?']);
+    expect(args).toEqual(['--no-extensions', ...SEALED, '-p', 'why did it fail?']);
+  });
+
+  it.each([
+    ['--no-tools', 'session text in the prompt must not be able to run a command'],
+    ['--no-mcp', 'no MCP server is connected to for a one-line answer'],
+    ['--no-session', 'the prompt is not left behind in a session file'],
+    ['--no-skills', 'the user\'s skills stay out of the answer'],
+    ['--no-prompt-templates', 'the user\'s prompt templates stay out of the answer'],
+    ['--no-context-files', 'AGENTS.md and CLAUDE.md stay out of the answer'],
+    ['--no-approve', 'nothing in the shared temp directory is trusted as project config'],
+  ])('always passes %s — %s', async (flag) => {
+    // With extensions isolated and with them loaded: the seal does not depend
+    // on which way the host is configured.
+    for (const extensions of [undefined, '1']) {
+      if (extensions) process.env.CLAUDE_RECALL_PI_EXTENSIONS = extensions;
+      mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
+
+      await complete('prompt');
+
+      expect(mockSpawn.mock.calls.at(-1)[1]).toContain(flag);
+    }
+  });
+
+  it('puts the prompt last, after every flag', async () => {
+    mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
+
+    await complete('--no-tools is only text when it is the prompt');
+
+    const args: string[] = mockSpawn.mock.calls[0][1];
+    expect(args.slice(-2)).toEqual(['-p', '--no-tools is only text when it is the prompt']);
   });
 
   it('disables extensions in the child, so it cannot re-enter claude-recall', async () => {
@@ -81,7 +118,7 @@ describe('Pi LLM backend', () => {
     await complete('prompt');
 
     expect(mockSpawn.mock.calls[0][1]).toEqual([
-      '--no-extensions', '--model', 'airpx-static/claude-sonnet-5', '-p', 'prompt',
+      '--no-extensions', ...SEALED, '--model', 'airpx-static/claude-sonnet-5', '-p', 'prompt',
     ]);
   });
 
