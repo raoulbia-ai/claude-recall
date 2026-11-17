@@ -46,6 +46,25 @@ export interface Memory {
   sophistication_level?: number;  // 1-4: Procedural → Compositional
   scope?: 'universal' | 'project' | null;  // v0.8.0: Memory scope
   content_hash?: string;
+  /**
+   * Where a captured memory came from (v0.46.0): the Claude Code session, its
+   * transcript file, and the transcript entry's uuid when known. Lets a reader
+   * go back to the user's exact words instead of trusting the classifier's
+   * extract. Null for memories stored without a hook input (MCP, CLI, legacy).
+   * source_excerpt is a copy of the user's text, kept because Claude Code
+   * deletes old transcripts (cleanupPeriodDays, 30 days by default).
+   */
+  source_session?: string | null;
+  source_transcript?: string | null;
+  source_entry?: string | null;
+  source_excerpt?: string | null;
+  /**
+   * When the memory janitor checked this rule against source_excerpt and found
+   * the user's words state it (v0.47.0). Null = unconfirmed: inferred by a
+   * classifier, stored without a source, or not yet reviewed. Cleared when the
+   * content changes. Confirmed rules load first.
+   */
+  confirmed_at?: number | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -55,6 +74,15 @@ export interface Memory {
    */
   bm25Score?: number;
 }
+
+/** The provenance columns, as returned alongside rule rows. */
+export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
+
+/** Rule rows as getActiveRules returns them. */
+export type ActiveRuleRow = {
+  id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number;
+  confirmed_at?: number | null;
+} & SourceColumns;
 
 export class MemoryStorage {
   private db: Database.Database;
@@ -190,6 +218,18 @@ export class MemoryStorage {
           console.error('✅ Added content_hash column');
         }
       }
+      // Add source provenance columns if missing (v0.46.0). No backfill: older
+      // memories have no recorded source.
+      for (const col of ['source_session', 'source_transcript', 'source_entry', 'source_excerpt']) {
+        if (!columnNames.includes(col)) {
+          this.db.exec(`ALTER TABLE memories ADD COLUMN ${col} TEXT`);
+        }
+      }
+      // Add confirmed_at if missing (v0.47.0). Everything starts unconfirmed.
+      if (!columnNames.includes('confirmed_at')) {
+        this.db.exec('ALTER TABLE memories ADD COLUMN confirmed_at INTEGER');
+      }
+
       // v0.18.0: Outcome-aware learning tables
       const outcomeTables = this.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','candidate_lessons','memory_stats')"
@@ -592,8 +632,9 @@ export class MemoryStorage {
     const stmt = this.db.prepare(`
       INSERT INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
-       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash,
+       source_session, source_transcript, source_entry, source_excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
         value = excluded.value,
         type = excluded.type,
@@ -609,7 +650,15 @@ export class MemoryStorage {
         confidence_score = excluded.confidence_score,
         sophistication_level = excluded.sophistication_level,
         scope = excluded.scope,
-        content_hash = excluded.content_hash
+        content_hash = excluded.content_hash,
+        -- a same-key re-save without a source keeps the original one
+        source_session = COALESCE(excluded.source_session, memories.source_session),
+        source_transcript = COALESCE(excluded.source_transcript, memories.source_transcript),
+        source_entry = COALESCE(excluded.source_entry, memories.source_entry),
+        source_excerpt = COALESCE(excluded.source_excerpt, memories.source_excerpt),
+        -- a confirmation covers the content that was checked; new content starts unconfirmed
+        confirmed_at = CASE WHEN excluded.content_hash IS memories.content_hash
+                            THEN memories.confirmed_at ELSE NULL END
     `);
 
     stmt.run(
@@ -628,7 +677,11 @@ export class MemoryStorage {
       memory.confidence_score || null,
       memory.sophistication_level || 1,
       memory.scope || null,
-      contentHash
+      contentHash,
+      memory.source_session || null,
+      memory.source_transcript || null,
+      memory.source_entry || null,
+      memory.source_excerpt || null
     );
 
     // Newest-wins: retire the fuzzy-matched old row in favor of the row just
@@ -768,6 +821,11 @@ export class MemoryStorage {
       sophistication_level: row.sophistication_level || 1,
       scope: row.scope || null,
       content_hash: row.content_hash || null,
+      source_session: row.source_session || null,
+      source_transcript: row.source_transcript || null,
+      source_entry: row.source_entry || null,
+      source_excerpt: row.source_excerpt || null,
+      confirmed_at: row.confirmed_at || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };
@@ -1213,7 +1271,7 @@ export class MemoryStorage {
    * All active rule-type rows, for the memory janitor's review pass.
    * Scoped like loadActiveRules: the given project, universal, or unscoped.
    */
-  getActiveRules(projectId?: string): Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}> {
+  getActiveRules(projectId?: string): ActiveRuleRow[] {
     const typePlaceholders = MemoryStorage.RULE_TYPES.map(() => '?').join(',');
     const params: any[] = [...MemoryStorage.RULE_TYPES];
     let scopeClause = `AND (project_id IS NULL OR project_id = '' OR scope = 'universal')`;
@@ -1222,11 +1280,31 @@ export class MemoryStorage {
       params.push(projectId);
     }
     return this.db.prepare(`
-      SELECT id, key, type, value, load_count, cite_count, timestamp
+      SELECT id, key, type, value, load_count, cite_count, timestamp,
+             source_session, source_transcript, source_entry, source_excerpt, confirmed_at
       FROM memories
       WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
       ORDER BY timestamp ASC
-    `).all(...params) as Array<{id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number}>;
+    `).all(...params) as ActiveRuleRow[];
+  }
+
+  /**
+   * Mark rules confirmed: the janitor found the user's source words state
+   * them. Only active rules that have a source excerpt and aren't already
+   * confirmed are touched. Returns the number of rows marked.
+   */
+  confirmRulesByIds(ids: number[]): number {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db.prepare(
+      `UPDATE memories SET confirmed_at = ?
+       WHERE id IN (${placeholders}) AND is_active = 1
+         AND confirmed_at IS NULL AND source_excerpt IS NOT NULL`
+    ).run(Date.now(), ...ids);
+    if (result.changes > 0) {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    }
+    return result.changes;
   }
 
   /**

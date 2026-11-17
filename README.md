@@ -62,6 +62,7 @@ npm install -g claude-recall
 > echo 'claude-recall' >> ~/.nvm/default-packages   # every future `nvm install` includes it
 > ```
 > `claude-recall doctor` flags a version-orphaned install and how to fix it.
+> **Works in your terminal but not in the Claude desktop app or an IDE?** See *nvm: "Executable not found"* in [Install & upgrade troubleshooting](#upgrading) below.
 
 ### Claude Code
 
@@ -201,7 +202,7 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 | **Hard-won success** | A goal that failed repeatedly then finally worked is captured as a reusable `solution` ([details](#success-capture)) | ✓ | ✓ |  |
-| **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules ([details](#memory-janitor)) | ✓ |  | ✓ |
+| **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules, checks rules against the user's own words and confirms the ones they state ([details](#memory-janitor)) | ✓ |  | ✓ |
 
 Classification runs on each runtime's **own** LLM — Claude Code via headless `claude -p` on your subscription; Kiro via `kiro-cli chat --no-interactive` on Kiro credits — with regex as the fallback. **An exported `ANTHROPIC_API_KEY` is never touched** unless you explicitly opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. No API key is ever required; no configuration needed.
 
@@ -356,6 +357,8 @@ Six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`
 - **Pi** — native extension (`recall_*` tools) + event handlers
 - **Kiro CLI** — custom agent bundling the MCP server + Kiro hooks ([details](docs/kiro.md))
 
+**Source links.** A memory captured by a Claude Code hook records the session, transcript file and transcript entry it came from. It also keeps a copy of the user's text, up to 2,000 chars. `search_memory` prints the source under the memory, so the agent can read the user's exact words when the one-line extract isn't enough. Claude Code deletes old transcripts (`cleanupPeriodDays`, 30 days by default); once a transcript is gone, `search_memory` quotes the saved text instead of the dead path. Memories stored through `store_memory`, the CLI, Pi or Kiro, and memories captured before 0.46.0, have no source.
+
 **Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`, plus auto-generated `.claude/skills/auto-*/` crystallized from accumulated memories), and a bundled skill file for Pi.
 
 **Outcome-aware learning.** Claude Recall tracks what happens *after* the agent acts:
@@ -386,6 +389,11 @@ Automatic capture inevitably stores some noise — a conversational fragment mis
 - **demote** noise — misfiled conversation, malformed junk, zero-content platitudes
 - **merge** duplicates into the single best phrasing
 - **rewrite** vague rules into precise trigger-plus-pattern form
+- **confirm** rules whose source shows the user stated them
+
+When a rule has a [source](#how-it-works), the janitor sees the user's words it was captured from next to the rule, and demotes rules those words don't support. The usual case is a fragment of something the user pasted (a log, a document, a bug report) that the classifier mistook for a preference. A merged or rewritten rule keeps the source of the rule it replaces.
+
+When the user's words plainly state a rule, the janitor marks it **confirmed**. Confirmed rules load first: `load_rules` puts them ahead of unconfirmed ones in every section, and when a section's cap or the token budget cuts rules, unconfirmed ones go first. A rule stays unconfirmed when it has no source, was only inferred by a classifier, or hasn't been reviewed yet. Changing a rule's content clears its confirmation.
 
 Guardrails: nothing is ever deleted (demotions are reversible via `rules promote <id>`, and re-teaching a demoted rule revives it); memories younger than 24h are never reviewed; at most 10 actions per run; malformed LLM output does nothing.
 
@@ -416,7 +424,7 @@ Per-runtime notes:
 - **Kiro CLI** — the binary upgrade covers hook behaviour; when release notes change the agent *template*, re-run `kiro setup` once and start one fresh conversation — see [docs/kiro.md](docs/kiro.md#upgrading).
 
 <details>
-<summary><b>Install & upgrade troubleshooting</b> (EACCES, unknown command, pre-0.27 registrations)</summary>
+<summary><b>Install & upgrade troubleshooting</b> (EACCES, unknown command, pre-0.27 registrations, nvm + desktop app)</summary>
 
 **`EACCES: permission denied`** — your global npm prefix is root-owned (common when node came from `apt`). Quick fix: `sudo npm install -g claude-recall@latest`. Permanent fix — move the prefix to a user-owned directory so global installs never need sudo again:
 
@@ -439,6 +447,26 @@ claude mcp add claude-recall -- claude-recall mcp start
 ```
 
 **WSL: "invalid ELF header"** — mixed Windows/WSL `node_modules`. Use the global install (the default) and verify the binary resolves to a Linux path: `which claude-recall` should show `/home/<user>/...`, not a Windows path. Global installation does not affect project scoping.
+
+**nvm: "Executable not found" in the Claude desktop app / an IDE, but fine in a terminal** — nvm adds Node to `PATH` only in interactive shells (`~/.bashrc`). Apps that start Claude Code without one (the Claude desktop app, some IDEs) then can't find `claude-recall` or `node`: the MCP server fails with `ENOENT: Executable not found in $PATH: "claude-recall"` and every hook fails with `claude-recall: not found`. `claude-recall doctor` reports this under *Launch outside a terminal*. Fix: register claude-recall by absolute path through a small wrapper that puts nvm's Node on `PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+cat > ~/.local/bin/claude-recall-wrap <<'EOF'
+#!/bin/sh
+# newest nvm Node that has claude-recall; no nvm.sh, so hooks stay fast
+for d in $(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V -r); do
+  if [ -x "$d/claude-recall" ]; then PATH="$d:$PATH"; export PATH; exec "$d/claude-recall" "$@"; fi
+done
+echo "claude-recall-wrap: claude-recall not found under ~/.nvm" >&2; exit 127
+EOF
+chmod +x ~/.local/bin/claude-recall-wrap
+
+# check it works without your shell's PATH (as the desktop app sees it)
+env -i HOME=$HOME PATH=/usr/bin:/bin ~/.local/bin/claude-recall-wrap --version
+```
+
+Then use the absolute wrapper path (`/home/<user>/.local/bin/claude-recall-wrap`) instead of `claude-recall` in the MCP server `command` (`claude mcp remove claude-recall`, then `claude mcp add --scope user claude-recall -- /home/<user>/.local/bin/claude-recall-wrap mcp start`), every hook command in `~/.claude/settings.json` (`… hook run …`), and the `statusLine` command. Restart Claude Code and re-run `claude-recall doctor`. From 0.45.0, `setup --install` and `doctor --fix` keep the wrapper instead of rewriting it back to `claude-recall`. The wrapper picks the **newest** nvm Node that has claude-recall installed, so it keeps working after `nvm install` as long as claude-recall comes along (see `~/.nvm/default-packages` above).
 
 </details>
 
@@ -492,9 +520,11 @@ Defaults work out of the box; tune via environment variables as needed.
 
 ## Security & privacy
 
-- SQLite memory never leaves your machine — no prompts, code, or memory content is transmitted
+- The memory database never leaves your machine, and `~/.claude-recall` is private to your user account (`0700`)
+- **Prompts are classified by an LLM.** To decide what's worth remembering, capture sends each prompt to the agent's own LLM: headless `claude -p` on your Claude login under Claude Code, Kiro's LLM under Kiro, or the Anthropic API only if you opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. That's the same provider your session already talks to, but avoid pasting secrets into prompts
+- **Captured memories keep a copy of your words.** Since 0.46.0, a hook capture stores the message it came from (up to 2,000 chars, including anything pasted into it) and the path of the Claude Code transcript. That text stays in the local database and in `export` files. The daily janitor sends it, shortened to 400 chars per rule, to the same LLM as capture
 - Full transparency via CLI (`stats`, `search`, `export`)
-- Never stores secrets (API keys, passwords, tokens)
+- Never intentionally stores secrets (API keys, passwords, tokens)
 
 Details in [docs/security.md](docs/security.md).
 
@@ -515,4 +545,6 @@ npm run mcp:dev        # Start MCP server in dev mode
 
 ## License
 
-MIT.
+**[MIT](LICENSE)** · SPDX `MIT` · Copyright © 2025-2026 Raoul Biagioni
+
+Free to use, modify and distribute — including commercially and in closed-source work — provided the copyright notice and permission notice are retained. The software is provided "as is", without warranty of any kind. Full text: [LICENSE](LICENSE).

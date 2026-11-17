@@ -14,6 +14,7 @@ import * as os from 'os';
 import { hookLog } from './shared';
 import { MemoryService, SyncRule } from '../services/memory';
 import { ConfigService } from '../services/config';
+import { isBoilerplateFailureValue } from '../services/memory-quality';
 
 /** Max number of recall files to write (leave room for CC's own memory files) */
 const MAX_SYNC_FILES = 30;
@@ -90,45 +91,12 @@ function extractValue(value: any): string {
 }
 
 /**
- * Generic default "lessons" the failure detectors emit when no fix has been
- * paired yet. A promoted memory whose only takeaway is one of these teaches
- * nothing — it just costs context. We skip syncing those to the file-based
- * memory; the specific failure still lives in the DB, so fix-pairing and
- * evidence counting are unaffected, and once a fix enriches what_should_do
- * (e.g. "Fix: <command>") the memory syncs normally.
+ * Low-signal failure filter — now shared with loadActiveRules so the file index
+ * and every in-context surface agree on what counts. See services/memory-quality.
  */
-const BOILERPLATE_LESSONS = new Set([
-  'check inputs and prerequisites before retrying',
-  'check command syntax, file paths, and prerequisites before running',
-  'review error details and adjust approach',
-]);
-
-/** Unwrap a memory value to the object that carries the failure fields, or null. */
-function unwrapToFailureObject(value: any): any {
-  let v: any = value;
-  for (let depth = 0; depth < 6; depth++) {
-    if (typeof v === 'string') {
-      const t = v.trim();
-      if (t.startsWith('{')) { try { v = JSON.parse(t); continue; } catch { return null; } }
-      return null;
-    }
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      if (typeof v.what_should_do === 'string' || typeof v.what_failed === 'string') return v;
-      const next = v.content ?? v.value;
-      if (next === undefined) return null;
-      v = next;
-      continue;
-    }
-    return null;
-  }
-  return null;
-}
-
 function isBoilerplateFailure(rule: SyncRule): boolean {
   if (rule.crType !== 'failure') return false;
-  const obj = unwrapToFailureObject(rule.value);
-  const wsd = obj && typeof obj.what_should_do === 'string' ? obj.what_should_do.trim().toLowerCase() : '';
-  return BOILERPLATE_LESSONS.has(wsd);
+  return isBoilerplateFailureValue(rule.value);
 }
 
 /**

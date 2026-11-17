@@ -75,3 +75,83 @@ describe('DoctorCommands.reportHooks', () => {
     } finally { rmTmp(home); }
   });
 });
+
+describe('DoctorCommands minimal-PATH launch check', () => {
+  function writeExe(dir: string, name: string, body: string): string {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, body, { mode: 0o755 });
+    return p;
+  }
+
+  it('probe: passes a launcher that runs with only system dirs on PATH', () => {
+    const home = mkTmp();
+    try {
+      const ok = writeExe(home, 'claude-recall-wrap', '#!/bin/sh\necho 0.0.0\n');
+      expect(DoctorCommands.probeMinimalPath(ok, home)).toEqual({ ok: true });
+    } finally { rmTmp(home); }
+  });
+
+  it('probe: fails a script whose interpreter is not on the minimal PATH (the nvm case)', () => {
+    const home = mkTmp();
+    try {
+      const bad = writeExe(home, 'claude-recall', '#!/usr/bin/env claude-recall-no-such-node\n');
+      const r = DoctorCommands.probeMinimalPath(bad, home);
+      expect(r.ok).toBe(false);
+    } finally { rmTmp(home); }
+  });
+
+  it('probe: fails a bare name the minimal PATH cannot resolve', () => {
+    const home = mkTmp();
+    try {
+      const binDir = path.join(home, 'nvm-bin');
+      fs.mkdirSync(binDir);
+      writeExe(binDir, 'claude-recall', '#!/bin/sh\necho 0.0.0\n');
+      expect(DoctorCommands.probeMinimalPath('claude-recall', home, '/nonexistent-dir')).toEqual({
+        ok: false, reason: "'claude-recall' not found",
+      });
+      // ...but the same name resolves once its dir is on PATH.
+      expect(DoctorCommands.probeMinimalPath('claude-recall', home, `${binDir}:/usr/bin:/bin`).ok).toBe(true);
+    } finally { rmTmp(home); }
+  });
+
+  it('collects MCP, hook and statusLine commands', () => {
+    const home = mkTmp();
+    try {
+      fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+        mcpServers: { 'claude-recall': { type: 'stdio', command: 'claude-recall', args: ['mcp', 'start'] } },
+      }));
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'claude-recall hook run memory-stop' }] }] },
+        statusLine: { type: 'command', command: 'claude-recall statusline' },
+      }));
+      const { scanMcpConfig } = require('../../src/cli/commands/mcp-config-repair');
+      const cmds = DoctorCommands.collectLaunchCommands(home, home, scanMcpConfig(home));
+      expect(cmds.map(c => c.source)).toEqual(expect.arrayContaining(['MCP server (user scope)', 'hooks', 'statusLine']));
+    } finally { rmTmp(home); }
+  });
+
+  it('report: groups by executable, warns once per failing launcher, points at the README fix', () => {
+    const msgs: string[] = [];
+    const n = DoctorCommands.reportMinimalPathLaunch(
+      [
+        { source: 'MCP server (user scope)', command: 'claude-recall' },
+        { source: 'hooks', command: 'claude-recall hook run rule-injector' },
+        { source: 'hooks', command: 'claude-recall hook run memory-sync' },
+      ],
+      '/home/u', m => msgs.push(m), () => ({ ok: false, reason: "'claude-recall' not found" }));
+    expect(n).toBe(1);
+    const out = msgs.join('\n');
+    expect(out).toContain('MCP server (user scope), hooks');
+    expect(out).toContain('Executable not found');
+  });
+
+  it('report: all launchers healthy → single check mark, zero warnings', () => {
+    const msgs: string[] = [];
+    const n = DoctorCommands.reportMinimalPathLaunch(
+      [{ source: 'hooks', command: '/home/u/.local/bin/claude-recall-wrap hook run x' }],
+      '/home/u', m => msgs.push(m), () => ({ ok: true }));
+    expect(n).toBe(0);
+    expect(msgs.join('\n')).toContain('✓');
+  });
+});

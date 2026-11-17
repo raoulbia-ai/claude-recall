@@ -1,6 +1,6 @@
 {
   "name": "claude-recall",
-  "version": "0.43.0-soak.7",
+  "version": "0.47.0-soak.8",
   "description": "Persistent memory for Claude Code and Pi with native Skills integration, automatic capture, failure learning, and project scoping",
   "main": "dist/index.js",
   "bin": {
@@ -77,7 +77,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "author": "Claude Recall Team",
+  "author": "Raoul Biagioni",
   "license": "MIT",
   "engines": {
     "node": ">=20.19.0"
