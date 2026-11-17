@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Backups now survive WAL, get verified, and compaction refuses a damaged file.** A shared database went malformed on 2026-11-09 and every retained backup turned out to be unreadable in the same pages as the database itself — there was nothing to restore from. `createBackup()` was `fs.copyFileSync` of the `.db` file alone: in WAL mode the committed tail lives in the `-wal` file, so a "backup" was the database minus its newest transactions, and torn besides, because other agent processes write while the copy runs. It now uses `VACUUM INTO` (online backup API as fallback below SQLite 3.27), and an `integrity_check` gates the new file **before** rotation — otherwise a corrupt backup silently evicts the last good one under keep-3, which is exactly how this incident ran out of clean copies. `compact()` also checked nothing: it VACUUMed — rewriting every page — a database SQLite was already calling malformed. It now verifies first and refuses, leaving the file untouched for recovery. Not changed: `busy_timeout`, which better-sqlite3 already defaults to 5000ms.
+
 ## [0.47.0] - 2026-11-11
 
 ### Changed
