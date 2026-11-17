@@ -77,6 +77,14 @@ describe('Pi LLM backend', () => {
     ]);
   });
 
+  it('treats a blank answer as no answer', async () => {
+    // The shared spawn hands back stdout verbatim, as the Claude Code and Kiro
+    // backends always received it; trimming is this backend's own decision.
+    mockSpawn.mockReturnValue(fakeChild({ stdout: '  \n' }));
+
+    await expect(load().completeWithPiCli('prompt')).resolves.toBeNull();
+  });
+
   it('returns null on a non-zero exit rather than throwing', async () => {
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'partial', code: 1 }));
 

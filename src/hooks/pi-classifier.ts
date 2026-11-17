@@ -46,5 +46,5 @@ export function completeWithPiCli(
     // Temp cwd: the nested session must load no project settings.
     cwd: os.tmpdir(),
     env: { ...process.env, CLAUDE_RECALL_NESTED: '1' },
-  });
+  }).then(stdout => stdout?.trim() || null);
 }

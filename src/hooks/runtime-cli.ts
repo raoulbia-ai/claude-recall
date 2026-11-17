@@ -12,6 +12,8 @@ import { hookLog, safeErrorMessage } from './shared';
  *
  * Never throws and never rejects: a missing binary, a timeout or a non-zero
  * exit all resolve to null, and the caller falls through to its next backend.
+ * A clean exit resolves to stdout exactly as the child wrote it — what counts
+ * as an empty answer is the caller's call, as it was before this was shared.
  */
 export interface RuntimeCliOptions {
   /** Log prefix identifying the backend. */
@@ -74,7 +76,7 @@ export function completeWithRuntimeCli(
         hookLog(opts.tag, `${command} exited ${code}`);
         return done(null);
       }
-      done(stdout.trim() || null);
+      done(stdout);
     });
   });
 }
