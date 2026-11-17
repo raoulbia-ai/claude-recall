@@ -11,7 +11,6 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
-import { CitableRule, extractCitations, matchCitations } from '../shared/citations';
 import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import {
   processToolOutcome,
@@ -25,6 +24,7 @@ import {
   ConversationEntry,
 } from '../shared/event-processors';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
+import { CitableRule, extractCitations, matchCitations } from '../shared/citations';
 // Shared audited directive — memories are advisory user preferences, never
 // authoritative instructions (prompt-injection hardening, 2026-04-24 audit).
 import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
