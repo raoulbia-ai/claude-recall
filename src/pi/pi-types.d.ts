@@ -105,6 +105,17 @@ declare namespace PiTypes {
     customInstructions?: string;
   }
 
+  /** A finalized message. Citations are read from the assistant's own text. */
+  interface AgentMessage {
+    role: 'user' | 'assistant' | string;
+    content: (TextContent | ImageContent)[] | string;
+  }
+
+  interface MessageEndEvent {
+    type: 'message_end';
+    message: AgentMessage;
+  }
+
   // --- Handler types ---
 
   type ExtensionHandler<E, R = undefined> = (
@@ -121,6 +132,7 @@ declare namespace PiTypes {
     on(event: 'turn_end', handler: ExtensionHandler<TurnEndEvent>): void;
     on(event: 'input', handler: ExtensionHandler<InputEvent, InputEventResult>): void;
     on(event: 'tool_result', handler: ExtensionHandler<ToolResultEvent>): void;
+    on(event: 'message_end', handler: ExtensionHandler<MessageEndEvent>): void;
     on(event: 'session_before_compact', handler: ExtensionHandler<SessionBeforeCompactEvent>): void;
 
     registerTool(tool: ToolDefinition): void;

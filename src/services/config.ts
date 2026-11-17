@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { ensurePrivateDir, defaultDataDir } from './private-dir';
 
+/** Days of raw outcome telemetry kept when the setting is absent or unreadable. */
+export const DEFAULT_TELEMETRY_DAYS = 30;
+
 export interface ClaudeRecallConfig {
   // Database configuration
   database: {
@@ -18,6 +21,10 @@ export interface ClaudeRecallConfig {
         corrections: number;
         preferences: number;
         projectKnowledge: number;
+        /** Auto-captured failures to keep, strongest first. -1 keeps all. */
+        failures: number;
+        /** Days of outcome/injection telemetry to keep. -1 keeps all. */
+        telemetryDays: number;
       };
     };
   };
@@ -103,7 +110,9 @@ export class ConfigService {
             toolUse: parseInt(process.env.CLAUDE_RECALL_RETAIN_TOOL_USE || '1000'),
             corrections: parseInt(process.env.CLAUDE_RECALL_RETAIN_CORRECTIONS || '100'),
             preferences: parseInt(process.env.CLAUDE_RECALL_RETAIN_PREFERENCES || '-1'), // Keep forever
-            projectKnowledge: parseInt(process.env.CLAUDE_RECALL_RETAIN_PROJECT_KNOWLEDGE || '-1') // Keep forever
+            projectKnowledge: parseInt(process.env.CLAUDE_RECALL_RETAIN_PROJECT_KNOWLEDGE || '-1'), // Keep forever
+            failures: parseInt(process.env.CLAUDE_RECALL_RETAIN_FAILURES || '1000'),
+            telemetryDays: parseInt(process.env.CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS || String(DEFAULT_TELEMETRY_DAYS))
           }
         }
       },

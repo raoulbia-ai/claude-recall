@@ -306,6 +306,7 @@ claude-recall monitor                    # Memory search monitoring stats
 
 # ── Rule Hygiene ─────────────────────────────────────────────────────
 claude-recall rules demote [--dry-run]   # Demote rules loaded >=N times but never cited
+                                         # (citations are counted under both Claude Code and Pi)
 claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
 claude-recall rules promote <id>         # Restore an auto-demoted or auto-deduped rule
 claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)
@@ -507,10 +508,13 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_AUTO_CLEANUP`             | `false` | Auto-kill stale MCP processes on start (otherwise reports and exits).                                    |
 | `CLAUDE_RECALL_COMPACT_THRESHOLD`        | `10MB`  | DB size at which automatic compaction kicks in.                                                          |
 | `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
+| `CLAUDE_RECALL_RETAIN_FAILURES`          | `1000`  | Auto-captured failures kept at compaction, strongest first. `-1` keeps all. Confirmed rules and promoted lessons are never capped away, and inactive rows go first. Failures are the highest-volume automatic write, so an uncapped store grows until every turn pays to load it. |
+| `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`    | `30`    | Age limit for outcome telemetry (`outcome_events`, `rule_injection_events`, and episodes no outcome event or candidate lesson references any more). One row per tool result, so this is usually the largest table in the file. `-1` keeps all. |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `warn`  | `block` / `warn` / `off` for the search-enforcer hook. Env wins, else `~/.claude-recall/config.json` `"enforceMode"`, else `warn`. |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). `0` disables. |
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
+| `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Raw outcome telemetry (`outcome_events`, `rule_injection_events`). `auto` collects only where the distillation step that reads it runs — Claude Code hooks, not Pi. `on` collects everywhere (the `outcomes` CLI reads these tables), `off` nowhere. |
 | `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 
 ---
