@@ -423,25 +423,35 @@ export class DatabaseManager {
   }
   
   /**
-   * Keys of memories the promotion engine wrote.
+   * Rows a retention cap must never take.
    *
-   * The engine names them `promoted_*` and records the key on the lesson it
-   * came from; both are checked, since an older promotion may predate either
+   * A confirmed rule and a promoted lesson are the two things in the store a
+   * human or the promotion engine deliberately kept, and `DELETE` has no undo:
+   * a lesson earned over several sessions would otherwise be spent to make
+   * room for raw capture, which is stored under the same type.
+   *
+   * The engine names promotions `promoted_*` and records the key on the lesson
+   * they came from; both are checked, since a promotion may predate either
    * convention on a given database.
    */
-  private promotedKeys(db: Database.Database): Set<string> {
+  private capExemption(db: Database.Database): (row: any) => boolean {
+    let promoted: Set<string>;
     try {
-      const hasTable = db.prepare(
+      const hasLessons = db.prepare(
         `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'candidate_lessons'`
       ).get();
-      if (!hasTable) return new Set();
-      const rows = db.prepare(
-        'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
-      ).all() as any[];
-      return new Set(rows.map(r => r.k as string));
+      const rows = hasLessons
+        ? db.prepare(
+            'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
+          ).all() as any[]
+        : [];
+      promoted = new Set(rows.map(r => r.k as string));
     } catch {
-      return new Set();
+      promoted = new Set();
     }
+
+    return row => row.confirmed_at != null
+      || (typeof row.key === 'string' && (row.key.startsWith('promoted_') || promoted.has(row.key)));
   }
 
   /**
@@ -469,25 +479,17 @@ export class DatabaseManager {
 
       if (rows.length <= keepCount) return 0;
 
-      // Rows this cap must never take. A confirmed rule and a promoted lesson
-      // are the two things in here a human or the promotion engine deliberately
-      // kept, and `DELETE` has no undo: a lesson earned over several sessions
-      // would be silently spent to make room for raw capture.
-      const promoted = this.promotedKeys(db);
-      const isProtected = (r: any): boolean =>
-        r.confirmed_at != null
-        || typeof r.key === 'string' && (r.key.startsWith('promoted_') || promoted.has(r.key));
-
-      const removable = rows.filter(r => !isProtected(r));
+      const isExempt = this.capExemption(db);
+      const removable = rows.filter(r => !isExempt(r));
       // Inactive first — superseded or demoted rows are already out of every
       // retrieval path, so they cost the cap nothing to give up.
       const scored = removable.map(r => ({
         id: r.id,
-        inactive: 'is_active' in r && (r.is_active === 0 || r.is_active === false) ? 0 : 1,
+        inactive: r.is_active === 0 || r.is_active === false ? 0 : 1,
         strength: MemoryRetrieval.computeStrength(r as Memory),
       })).sort((a, b) => a.inactive - b.inactive || a.strength - b.strength);
 
-      const toRemove = scored.slice(0, Math.min(rows.length - keepCount, scored.length));
+      const toRemove = scored.slice(0, rows.length - keepCount);
 
       if (!dryRun && toRemove.length > 0) {
         // Prepared-statement deletion. Previous code used string interpolation
