@@ -49,8 +49,16 @@ try {
   const dbDir = path.join(os.homedir(), '.claude-recall');
 
   if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+    fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
     console.log(`📁 Created database directory: ${dbDir}`);
+  }
+  // Owner-only: the DB and hook logs hold whatever the user typed. Tighten an
+  // existing dir too (same rule as src/services/private-dir.ts). Best effort.
+  if (process.platform !== 'win32') {
+    try {
+      const mode = fs.statSync(dbDir).mode & 0o777;
+      if (mode & 0o077) fs.chmodSync(dbDir, mode & 0o700);
+    } catch (e) { /* not ours to fix */ }
   }
 
   // MCP registration: instructions only, no auto-registration.

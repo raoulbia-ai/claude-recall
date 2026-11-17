@@ -85,8 +85,7 @@ const HOOK_RUN_ID_RE = /hook\s+run\s+(\S+)/i;
  * Resolve a binary name against PATH. POSIX-first; on Windows tries common
  * extensions. Returns the first matching absolute path, or null.
  */
-export function resolveOnPath(binName: string): string | null {
-  const pathEnv = process.env.PATH || '';
+export function resolveOnPath(binName: string, pathEnv: string = process.env.PATH || ''): string | null {
   const exts = process.platform === 'win32' ? ['.cmd', '.exe', '.bat', ''] : [''];
   for (const dir of pathEnv.split(path.delimiter)) {
     if (!dir) continue;
@@ -101,6 +100,24 @@ export function resolveOnPath(binName: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * A user-supplied absolute launcher for claude-recall as the first token of
+ * `command` — e.g. the nvm wrapper the README documents for the Claude desktop
+ * app, which starts MCP servers and hooks without the shell's PATH. Returns the
+ * path when it exists on disk, else null. `setup --install` and `doctor --fix`
+ * keep such a launcher instead of normalizing back to bare `claude-recall`,
+ * which is exactly the name the desktop app can't resolve.
+ */
+export function customLauncher(command: string): string | null {
+  const first = command.trim().split(/\s+/)[0] || '';
+  if (!path.isAbsolute(first) || !/^claude-recall/.test(path.basename(first))) return null;
+  try {
+    return fs.statSync(first).isFile() ? first : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

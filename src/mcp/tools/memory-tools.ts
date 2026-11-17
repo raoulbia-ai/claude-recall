@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
@@ -143,7 +144,7 @@ export class MemoryTools {
       },
       {
         name: 'search_memory',
-        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance.',
+        description: 'Search memories by keyword. Use to find specific memories before making decisions. Returns matched memories ranked by relevance. A captured memory may list its source: the Claude Code transcript (.jsonl) and entry uuid it came from, or, once that transcript has been deleted, the user\'s words quoted. Read the entry when you need the user\'s exact words rather than the extracted summary.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -337,9 +338,11 @@ export class MemoryTools {
       // Token budget — cap the load_rules payload so it doesn't dominate the host's
       // context window (CC precedent: CAPPED_DEFAULT_MAX_TOKENS = 8_000 in utils/context.ts).
       // Priority order of inclusion: corrections > preferences (by cite) > devops (by cite) > failures.
-      // Within each category, high-cited rules sink to the top so the first-to-drop are uncited.
+      // Within each category, confirmed rules (checked against the user's words)
+      // come first, then high-cited ones, so the first-to-drop are unconfirmed and uncited.
       const BUDGET = Number(process.env.CLAUDE_RECALL_LOAD_BUDGET_TOKENS ?? 2000);
-      const byCiteThenFresh = (a: any, b: any) =>
+      const byConfirmedThenCite = (a: any, b: any) =>
+        (b.confirmed_at ? 1 : 0) - (a.confirmed_at ? 1 : 0) ||
         (b.cite_count || 0) - (a.cite_count || 0) ||
         (b.timestamp || 0) - (a.timestamp || 0);
 
@@ -367,9 +370,9 @@ export class MemoryTools {
 
       // Allocate in priority order (corrections + solutions first to protect high-signal items).
       const keptCorrections = takeBounded(rules.corrections);
-      const keptSolutions = takeBounded([...(rules.solutions ?? [])].sort(byCiteThenFresh));
-      const keptPreferences = takeBounded([...rules.preferences].sort(byCiteThenFresh));
-      const keptDevops = takeBounded([...rules.devops].sort(byCiteThenFresh));
+      const keptSolutions = takeBounded([...(rules.solutions ?? [])].sort(byConfirmedThenCite));
+      const keptPreferences = takeBounded([...rules.preferences].sort(byConfirmedThenCite));
+      const keptDevops = takeBounded([...rules.devops].sort(byConfirmedThenCite));
       const keptFailures = takeBounded(rules.failures, 3);
 
       // Format categorized markdown sections (output order stays user-familiar).
@@ -551,7 +554,7 @@ export class MemoryTools {
         const val = typeof r.value === 'object'
           ? (r.value.content || r.value.value || JSON.stringify(r.value))
           : r.value;
-        return `- [${r.type}] (id: ${r.key}) ${val}`;
+        return `- [${r.type}] (id: ${r.key}) ${val}${formatSource(r)}`;
       });
 
       return {
@@ -647,4 +650,32 @@ export class MemoryTools {
   getTools(): MCPTool[] {
     return this.tools;
   }
+}
+
+/** Excerpt shown in search results; the full one is in the DB. */
+const SHOWN_EXCERPT_CHARS = 500;
+
+/**
+ * Pointer back to the raw exchange: the stored value is the classifier's
+ * summary, the transcript holds what the user actually said. Claude Code
+ * deletes old transcripts, so once the file is gone the saved excerpt stands
+ * in for it instead of a dead path.
+ */
+export function formatSource(m: {
+  source_transcript?: string | null;
+  source_entry?: string | null;
+  source_excerpt?: string | null;
+}): string {
+  if (m.source_transcript && fs.existsSync(m.source_transcript)) {
+    const entry = m.source_entry ? `, entry ${m.source_entry}` : '';
+    return `\n  source: ${m.source_transcript}${entry}`;
+  }
+  if (m.source_excerpt) {
+    const shown = m.source_excerpt.length > SHOWN_EXCERPT_CHARS
+      ? m.source_excerpt.slice(0, SHOWN_EXCERPT_CHARS) + '…'
+      : m.source_excerpt;
+    const why = m.source_transcript ? 'transcript deleted; ' : '';
+    return `\n  source (${why}user's words): ${JSON.stringify(shown)}`;
+  }
+  return '';
 }
