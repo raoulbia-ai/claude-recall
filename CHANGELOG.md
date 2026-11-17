@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Attribution is deliberately narrow, because a wrong credit is worse than none: it would feed demotion a counter built from noise. Candidates are the rules that turn injected, not the whole store — scored against everything, the citation "self-verify before done" (a rule living in AGENTS.md, never in the database) matched an unrelated note at containment 1.0 simply because the note was long enough to contain both words. Scoring also drops everyday words, needs two distinctive tokens, demands a complete match below four of them, and requires the winner to beat the runner-up by a margin.
 
-### Changed
+### Added
 
-- **Citation scanning now lives in `src/shared/citations.ts`**, written for Pi's narrow attribution: a margin over the runner-up, a stopword list and a token floor on top of containment. The Claude Code stop hook keeps its own matching for now — it scores citations against the whole store rather than one turn's injected rules, where near-duplicates are common and a margin test would drop credits that count today. Moving it over is a separate change, with transcript numbers behind it.
+- **`src/shared/citations.ts`** — citation scanning written for Pi's narrow attribution: a margin over the runner-up, a stopword list and a token floor on top of containment. The Claude Code stop hook keeps its own matching for now — it scores citations against the whole store rather than one turn's injected rules, where near-duplicates are common and a margin test would drop credits that count today. Moving it over is a separate change, with transcript numbers behind it.
 
 ## [0.47.0] - 2026-11-11
 
