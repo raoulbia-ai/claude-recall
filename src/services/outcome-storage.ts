@@ -44,6 +44,8 @@ export interface CandidateLessonData {
   reward_band: number;
   confidence: number;
   durability: string;
+  /** What failed, as the detector put it. Stored as `failureKey()` of it. */
+  failure_key?: string;
 }
 
 export interface CandidateLesson {
@@ -62,6 +64,23 @@ export interface CandidateLesson {
   promoted_memory_key: string | null;
   created_at: string;
   updated_at: string;
+  /** Absent for lessons recorded before the column existed, or not from a failure. */
+  failure_key?: string | null;
+}
+
+/**
+ * The identity of a failure, for finding the lesson it already taught.
+ *
+ * A lesson's text cannot serve as that: asked twice about the same failure, a
+ * model words its hindsight differently, and two wordings of one lesson are
+ * not similar enough to be recognised as one. What failed does not change
+ * between sightings, so that is what a lesson is filed under.
+ *
+ * Exact, on purpose: whitespace aside, a different command is a different
+ * failure. Near-misses still have text similarity to fall back on.
+ */
+export function failureKey(whatFailed: string): string {
+  return whatFailed.trim().replace(/\s+/g, ' ');
 }
 
 export interface MemoryStats {
@@ -167,16 +186,36 @@ export class OutcomeStorage {
     this.db.prepare(`
       INSERT INTO candidate_lessons (id, project_id, episode_id, lesson_text, lesson_kind,
         applies_when_json, outcome_type, reward_band, confidence, durability,
-        evidence_count, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'candidate', ?, ?)
+        evidence_count, status, created_at, updated_at, failure_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'candidate', ?, ?, ?)
     `).run(
       id, data.project_id, data.episode_id || null,
       data.lesson_text, data.lesson_kind,
       data.applies_when ? JSON.stringify(data.applies_when) : null,
       data.outcome_type, data.reward_band, data.confidence, data.durability,
-      now, now
+      now, now, data.failure_key ? failureKey(data.failure_key) : null
     );
     return id;
+  }
+
+  /**
+   * The lesson already on record for this failure, if any — the oldest, so
+   * that every later sighting lands on the same row.
+   */
+  findLessonForFailure(whatFailed: string, projectId: string): CandidateLesson | null {
+    return (this.db.prepare(
+      `SELECT * FROM candidate_lessons
+       WHERE project_id = ? AND failure_key = ? AND status IN ('candidate', 'promoted')
+       ORDER BY created_at, rowid LIMIT 1`
+    ).get(projectId, failureKey(whatFailed)) as CandidateLesson | undefined) ?? null;
+  }
+
+  /** Put better words on a lesson that has not been promoted yet. */
+  rewordLesson(id: string, text: string, kind: string, appliesWhen: string[]): void {
+    this.db.prepare(`
+      UPDATE candidate_lessons SET lesson_text = ?, lesson_kind = ?, applies_when_json = ?, updated_at = ?
+      WHERE id = ? AND status = 'candidate'
+    `).run(text, kind, JSON.stringify(appliesWhen), this.now(), id);
   }
 
   updateLessonStatus(id: string, status: string, promotedKey?: string): void {

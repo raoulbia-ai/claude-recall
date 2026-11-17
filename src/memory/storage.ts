@@ -295,11 +295,21 @@ export class MemoryStorage {
           status TEXT NOT NULL DEFAULT 'candidate',
           promoted_memory_key TEXT,
           created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
+          updated_at TEXT NOT NULL,
+          failure_key TEXT
         )`);
         this.db.exec('CREATE INDEX idx_candidate_lessons_status ON candidate_lessons(status)');
         this.db.exec('CREATE INDEX idx_candidate_lessons_project ON candidate_lessons(project_id)');
+      } else {
+        // The failure a lesson was distilled from, so that the same failure
+        // seen again finds its lesson whatever words the lesson is in. Lessons
+        // recorded before this have none and keep matching by text.
+        const lessonCols = this.db.prepare("PRAGMA table_info(candidate_lessons)").all() as Array<{name: string}>;
+        if (!lessonCols.some(c => c.name === 'failure_key')) {
+          this.db.exec('ALTER TABLE candidate_lessons ADD COLUMN failure_key TEXT');
+        }
       }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_candidate_lessons_failure ON candidate_lessons(project_id, failure_key)');
 
       if (!existingOutcomeTables.has('memory_stats')) {
         this.db.exec(`CREATE TABLE memory_stats (
