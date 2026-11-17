@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Citation scanning moved to `src/shared/citations.ts`** and the stop hook now uses it, replacing its private copies of the regex, the containment metric and the best-match loop.
+- **Citation scanning now lives in `src/shared/citations.ts`**, written for Pi's narrow attribution: a margin over the runner-up, a stopword list and a token floor on top of containment. The Claude Code stop hook keeps its own matching for now — it scores citations against the whole store rather than one turn's injected rules, where near-duplicates are common and a margin test would drop credits that count today. Moving it over is a separate change, with transcript numbers behind it.
 
 ## [0.47.0] - 2026-11-11
 

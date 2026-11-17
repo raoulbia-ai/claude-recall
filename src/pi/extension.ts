@@ -193,6 +193,11 @@ export default function(pi: PiTypes.ExtensionAPI) {
   //     current prompt — Pi's analog of CC's PreToolUse rule injector) ---
 
   pi.on('before_agent_start', (_event, _ctx) => {
+    // A turn only credits the rules injected into that turn. Clearing here,
+    // not in the JIT branch below, is what makes that true: a turn with no
+    // prompt or no rules to match would otherwise keep the previous turn's
+    // candidates and credit them for text they never reached.
+    injectedThisTurn = [];
     try {
       const ms = MemoryService.getInstance();
       const rules = ms.loadActiveRules(projectId || undefined);

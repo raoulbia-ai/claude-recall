@@ -409,6 +409,23 @@ describe('Pi Extension', () => {
       expect(mockIncrementCiteCount).not.toHaveBeenCalled();
     });
 
+    it('does not carry a turn\'s candidates into the next turn', () => {
+      // The second turn has no prompt, so the JIT branch never runs. Without a
+      // reset the previous turn's rules would still be standing there, and the
+      // citation below would credit a rule this turn never injected.
+      api._handlers['before_agent_start'](
+        { type: 'before_agent_start', prompt: '', systemPrompt: 'base prompt' },
+        mockCtx(),
+      );
+
+      api._handlers['message_end'](
+        assistantSaying('Done (applied from memory: rebuild the bundle before running the suite).'),
+        mockCtx(),
+      );
+
+      expect(mockIncrementCiteCount).not.toHaveBeenCalled();
+    });
+
     it('ignores the directive text itself, so the placeholder earns no credit', () => {
       api._handlers['message_end'](
         assistantSaying('cite like this: (applied from memory: <short summary>)'),

@@ -38,38 +38,38 @@ export const CITATION_SHORT_TOKENS = 4;
  * done" scored 0.75 against an unrelated checkpoint on "before" and "done".
  */
 const STOPWORDS = new Set([
-	'a', 'about', 'after', 'all', 'always', 'an', 'and', 'any', 'are', 'as', 'at', 'be', 'been',
-	'before', 'but', 'by', 'can', 'do', 'does', 'doing', 'done', 'each', 'every', 'first', 'for',
-	'from', 'get', 'has', 'have', 'how', 'if', 'in', 'into', 'is', 'it', 'its', 'just', 'make',
-	'more', 'must', 'never', 'new', 'no', 'not', 'of', 'on', 'one', 'only', 'or', 'other', 'out',
-	'over', 'run', 'should', 'so', 'some', 'such', 'than', 'that', 'the', 'their', 'then', 'there',
-	'these', 'they', 'this', 'to', 'up', 'use', 'used', 'using', 'was', 'were', 'what', 'when',
-	'where', 'which', 'while', 'why', 'will', 'with', 'would', 'you', 'your',
+  'a', 'about', 'after', 'all', 'always', 'an', 'and', 'any', 'are', 'as', 'at', 'be', 'been',
+  'before', 'but', 'by', 'can', 'do', 'does', 'doing', 'done', 'each', 'every', 'first', 'for',
+  'from', 'get', 'has', 'have', 'how', 'if', 'in', 'into', 'is', 'it', 'its', 'just', 'make',
+  'more', 'must', 'never', 'new', 'no', 'not', 'of', 'on', 'one', 'only', 'or', 'other', 'out',
+  'over', 'run', 'should', 'so', 'some', 'such', 'than', 'that', 'the', 'their', 'then', 'there',
+  'these', 'they', 'this', 'to', 'up', 'use', 'used', 'using', 'was', 'were', 'what', 'when',
+  'where', 'which', 'while', 'why', 'will', 'with', 'would', 'you', 'your',
 ]);
 
 export interface CitableRule {
-	key: string;
-	value: unknown;
+  key: string;
+  value: unknown;
 }
 
 export interface CitationMatch {
-	citation: string;
-	key: string;
-	containment: number;
+  citation: string;
+  key: string;
+  containment: number;
 }
 
 /** Pull citation texts out of one assistant message. */
 export function extractCitations(text: string): string[] {
-	if (!text) return [];
-	const found: string[] = [];
-	// Fresh lastIndex per call: the pattern is module-level and /g is stateful.
-	CITATION_PATTERN.lastIndex = 0;
-	let match: RegExpExecArray | null;
-	while ((match = CITATION_PATTERN.exec(text)) !== null) {
-		const cite = match[1].trim();
-		if (cite && !PLACEHOLDERS.test(cite)) found.push(cite);
-	}
-	return found;
+  if (!text) return [];
+  const found: string[] = [];
+  // Fresh lastIndex per call: the pattern is module-level and /g is stateful.
+  CITATION_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CITATION_PATTERN.exec(text)) !== null) {
+    const cite = match[1].trim();
+    if (cite && !PLACEHOLDERS.test(cite)) found.push(cite);
+  }
+  return found;
 }
 
 /**
@@ -77,57 +77,57 @@ export function extractCitations(text: string): string[] {
  * Better than Jaccard for short citations matching long rules.
  */
 export function citationContainment(citation: string, ruleText: string): number {
-	const citeTokens = distinctiveTokens(citation);
-	const ruleTokens = tokenize(ruleText);
-	if (citeTokens.size === 0) return 0;
-	let found = 0;
-	for (const w of citeTokens) {
-		if (ruleTokens.has(w)) found++;
-	}
-	return found / citeTokens.size;
+  const citeTokens = distinctiveTokens(citation);
+  const ruleTokens = tokenize(ruleText);
+  if (citeTokens.size === 0) return 0;
+  let found = 0;
+  for (const w of citeTokens) {
+    if (ruleTokens.has(w)) found++;
+  }
+  return found / citeTokens.size;
 }
 
 function tokenize(text: string): Set<string> {
-	// Keep non-ASCII letters: rules and citations are not always English.
-	return new Set(
-		text
-			.toLowerCase()
-			.replace(/[^\p{L}\p{N}\s]/gu, ' ')
-			.split(/\s+/)
-			.filter(Boolean),
-	);
+  // Keep non-ASCII letters: rules and citations are not always English.
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter(Boolean),
+  );
 }
 
 /** Tokens that can actually identify a rule — everyday words cannot. */
 export function distinctiveTokens(text: string): Set<string> {
-	const tokens = new Set<string>();
-	for (const token of tokenize(text)) {
-		if (token.length > 2 && !STOPWORDS.has(token)) tokens.add(token);
-	}
-	return tokens;
+  const tokens = new Set<string>();
+  for (const token of tokenize(text)) {
+    if (token.length > 2 && !STOPWORDS.has(token)) tokens.add(token);
+  }
+  return tokens;
 }
 
 /** Extract plain text from a rule value (JSON string, object, or plain string). */
 export function extractRuleContent(value: unknown): string {
-	if (typeof value === 'string') {
-		try {
-			const parsed = JSON.parse(value);
-			if (typeof parsed === 'string') return parsed;
-			if (typeof parsed?.content === 'string') return parsed.content;
-			if (typeof parsed?.value === 'string') return parsed.value;
-			if (parsed?.content) return JSON.stringify(parsed.content);
-			return value;
-		} catch {
-			return value;
-		}
-	}
-	if (typeof value === 'object' && value !== null) {
-		const v = value as Record<string, unknown>;
-		if (typeof v.content === 'string') return v.content;
-		if (typeof v.value === 'string') return v.value;
-		return JSON.stringify(value);
-	}
-	return String(value ?? '');
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (typeof parsed === 'string') return parsed;
+      if (typeof parsed?.content === 'string') return parsed.content;
+      if (typeof parsed?.value === 'string') return parsed.value;
+      if (parsed?.content) return JSON.stringify(parsed.content);
+      return value;
+    } catch {
+      return value;
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    const v = value as Record<string, unknown>;
+    if (typeof v.content === 'string') return v.content;
+    if (typeof v.value === 'string') return v.value;
+    return JSON.stringify(value);
+  }
+  return String(value ?? '');
 }
 
 /**
@@ -135,37 +135,37 @@ export function extractRuleContent(value: unknown): string {
  * threshold. Crediting every rule sharing a few tokens would just re-count loads.
  */
 export function matchCitations(
-	citations: readonly string[],
-	rules: readonly CitableRule[],
-	threshold: number = CITATION_MATCH_THRESHOLD,
+  citations: readonly string[],
+  rules: readonly CitableRule[],
+  threshold: number = CITATION_MATCH_THRESHOLD,
 ): CitationMatch[] {
-	const matches: CitationMatch[] = [];
+  const matches: CitationMatch[] = [];
 
-	for (const citation of citations) {
-		// Too generic to identify anything — "(applied from memory: be careful)".
-		if (distinctiveTokens(citation).size < CITATION_MIN_TOKENS) continue;
+  for (const citation of citations) {
+    // Too generic to identify anything — "(applied from memory: be careful)".
+    if (distinctiveTokens(citation).size < CITATION_MIN_TOKENS) continue;
 
-		let best: CitationMatch | undefined;
-		let runnerUp = 0;
-		for (const rule of rules) {
-			const containment = citationContainment(citation, extractRuleContent(rule.value));
-			if (containment > (best?.containment ?? 0)) {
-				runnerUp = best?.containment ?? 0;
-				best = { citation, key: rule.key, containment };
-			} else if (containment > runnerUp) {
-				runnerUp = containment;
-			}
-		}
+    let best: CitationMatch | undefined;
+    let runnerUp = 0;
+    for (const rule of rules) {
+      const containment = citationContainment(citation, extractRuleContent(rule.value));
+      if (containment > (best?.containment ?? 0)) {
+        runnerUp = best?.containment ?? 0;
+        best = { citation, key: rule.key, containment };
+      } else if (containment > runnerUp) {
+        runnerUp = containment;
+      }
+    }
 
-		// A citation naming a rule we never stored (CLAUDE.md, a skill) must
-		// credit nobody rather than the nearest row.
-		const required =
-			distinctiveTokens(citation).size < CITATION_SHORT_TOKENS ? 1 : threshold;
-		if (!best || best.containment < required) continue;
-		if (best.containment - runnerUp < CITATION_MARGIN) continue;
+    // A citation naming a rule we never stored (CLAUDE.md, a skill) must
+    // credit nobody rather than the nearest row.
+    const required =
+      distinctiveTokens(citation).size < CITATION_SHORT_TOKENS ? 1 : threshold;
+    if (!best || best.containment < required) continue;
+    if (best.containment - runnerUp < CITATION_MARGIN) continue;
 
-		matches.push(best);
-	}
+    matches.push(best);
+  }
 
-	return matches;
+  return matches;
 }
