@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DatabaseManager } from '../../src/services/database-manager';
 import { ConfigService } from '../../src/services/config';
+import { pruneOutcomeData } from '../../src/services/outcome-storage';
 
 /**
  * Retention coverage for the types and tables that actually grow.
@@ -30,7 +31,16 @@ describe('compaction retention', () => {
       relevance_score REAL DEFAULT 1.0,
       is_active BOOLEAN DEFAULT 1,
       load_count INTEGER DEFAULT 0,
-      cite_count INTEGER DEFAULT 0
+      cite_count INTEGER DEFAULT 0,
+      confirmed_at INTEGER
+    );
+    CREATE TABLE candidate_lessons (
+      id TEXT PRIMARY KEY,
+      episode_id TEXT,
+      lesson_text TEXT NOT NULL,
+      status TEXT NOT NULL,
+      promoted_memory_key TEXT,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE outcome_events (
       id TEXT PRIMARY KEY,
@@ -151,6 +161,82 @@ describe('compaction retention', () => {
     expect(rows('SELECT id FROM outcome_events').map(r => r.id)).toEqual(['ev-fresh']);
     expect(rows('SELECT rule_key FROM rule_injection_events').map(r => r.rule_key)).toEqual(['r-fresh']);
     // ep-live is older than the window, but pruning it would orphan ev-fresh.
+    expect(rows('SELECT id FROM episodes').map(r => r.id)).toEqual(['ep-live']);
+  });
+
+  it('never prunes a confirmed or promoted failure, however weak', async () => {
+    // Three rows the cap must not touch: a human-confirmed rule, a promotion
+    // written under the engine's naming, and one linked from its lesson.
+    const db = new Database(dbPath);
+    const add = db.prepare(
+      `INSERT INTO memories (key, value, type, timestamp, access_count, cite_count, load_count, confirmed_at)
+       VALUES (?, ?, 'failure', ?, 0, 0, 0, ?)`
+    );
+    add.run('fail-confirmed', JSON.stringify({ content: 'confirmed by the user' }), daysAgo(90), daysAgo(1));
+    add.run('promoted_17_abc', JSON.stringify({ content: 'promoted lesson' }), daysAgo(90), null);
+    add.run('learned-key', JSON.stringify({ content: 'older promotion' }), daysAgo(90), null);
+    db.prepare(
+      `INSERT INTO candidate_lessons (id, episode_id, lesson_text, status, promoted_memory_key, updated_at)
+       VALUES ('c-1', NULL, 'check the path first', 'promoted', 'learned-key', ?)`
+    ).run(iso(daysAgo(1)));
+    db.close();
+
+    configure({ toolUse: -1, corrections: -1, failures: 3, telemetryDays: -1 });
+
+    await DatabaseManager.getInstance().compact();
+
+    const kept = rows(`SELECT key FROM memories WHERE type = 'failure'`).map(r => r.key).sort();
+    expect(kept).toEqual(['fail-confirmed', 'learned-key', 'promoted_17_abc']);
+  });
+
+  it('gives up inactive rows before strong ones', async () => {
+    // fail-0 and fail-1 are the strongest rows by strength, but superseded:
+    // they are already out of every retrieval path, so the cap takes them first.
+    const db = new Database(dbPath);
+    db.exec(`UPDATE memories SET is_active = 0 WHERE key IN ('fail-0', 'fail-1')`);
+    db.close();
+
+    configure({ toolUse: -1, corrections: -1, failures: 8, telemetryDays: -1 });
+
+    await DatabaseManager.getInstance().compact();
+
+    const kept = rows(`SELECT key FROM memories WHERE type = 'failure'`).map(r => r.key);
+    expect(kept).toHaveLength(8);
+    expect(kept).not.toContain('fail-0');
+    expect(kept).not.toContain('fail-1');
+  });
+
+  it('keeps an old episode a candidate lesson still points at', async () => {
+    const db = new Database(dbPath);
+    db.prepare(`INSERT INTO episodes (id, project_id, started_at, created_at) VALUES ('ep-lesson', 'p', ?, ?)`)
+      .run(iso(daysAgo(40)), iso(daysAgo(40)));
+    db.prepare(
+      `INSERT INTO candidate_lessons (id, episode_id, lesson_text, status, promoted_memory_key, updated_at)
+       VALUES ('c-2', 'ep-lesson', 'verify before vacuum', 'pending', NULL, ?)`
+    ).run(iso(daysAgo(1)));
+    db.close();
+
+    configure({ toolUse: -1, corrections: -1, failures: -1, telemetryDays: 30 });
+
+    await DatabaseManager.getInstance().compact();
+
+    expect(rows('SELECT id FROM episodes').map(r => r.id).sort()).toEqual(['ep-lesson', 'ep-live']);
+  });
+
+  it('prunes the same tables from the hook path as compaction does', () => {
+    // One implementation behind both callers: compaction passes its own
+    // connection, OutcomeStorage.pruneOldData passes the service's.
+    const db = new Database(dbPath);
+    try {
+      const counts = pruneOutcomeData(db, { retentionDays: 30 });
+      // ep-old loses its only event in this same pass, ep-orphan never had one;
+      // ep-live still owns ev-fresh and stays.
+      expect(counts).toMatchObject({ events: 1, injections: 1, episodes: 2 });
+    } finally {
+      db.close();
+    }
+
+    expect(rows('SELECT id FROM outcome_events').map(r => r.id)).toEqual(['ev-fresh']);
     expect(rows('SELECT id FROM episodes').map(r => r.id)).toEqual(['ep-live']);
   });
 

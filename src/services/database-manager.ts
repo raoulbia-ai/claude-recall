@@ -5,6 +5,7 @@ import { ConfigService } from './config';
 import { LoggingService } from './logging';
 import { MemoryRetrieval } from '../core/retrieval';
 import { Memory } from '../memory/storage';
+import { pruneOutcomeData } from './outcome-storage';
 
 export interface CompactionConfig {
   autoCompact: boolean;
@@ -168,8 +169,19 @@ export class DatabaseManager {
       removedCount += this.pruneByType(db, 'correction', config.retention.corrections, dryRun);
       removedCount += this.pruneByType(db, 'failure', config.retention.failures, dryRun);
 
-      // 3. Prune outcome telemetry past its retention window
-      removedCount += this.pruneTelemetry(db, config.retention.telemetryDays, dryRun);
+      // 3. Prune the outcome tables past their retention window — the same
+      //    pass the hooks run, so there is one window, not two.
+      const pruned = pruneOutcomeData(db, {
+        retentionDays: config.retention.telemetryDays,
+        dryRun,
+      });
+      const prunedRows = pruned.episodes + pruned.events + pruned.injections
+        + pruned.lessons + pruned.stats;
+      if (prunedRows > 0) {
+        removedCount += prunedRows;
+        this.logger.info('DatabaseManager', `Pruned ${prunedRows} outcome rows`, pruned);
+        if (!dryRun) console.error(`🔄 Pruned ${prunedRows} outcome rows`);
+      }
 
       // 4. Run VACUUM to reclaim space (only if not dry run)
       if (!dryRun) {
@@ -329,6 +341,28 @@ export class DatabaseManager {
   }
   
   /**
+   * Keys of memories the promotion engine wrote.
+   *
+   * The engine names them `promoted_*` and records the key on the lesson it
+   * came from; both are checked, since an older promotion may predate either
+   * convention on a given database.
+   */
+  private promotedKeys(db: Database.Database): Set<string> {
+    try {
+      const hasTable = db.prepare(
+        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'candidate_lessons'`
+      ).get();
+      if (!hasTable) return new Set();
+      const rows = db.prepare(
+        'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
+      ).all() as any[];
+      return new Set(rows.map(r => r.k as string));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
    * Prune one memory type down to its retention cap, keeping the strongest.
    *
    * `correction` targets type = 'correction', what production actually writes:
@@ -340,19 +374,38 @@ export class DatabaseManager {
     if (keepCount < 0) return 0; // Keep all
 
     try {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(memories)').all() as any[]).map(c => c.name)
+      );
+      const optional = ['is_active', 'confirmed_at'].filter(c => columns.has(c));
       const rows = db.prepare(`
-        SELECT id, access_count, cite_count, load_count, timestamp, last_accessed, type
+        SELECT id, key, access_count, cite_count, load_count, timestamp, last_accessed, type${
+          optional.length > 0 ? ', ' + optional.join(', ') : ''
+        }
         FROM memories WHERE type = ?
       `).all(type) as any[];
 
       if (rows.length <= keepCount) return 0;
 
-      const scored = rows.map(r => ({
-        id: r.id,
-        strength: MemoryRetrieval.computeStrength(r as Memory),
-      })).sort((a, b) => b.strength - a.strength);
+      // Rows this cap must never take. A confirmed rule and a promoted lesson
+      // are the two things in here a human or the promotion engine deliberately
+      // kept, and `DELETE` has no undo: a lesson earned over several sessions
+      // would be silently spent to make room for raw capture.
+      const promoted = this.promotedKeys(db);
+      const isProtected = (r: any): boolean =>
+        r.confirmed_at != null
+        || typeof r.key === 'string' && (r.key.startsWith('promoted_') || promoted.has(r.key));
 
-      const toRemove = scored.slice(keepCount);
+      const removable = rows.filter(r => !isProtected(r));
+      // Inactive first — superseded or demoted rows are already out of every
+      // retrieval path, so they cost the cap nothing to give up.
+      const scored = removable.map(r => ({
+        id: r.id,
+        inactive: 'is_active' in r && (r.is_active === 0 || r.is_active === false) ? 0 : 1,
+        strength: MemoryRetrieval.computeStrength(r as Memory),
+      })).sort((a, b) => a.inactive - b.inactive || a.strength - b.strength);
+
+      const toRemove = scored.slice(0, Math.min(rows.length - keepCount, scored.length));
 
       if (!dryRun && toRemove.length > 0) {
         // Prepared-statement deletion. Previous code used string interpolation
@@ -364,7 +417,11 @@ export class DatabaseManager {
           .run(...toRemove.map(r => r.id));
       }
 
-      this.logger.info('DatabaseManager', `Pruned ${toRemove.length} weak '${type}' memories (kept ${keepCount} strongest)`);
+      this.logger.info(
+        'DatabaseManager',
+        `Pruned ${toRemove.length} weak '${type}' memories (kept ${rows.length - toRemove.length}, `
+        + `${rows.length - removable.length} protected as confirmed or promoted)`,
+      );
       if (toRemove.length > 0 && !dryRun) {
         // stderr — this can run inside the MCP server, stdout is JSON-RPC
         console.error(`🔄 Pruned ${toRemove.length} weak ${type} memories`);
@@ -377,66 +434,6 @@ export class DatabaseManager {
     }
   }
 
-  /**
-   * Prune outcome telemetry past the retention window.
-   *
-   * Age, not strength: these are append-only observations, one row per tool
-   * result, and a month-old one teaches nothing. The tables are created lazily
-   * by MemoryStorage, hence the existence check.
-   */
-  private pruneTelemetry(db: Database.Database, retentionDays: number, dryRun: boolean): number {
-    if (retentionDays < 0) return 0; // Keep all
-
-    try {
-      const present = new Set(
-        (db.prepare(
-          `SELECT name FROM sqlite_master WHERE type = 'table'
-           AND name IN ('outcome_events', 'rule_injection_events', 'episodes')`
-        ).all() as any[]).map(r => r.name)
-      );
-      if (present.size === 0) return 0;
-
-      const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-      const cutoffIso = new Date(cutoffMs).toISOString();
-      let removed = 0;
-
-      const sweep = (deleteSql: string, cutoff: string | number): void => {
-        if (dryRun) {
-          const countSql = deleteSql.replace('DELETE FROM', 'SELECT COUNT(*) AS c FROM');
-          removed += (db.prepare(countSql).get(cutoff) as any).c as number;
-        } else {
-          removed += db.prepare(deleteSql).run(cutoff).changes;
-        }
-      };
-
-      // created_at is ISO text; injected_at is epoch milliseconds.
-      if (present.has('outcome_events')) {
-        sweep('DELETE FROM outcome_events WHERE created_at < ?', cutoffIso);
-      }
-      if (present.has('rule_injection_events')) {
-        sweep('DELETE FROM rule_injection_events WHERE injected_at < ?', cutoffMs);
-      }
-      // Unreferenced episodes only: `episode_id` has no foreign key, so an old
-      // episode still owning fresh events would be orphaned, not blocked.
-      if (present.has('episodes')) {
-        const orphaned = present.has('outcome_events')
-          ? `DELETE FROM episodes WHERE created_at < ?
-             AND id NOT IN (SELECT episode_id FROM outcome_events WHERE episode_id IS NOT NULL)`
-          : 'DELETE FROM episodes WHERE created_at < ?';
-        sweep(orphaned, cutoffIso);
-      }
-
-      if (removed > 0) {
-        this.logger.info('DatabaseManager', `Pruned ${removed} telemetry rows older than ${retentionDays} days`);
-        if (!dryRun) console.error(`🔄 Pruned ${removed} telemetry rows older than ${retentionDays} days`);
-      }
-      return removed;
-
-    } catch (error) {
-      this.logger.error('DatabaseManager', 'Error pruning telemetry', error);
-      return 0;
-    }
-  }
   
   /**
    * Get compaction configuration

@@ -109,8 +109,9 @@ Automatic compaction at 10MB threshold (configurable via `CLAUDE_RECALL_COMPACT_
 most once a day per database. It runs on MCP server boot and on Pi session start.
 
 Compaction deduplicates, caps `tool-use`, `correction` and `failure` memories at their retention
-limits (keeping the strongest), drops outcome telemetry older than
-`CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`, and VACUUMs. A backup is written first.
+limits (keeping the strongest, and never a confirmed rule or a promoted lesson), drops outcome
+telemetry older than `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS` through the same pass the hooks run,
+and VACUUMs. A backup is written first.
 
 ---
 

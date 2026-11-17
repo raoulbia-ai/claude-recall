@@ -13,11 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`CLAUDE_RECALL_RETAIN_FAILURES`** (default `1000`) and **`CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`** (default `30`); `-1` keeps all. Failures are capped by strength like tool-use and corrections; telemetry is pruned by age, since a month-old tool result teaches nothing. Episodes are dropped only once no event references them — `episode_id` carries no foreign key, so SQLite would otherwise orphan the live events of a long-running episode.
+- **`CLAUDE_RECALL_RETAIN_FAILURES`** (default `1000`) and **`CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`** (default `30`); `-1` keeps all. Failures are capped by strength like tool-use and corrections; telemetry is pruned by age, since a month-old tool result teaches nothing. Episodes are dropped only once nothing references them — neither an outcome event nor a candidate lesson — because `episode_id` carries no foreign key, so SQLite would otherwise orphan the rows of a long-running episode.
 
 ### Changed
 
 - **`pruneOldToolUse` and `pruneOldCorrections` collapsed into `pruneByType`** — they were the same function with a different type literal, and failures want the same policy.
+- **The failure cap never deletes a confirmed rule or a promoted lesson, and takes inactive rows first.** Promotions are stored as type `failure`, so a cap on raw capture could spend a lesson earned over several sessions to make room for the next `Command failed:` line — and `DELETE` has no undo. Rows with `confirmed_at` set, rows named `promoted_*` and rows a candidate lesson points at are now out of the cap's reach; what the cap does take, it takes from inactive (superseded or demoted) rows before touching anything a retrieval can still return.
+- **One telemetry cleanup, not two.** `OutcomeStorage.pruneOldData()` already dropped the same tables on a hard-coded 90-day clock, so a second pass inside compaction would have left the database with two windows. The age limit and the unreferenced-episode rule now live in `pruneOutcomeData()`, which both the hook path and `compact()` call on their own connection.
 - **`getCompactionConfig` merges the stored config over the defaults** instead of replacing them. A config file written before this change has a `compaction` block without the new retention keys, and an undefined cap would reach `scored.slice(keepCount)` and select every row for deletion.
 
 ## [0.47.0] - 2026-11-11
