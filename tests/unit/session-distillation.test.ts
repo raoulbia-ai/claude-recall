@@ -1,21 +1,29 @@
+import { MemoryService } from '../../src/services/memory';
+import { OutcomeStorage } from '../../src/services/outcome-storage';
+
 const mockDetect = jest.fn();
-const mockCreateLesson = jest.fn();
-const mockFindSimilar = jest.fn().mockReturnValue([]);
-const mockIncrementEvidence = jest.fn();
 const mockHint = jest.fn().mockResolvedValue(null);
 
-jest.mock('../../src/services/memory', () => ({
-  MemoryService: { getInstance: () => ({ store: jest.fn() }) },
-}));
+// The store is the real one, in memory: what counts as "the same lesson" is
+// its decision, and a stand-in would only repeat this file's own assumptions.
 jest.mock('../../src/services/config', () => ({
-  ConfigService: { getInstance: () => ({ getProjectId: () => 'proj' }) },
-}));
-jest.mock('../../src/services/outcome-storage', () => ({
-  OutcomeStorage: {
+  ConfigService: {
     getInstance: () => ({
-      createCandidateLesson: mockCreateLesson,
-      findSimilarLessons: mockFindSimilar,
-      incrementEvidenceCount: mockIncrementEvidence,
+      getDatabasePath: () => ':memory:',
+      getProjectId: () => 'proj',
+      getConfig: () => ({
+        database: { compaction: { maxMemories: 10000 } },
+        project: { rootDir: '/tmp' },
+        citations: {},
+      }),
+    }),
+  },
+}));
+jest.mock('../../src/services/logging', () => ({
+  LoggingService: {
+    getInstance: () => ({
+      info: jest.fn(), debug: jest.fn(), error: jest.fn(),
+      logMemoryOperation: jest.fn(), logRetrieval: jest.fn(), logServiceError: jest.fn(),
     }),
   },
 }));
@@ -44,10 +52,18 @@ const session = [{ call: { id: 't1', name: 'bash', input: {}, entryIndex: 0 } }]
 const distil = (extra: { stopAt?: number } = {}) =>
   distilFailures({ interactions: session, projectId: 'proj', episodeId: 'ep1', ...extra });
 
+/** Every lesson on record, oldest first. */
+const lessons = () => OutcomeStorage.getInstance().getCandidateLessons('proj');
+
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFindSimilar.mockReturnValue([]);
   mockHint.mockResolvedValue(null);
+  (MemoryService as any).instance = undefined;
+  OutcomeStorage.resetInstance();
+});
+
+afterEach(() => {
+  try { MemoryService.getInstance().close(); } catch { /* already closed */ }
 });
 
 /**
@@ -63,14 +79,14 @@ describe('distilFailures', () => {
     await distil();
 
     expect(mockDetect).toHaveBeenCalledWith(session);
-    expect(mockCreateLesson).toHaveBeenCalledTimes(1);
-    expect(mockCreateLesson.mock.calls[0][0]).toMatchObject({
+    expect(lessons()).toEqual([expect.objectContaining({
       project_id: 'proj',
       episode_id: 'ep1',
       lesson_text: 'run terraform init before plan',
       lesson_kind: 'rule',
-      applies_when: ['terraform'],
-    });
+      applies_when_json: '["terraform"]',
+      evidence_count: 1,
+    })]);
   });
 
   it('records no lesson that would only restate the failure', async () => {
@@ -81,8 +97,7 @@ describe('distilFailures', () => {
 
     await distil();
 
-    expect(mockCreateLesson).not.toHaveBeenCalled();
-    expect(mockIncrementEvidence).not.toHaveBeenCalled();
+    expect(lessons()).toEqual([]);
   });
 
   it('keeps the lesson when the model had hindsight to give, default remedy or not', async () => {
@@ -91,7 +106,7 @@ describe('distilFailures', () => {
 
     await distil();
 
-    expect(mockCreateLesson.mock.calls[0][0]).toMatchObject({ lesson_text: 'run terraform init before plan' });
+    expect(lessons().map(l => l.lesson_text)).toEqual(['run terraform init before plan']);
   });
 
   it('keeps a lesson whose remedy a paired fix has already made specific', async () => {
@@ -99,18 +114,18 @@ describe('distilFailures', () => {
 
     await distil();
 
-    expect(mockCreateLesson).toHaveBeenCalledTimes(1);
-    expect(mockCreateLesson.mock.calls[0][0].lesson_text).toContain('run terraform init first');
+    expect(lessons()).toHaveLength(1);
+    expect(lessons()[0].lesson_text).toContain('run terraform init first');
   });
 
-  it('counts evidence instead of duplicating a lesson already on record', async () => {
+  it('counts a failure seen again as evidence for its lesson, not as a second lesson', async () => {
     mockDetect.mockReturnValue([failure('Command failed: terraform plan')]);
-    mockFindSimilar.mockReturnValue([{ id: 'lesson-1' }]);
+    mockHint.mockResolvedValue({ hint_text: 'run terraform init before plan', hint_kind: 'rule', applies_when: [] });
 
     await distil();
+    await distil();
 
-    expect(mockIncrementEvidence).toHaveBeenCalledWith('lesson-1');
-    expect(mockCreateLesson).not.toHaveBeenCalled();
+    expect(lessons().map(l => l.evidence_count)).toEqual([2]);
   });
 
   it('ignores low-confidence detections', async () => {
@@ -119,7 +134,7 @@ describe('distilFailures', () => {
     await distil();
 
     expect(mockHint).not.toHaveBeenCalled();
-    expect(mockCreateLesson).not.toHaveBeenCalled();
+    expect(lessons()).toEqual([]);
   });
 
   it('does nothing when the detectors find nothing', async () => {
@@ -153,7 +168,7 @@ describe('distilFailures', () => {
       await done;
 
       expect(mockHint).toHaveBeenCalledTimes(1);
-      expect(mockCreateLesson).toHaveBeenCalledTimes(1);
+      expect(lessons()).toHaveLength(1);
     });
 
     it('asks nothing at all when its time was spent before it began', async () => {
@@ -164,7 +179,7 @@ describe('distilFailures', () => {
       await distil({ stopAt: Date.now() - 1 });
 
       expect(mockHint).not.toHaveBeenCalled();
-      expect(mockCreateLesson).not.toHaveBeenCalled();
+      expect(lessons()).toEqual([]);
     });
   });
 });
@@ -179,9 +194,8 @@ describe('generateCandidateLessons, as Claude Code calls it', () => {
       [failure('Command failed: terraform plan', { remedy: DEFAULT_REMEDY }) as any], 'ep1', 'proj',
     );
 
-    expect(mockCreateLesson).toHaveBeenCalledTimes(1);
-    expect(mockCreateLesson.mock.calls[0][0].lesson_text)
-      .toBe(`${DEFAULT_REMEDY} (failure: Command failed: terraform plan)`);
+    expect(lessons().map(l => l.lesson_text))
+      .toEqual([`${DEFAULT_REMEDY} (failure: Command failed: terraform plan)`]);
   });
 
   it('works through every failure when no one tells it to stop', async () => {
@@ -189,7 +203,9 @@ describe('generateCandidateLessons, as Claude Code calls it', () => {
       ['a', 'b', 'c'].map(name => failure(`Command failed: ${name}`) as any), 'ep1', 'proj',
     );
 
+    // All three were asked about and all three were counted — as lessons of
+    // their own or as evidence for one another, which is the store's call.
     expect(mockHint).toHaveBeenCalledTimes(3);
-    expect(mockCreateLesson).toHaveBeenCalledTimes(3);
+    expect(lessons().reduce((seen, l) => seen + l.evidence_count, 0)).toBe(3);
   });
 });

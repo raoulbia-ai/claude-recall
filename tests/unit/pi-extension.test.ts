@@ -75,7 +75,6 @@ const mockCreateEpisode = jest.fn().mockReturnValue('episode-id');
 const mockUpdateEpisode = jest.fn();
 const mockPruneOldData = jest.fn();
 
-const mockCreateCandidateLesson = jest.fn();
 const mockRunCycle = jest.fn().mockReturnValue({ promoted: 0, archived: 0 });
 
 jest.mock('../../src/services/outcome-storage', () => ({
@@ -86,9 +85,6 @@ jest.mock('../../src/services/outcome-storage', () => ({
       createEpisode: mockCreateEpisode,
       updateEpisode: mockUpdateEpisode,
       pruneOldData: mockPruneOldData,
-      findSimilarLessons: () => [],
-      incrementEvidenceCount: jest.fn(),
-      createCandidateLesson: mockCreateCandidateLesson,
     }),
   },
 }));
@@ -785,10 +781,9 @@ describe('Pi Extension', () => {
       };
     }
 
-    it('ends a session as one episode, promoted once, after its lessons exist', async () => {
-      mockExtractHindsightHint.mockResolvedValueOnce({
-        hint_text: 'check the target exists before building it', hint_kind: 'failure_preventer', applies_when: ['make'],
-      });
+    it('ends a session as one episode, distilled before its one promotion', async () => {
+      const lessons = jest.spyOn(require('../../src/hooks/memory-stop-hook'), 'generateCandidateLessons')
+        .mockResolvedValue(undefined);
       const ctx = mockCtx('/home/user/test-project');
       api._handlers['session_start']({ type: 'session_start' }, ctx);
       api._handlers['tool_result'](toolResult(1, true), ctx);
@@ -798,13 +793,15 @@ describe('Pi Extension', () => {
       api._handlers['session_shutdown']({ type: 'session_shutdown' }, ctx);
       await flush();
 
-      // One session is one episode, and a lesson it produced is there for the
-      // promotion pass that follows — not for the next session's.
+      // One session is one episode. Its lessons are written under that episode
+      // and before promotion runs, so what the session taught is there for
+      // this promotion pass — not for the next session's.
       expect(mockCreateEpisode).toHaveBeenCalledTimes(1);
       expect(mockRunCycle).toHaveBeenCalledTimes(1);
-      expect(mockCreateCandidateLesson).toHaveBeenCalledTimes(1);
-      expect(mockCreateCandidateLesson.mock.invocationCallOrder[0])
-        .toBeLessThan(mockRunCycle.mock.invocationCallOrder[0]);
+      expect(lessons).toHaveBeenCalledTimes(1);
+      expect(lessons.mock.calls[0][1]).toBe('episode-id');
+      expect(lessons.mock.invocationCallOrder[0]).toBeLessThan(mockRunCycle.mock.invocationCallOrder[0]);
+      lessons.mockRestore();
     });
 
     it('distils the session that ended, not whatever its buffer holds by then', async () => {
