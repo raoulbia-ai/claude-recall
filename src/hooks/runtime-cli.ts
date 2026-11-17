@@ -24,6 +24,11 @@ export interface RuntimeCliOptions {
   cwd?: string;
   /** Replaces the child environment entirely when given. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Read the child's stderr and put its last line in the log when it exits
+   * non-zero. Off by default, which leaves stderr ignored as it always was.
+   */
+  logStderr?: boolean;
 }
 
 export function completeWithRuntimeCli(
@@ -46,7 +51,7 @@ export function completeWithRuntimeCli(
       child = spawn(command, [...args], {
         cwd: opts.cwd,
         env: opts.env,
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', opts.logStderr ? 'pipe' : 'ignore'],
       });
     } catch (err) {
       hookLog(opts.tag, `spawn threw: ${safeErrorMessage(err)}`);
@@ -61,6 +66,10 @@ export function completeWithRuntimeCli(
 
     let stdout = '';
     child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
+    // Only the tail is kept: the reason for a refusal is its last line, and a
+    // chatty child must not grow this without bound.
+    let stderrTail = '';
+    child.stderr?.on('data', (chunk) => { stderrTail = (stderrTail + chunk.toString()).slice(-400); });
 
     child.on('error', (err: any) => {
       clearTimeout(timer);
@@ -73,7 +82,8 @@ export function completeWithRuntimeCli(
       clearTimeout(timer);
       if (settled) return;
       if (code !== 0) {
-        hookLog(opts.tag, `${command} exited ${code}`);
+        const reason = stderrTail.trim().split('\n').pop();
+        hookLog(opts.tag, `${command} exited ${code}${reason ? `: ${reason}` : ''}`);
         return done(null);
       }
       done(stdout);

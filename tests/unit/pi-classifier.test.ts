@@ -13,12 +13,14 @@ function clearRecallEnv(): void {
 }
 
 /** A child that prints `stdout` (if any) and exits with `code` on the next tick. */
-function fakeChild(opts: { stdout?: string; code?: number } = {}) {
+function fakeChild(opts: { stdout?: string; stderr?: string; code?: number } = {}) {
   const child: any = new EventEmitter();
   child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
   child.kill = jest.fn();
   setImmediate(() => {
     if (opts.stdout) child.stdout.emit('data', Buffer.from(opts.stdout));
+    if (opts.stderr) child.stderr.emit('data', Buffer.from(opts.stderr));
     child.emit('close', opts.code ?? 0);
   });
   return child;
@@ -95,6 +97,29 @@ describe('Pi LLM backend', () => {
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'partial', code: 1 }));
 
     await expect(complete('prompt')).resolves.toBeNull();
+  });
+
+  it('logs why Pi refused, not just that it did', async () => {
+    // A misspelt CLAUDE_RECALL_PI_MODEL is the likeliest way for this to fail,
+    // and Pi names the problem on stderr.
+    const logged: string[] = [];
+    jest.doMock('../../src/hooks/shared', () => ({
+      hookLog: (_tag: string, message: string) => { logged.push(message); },
+      safeErrorMessage: String,
+    }));
+    mockSpawn.mockReturnValue(fakeChild({
+      stderr: 'Warning: No models match pattern "x"\nUnknown model: deepseek-v4-flash\n',
+      code: 1,
+    }));
+
+    try {
+      await expect(complete('prompt')).resolves.toBeNull();
+    } finally {
+      jest.dontMock('../../src/hooks/shared');
+    }
+
+    expect(mockSpawn.mock.calls[0][2].stdio).toEqual(['ignore', 'pipe', 'pipe']);
+    expect(logged).toEqual(['pi exited 1: Unknown model: deepseek-v4-flash']);
   });
 
   it('returns null when pi is not on PATH', async () => {
