@@ -6,6 +6,7 @@ import { LoggingService } from './logging';
 import { MemoryRetrieval } from '../core/retrieval';
 import { Memory } from '../memory/storage';
 import { pruneOutcomeData } from './outcome-storage';
+import { presentTables, tableColumns } from './sqlite-tables';
 
 export interface CompactionConfig {
   autoCompact: boolean;
@@ -435,19 +436,14 @@ export class DatabaseManager {
    * convention on a given database.
    */
   private capExemption(db: Database.Database): (row: any) => boolean {
-    let promoted: Set<string>;
-    try {
-      const hasLessons = db.prepare(
-        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'candidate_lessons'`
-      ).get();
-      const rows = hasLessons
-        ? db.prepare(
-            'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
-          ).all() as any[]
-        : [];
-      promoted = new Set(rows.map(r => r.k as string));
-    } catch {
-      promoted = new Set();
+    let promoted = new Set<string>();
+    if (presentTables(db, ['candidate_lessons']).has('candidate_lessons')) {
+      try {
+        const rows = db.prepare(
+          'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
+        ).all() as { k: string }[];
+        promoted = new Set(rows.map(r => r.k));
+      } catch { /* unreadable lesson table — fall back to the name convention */ }
     }
 
     return row => row.confirmed_at != null
@@ -466,9 +462,7 @@ export class DatabaseManager {
     if (keepCount < 0) return 0; // Keep all
 
     try {
-      const columns = new Set(
-        (db.prepare('PRAGMA table_info(memories)').all() as any[]).map(c => c.name)
-      );
+      const columns = tableColumns(db, 'memories');
       const optional = ['is_active', 'confirmed_at'].filter(c => columns.has(c));
       const rows = db.prepare(`
         SELECT id, key, access_count, cite_count, load_count, timestamp, last_accessed, type${

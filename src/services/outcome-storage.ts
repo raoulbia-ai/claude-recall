@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { MemoryService } from './memory';
 import { ConfigService } from './config';
+import { presentTables } from './sqlite-tables';
 
 export interface EpisodeData {
   project_id: string;
@@ -439,13 +440,10 @@ export function pruneOutcomeData(
   const dryRun = opts.dryRun === true;
   const counts: PruneCounts = { episodes: 0, events: 0, lessons: 0, stats: 0, injections: 0 };
 
-  const present = new Set(
-    (db.prepare(
-      `SELECT name FROM sqlite_master WHERE type = 'table'
-       AND name IN ('episodes', 'outcome_events', 'rule_injection_events',
-                    'candidate_lessons', 'memory_stats', 'memories')`
-    ).all() as any[]).map(r => r.name)
-  );
+  const present = presentTables(db, [
+    'episodes', 'outcome_events', 'rule_injection_events',
+    'candidate_lessons', 'memory_stats', 'memories',
+  ]);
 
   const sweep = (sql: string, ...params: (string | number)[]): number => {
     if (dryRun) {
