@@ -2,8 +2,9 @@
  * Pi runtime LLM backend.
  *
  * Pi ships a headless mode — `pi -p "<prompt>"` — that answers on whatever
- * model the user already configured, exactly as `claude -p` does for Claude
- * Code. So the Pi host needs no API key of its own either.
+ * model the user already configured, as `claude -p` does for Claude Code. It
+ * is opt-in (CLAUDE_RECALL_PI_LLM=1): unlike a Claude subscription, a Pi
+ * model is often billed per call.
  *
  * `--no-extensions` is the recursion guard: the nested session loads no
  * extensions at all, so claude-recall cannot re-enter itself. That is stronger
@@ -17,6 +18,33 @@ import * as os from 'os';
 import { completeWithRuntimeCli } from './runtime-cli';
 
 const DEFAULT_TIMEOUT_MS = 30000;
+
+/**
+ * Whether this process is a Pi host. Set by the Pi extension when it loads.
+ *
+ * Module state, deliberately not an environment variable: everything Pi spawns
+ * inherits its environment, so a `claude` session started from Pi's bash tool
+ * would have announced itself as Pi too, and had its hooks answered by Pi.
+ */
+let piHost = false;
+
+export function announcePiHost(): void {
+  piHost = true;
+}
+
+/**
+ * Whether a completion may go to Pi's headless mode.
+ *
+ * Off unless the user opts in with CLAUDE_RECALL_PI_LLM=1. Many Pi users run
+ * on an API key, so this is paid calls and session text sent to their
+ * provider — the same reason a personal ANTHROPIC_API_KEY is opt-in. And never
+ * from our own nested child, which must not spawn another.
+ */
+export function piBackendEnabled(): boolean {
+  return piHost
+    && process.env.CLAUDE_RECALL_PI_LLM === '1'
+    && !process.env.CLAUDE_RECALL_NESTED;
+}
 
 /**
  * One completion from Pi's headless mode. Returns null on any failure (pi not

@@ -126,43 +126,55 @@ describe('backend selection', () => {
     command === 'pi' ? fakeChild({ stdout: HINT }) : fakeChild({ code: 127 });
 
   const spawned = (): string[] => mockSpawn.mock.calls.map(([command]: [string]) => command);
-  const askForHint = () => require('../../src/hooks/llm-classifier').extractHindsightHint('failed', 'context');
+
+  /** Ask for a completion, as a process that is — or is not — a Pi host. */
+  function askForHint(opts: { piHost: boolean }) {
+    if (opts.piHost) require('../../src/hooks/pi-classifier').announcePiHost();
+    return require('../../src/hooks/llm-classifier').extractHindsightHint('failed', 'context');
+  }
 
   beforeEach(() => {
     jest.resetModules();
     mockSpawn.mockReset();
+    mockSpawn.mockImplementation(claudeMissingPiAnswers);
     for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE_RECALL_')) delete process.env[k];
     delete process.env.ANTHROPIC_API_KEY;
   });
 
   afterAll(() => { process.env = prev; });
 
-  it('falls through to Pi on a host that announced the Pi runtime', async () => {
-    process.env.CLAUDE_RECALL_RUNTIME = 'pi';
-    mockSpawn.mockImplementation(claudeMissingPiAnswers);
+  it('falls through to Pi on a Pi host that opted in', async () => {
+    process.env.CLAUDE_RECALL_PI_LLM = '1';
 
-    await expect(askForHint()).resolves.toMatchObject({ hint_text: 'check the path first' });
+    await expect(askForHint({ piHost: true })).resolves.toMatchObject({ hint_text: 'check the path first' });
 
     // Claude Code's own CLI keeps its place at the front; Pi is the fallback.
     expect(spawned()).toEqual(['claude', 'pi']);
   });
 
-  it('does not reach for Pi unless the runtime says it is Pi', async () => {
-    mockSpawn.mockImplementation(claudeMissingPiAnswers);
+  it('stays off on a Pi host that did not opt in', async () => {
+    // Paid calls and session text to the user's provider are theirs to switch on.
+    await expect(askForHint({ piHost: true })).resolves.toBeNull();
 
-    await expect(askForHint()).resolves.toBeNull();
+    expect(spawned()).toEqual(['claude']);
+  });
 
-    // `pi` on PATH is not consent: a Claude Code user must not have their
-    // hooks answered by a different agent.
+  it('does not take the word of the environment for being a Pi host', async () => {
+    // Everything Pi spawns inherits its environment — a `claude` session started
+    // from Pi's bash tool included. Its hooks must not be answered by Pi.
+    process.env.CLAUDE_RECALL_PI_LLM = '1';
+    process.env.CLAUDE_RECALL_RUNTIME = 'pi';
+
+    await expect(askForHint({ piHost: false })).resolves.toBeNull();
+
     expect(spawned()).toEqual(['claude']);
   });
 
   it('spawns nothing from inside a nested session', async () => {
-    process.env.CLAUDE_RECALL_RUNTIME = 'pi';
+    process.env.CLAUDE_RECALL_PI_LLM = '1';
     process.env.CLAUDE_RECALL_NESTED = '1';
-    mockSpawn.mockImplementation(claudeMissingPiAnswers);
 
-    await expect(askForHint()).resolves.toBeNull();
+    await expect(askForHint({ piHost: true })).resolves.toBeNull();
 
     expect(mockSpawn).not.toHaveBeenCalled();
   });

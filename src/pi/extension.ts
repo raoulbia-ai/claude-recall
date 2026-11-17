@@ -11,6 +11,7 @@ import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
+import { announcePiHost } from '../hooks/pi-classifier';
 import {
   processToolOutcome,
   processUserInput,
@@ -97,17 +98,17 @@ function formatRules(rules: ActiveRules): string {
 }
 
 export default function(pi: PiTypes.ExtensionAPI) {
-  // Announce the runtime so the LLM backends know Pi's headless mode is
-  // available. Without this they would have to probe PATH, and a Claude Code
-  // user who also has Pi installed would get their hooks answered by it.
-  process.env.CLAUDE_RECALL_RUNTIME = 'pi';
-
   // A nested session spawned by our own LLM backend must stay a plain Pi run:
   // no rules injected, nothing captured — otherwise asking the model to
   // summarise a session would itself become a session to summarise. The
   // backend prefers `--no-extensions`, which makes this moot, but a host whose
   // models come from an extension has to load them.
   if (process.env.CLAUDE_RECALL_NESTED === '1') return;
+
+  // Tell the LLM backends this process is a Pi host, so Pi's headless mode is
+  // theirs to use if the user opted in. In-process on purpose — see
+  // announcePiHost().
+  announcePiHost();
 
   let projectId: string = '';
   const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;

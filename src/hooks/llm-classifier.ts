@@ -12,7 +12,7 @@
 
 import { ClassifyResult } from './shared';
 import { completeWithClaudeCli } from './cc-classifier';
-import { completeWithPiCli } from './pi-classifier';
+import { completeWithPiCli, piBackendEnabled } from './pi-classifier';
 
 // Lazy singleton — avoid import cost when API key is absent
 let clientInstance: any | null | undefined; // undefined = not yet checked
@@ -155,9 +155,9 @@ function parseJSON(text: string): any {
  * never consulted otherwise, not even as a fallback. The opt-in exists for
  * anyone deliberately paying for a stronger model.
  *
- * A Pi host has no `claude` binary; there the same role is played by Pi's
- * own headless mode (`pi -p`), tried after `claude -p` and only when the Pi
- * extension has announced the runtime.
+ * A Pi host has no `claude` binary; there the same role can be played by
+ * Pi's own headless mode (`pi -p`), tried after `claude -p` — opt-in as well
+ * (CLAUDE_RECALL_PI_LLM), since a Pi model is often billed per call.
  *
  * Both CLI backends are skipped inside a nested headless session
  * (CLAUDE_RECALL_NESTED): if the child fires hooks or extensions of its own,
@@ -194,15 +194,12 @@ async function completeText(
       ? Promise.resolve(null)
       : completeWithClaudeCli(prompt, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS });
 
-  // Pi hosts have no `claude` binary; Pi's own headless mode is their
-  // subscription-backed equivalent. Gated on the runtime announcing itself
-  // (the Pi extension sets this on load) rather than on `pi` merely being on
-  // PATH — a Claude Code user with Pi installed must not have their hooks
-  // quietly answered by a different agent.
+  // A Pi host has no `claude` binary; Pi's own headless mode can stand in for
+  // it, when the user has opted in. See piBackendEnabled() for the conditions.
   const viaPi = (): Promise<string | null> =>
-    process.env.CLAUDE_RECALL_NESTED || process.env.CLAUDE_RECALL_RUNTIME !== 'pi'
-      ? Promise.resolve(null)
-      : completeWithPiCli(prompt, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS });
+    piBackendEnabled()
+      ? completeWithPiCli(prompt, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS })
+      : Promise.resolve(null);
 
   const backends = process.env.CLAUDE_RECALL_PREFER_API_KEY
     ? [viaApi, viaCli, viaPi]

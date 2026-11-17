@@ -31,14 +31,6 @@ if (process.env.CLAUDE_RECALL_DB_PATH === REAL_HOME_DB) {
   );
 }
 
-// RUNTIME ISOLATION — the Pi extension exports CLAUDE_RECALL_RUNTIME=pi into
-// the shell it runs in, so a suite started from a Pi session inherits it. The
-// LLM backends read that variable to decide whether `pi -p` may answer a hook,
-// which turned nine hermetic tests into real, billable model calls (and red,
-// since a real answer is not the `null` they assert). Tests that want a runtime
-// set it themselves, after this file.
-delete process.env.CLAUDE_RECALL_RUNTIME;
-
 // Set test timeout for all tests (can be overridden per test)
 jest.setTimeout(30000);
 

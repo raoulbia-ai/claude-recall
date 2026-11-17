@@ -309,6 +309,28 @@ describe('Pi Extension', () => {
     });
   });
 
+  describe('announcing the Pi host', () => {
+    const saved = { ...process.env };
+
+    afterEach(() => { process.env = { ...saved }; });
+
+    it('tells the LLM backends in-process, and leaves the environment alone', () => {
+      delete process.env.CLAUDE_RECALL_RUNTIME;
+      delete process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_PI_LLM = '1';
+      jest.resetModules();
+      const backend = require('../../src/hooks/pi-classifier');
+      expect(backend.piBackendEnabled()).toBe(false);
+
+      require('../../src/pi/extension').default(createMockPiApi());
+
+      expect(backend.piBackendEnabled()).toBe(true);
+      // A child of this process — `claude` from Pi's bash tool, say — inherits
+      // the environment, and must not inherit a claim to be Pi with it.
+      expect(process.env.CLAUDE_RECALL_RUNTIME).toBeUndefined();
+    });
+  });
+
   describe('nested session', () => {
     it('does nothing at all when spawned by our own LLM backend', () => {
       const prev = process.env.CLAUDE_RECALL_NESTED;
