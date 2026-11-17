@@ -364,21 +364,36 @@ describe('Pi Extension', () => {
   });
 
   describe('tool_result handler', () => {
-    it('calls processToolOutcome for non-recall tools', () => {
-      api._handlers['tool_result'](
-        {
-          type: 'tool_result',
-          toolCallId: 'tc1',
-          toolName: 'bash',
-          input: { command: 'npm test' },
-          content: [{ type: 'text', text: 'Exit code 1' }],
-          isError: true,
-          details: undefined,
-        },
-        mockCtx(),
-      );
+    const failingTool = {
+      type: 'tool_result',
+      toolCallId: 'tc1',
+      toolName: 'bash',
+      input: { command: 'npm test' },
+      content: [{ type: 'text', text: 'Exit code 1' }],
+      isError: true,
+      details: undefined,
+    };
 
-      // Should have created an outcome event via processToolOutcome
+    const prevTracking = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    afterEach(() => {
+      if (prevTracking === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+      else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = prevTracking;
+    });
+
+    it('captures the failure but records no raw outcome event — Pi has no consumer for one', () => {
+      api._handlers['tool_result'](failingTool, mockCtx());
+
+      // The failure memory is the part Pi reads back (it is injected as a rule)
+      expect(mockStore).toHaveBeenCalled();
+      // The raw event is only written where the distillation step runs
+      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+    });
+
+    it('records the raw outcome event when tracking is forced on', () => {
+      process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on';
+
+      api._handlers['tool_result'](failingTool, mockCtx());
+
       expect(mockCreateOutcomeEvent).toHaveBeenCalled();
     });
   });

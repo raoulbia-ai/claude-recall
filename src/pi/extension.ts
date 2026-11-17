@@ -12,6 +12,7 @@ import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
 import { DatabaseManager } from '../services/database-manager';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import {
   processToolOutcome,
   processUserInput,
@@ -180,20 +181,23 @@ export default function(pi: PiTypes.ExtensionAPI) {
           const reminder = formatJitReminder(matches);
           systemPromptOut = (systemPromptOut ?? _event.systemPrompt) + '\n\n' + reminder;
 
-          // Record each injection so we can correlate with success/failure later
-          try {
-            const outcomeStorage = OutcomeStorage.getInstance();
-            for (const m of matches) {
-              outcomeStorage.recordRuleInjection({
-                rule_key: m.rule.key,
-                tool_name: 'pi:agent_turn',
-                tool_use_id: `pi_turn_${Date.now()}`,
-                project_id: projectId,
-                match_score: m.score,
-                matched_tokens: m.matchedTokens,
-              });
-            }
-          } catch { /* non-critical */ }
+          // Pi has no resolver hook, and `getInjectionStats` — this table's only
+          // reader — has no callers, so by default these rows go unread.
+          if (shouldRecordOutcomes('pi')) {
+            try {
+              const outcomeStorage = OutcomeStorage.getInstance();
+              for (const m of matches) {
+                outcomeStorage.recordRuleInjection({
+                  rule_key: m.rule.key,
+                  tool_name: 'pi:agent_turn',
+                  tool_use_id: `pi_turn_${Date.now()}`,
+                  project_id: projectId,
+                  match_score: m.score,
+                  matched_tokens: m.matchedTokens,
+                });
+              }
+            } catch { /* non-critical */ }
+          }
         }
       }
 
@@ -213,7 +217,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
       .map(c => c.text)
       .join('\n');
 
-    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
+    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId, 'pi');
 
     // Collect for session extraction
     collectedToolResults.push({
