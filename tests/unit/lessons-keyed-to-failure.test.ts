@@ -157,6 +157,67 @@ describe('a lesson is filed under the failure it came from', () => {
   });
 });
 
+describe('a failure whose description does not say what failed', () => {
+  /** A failure as the detectors and the PostToolUseFailure hook describe it. */
+  const described = (signal: string, whatFailed: string, whyFailed: string, confidence = 0.8) => ({
+    signal,
+    confidence,
+    content: { what_failed: whatFailed, why_failed: whyFailed, what_should_do: 'Check inputs and prerequisites before retrying', context: 'ctx' },
+  }) as any;
+
+  /** A model that words its hindsight from the error it was shown. */
+  const hindsightFromTheError = async (description: string) => ({
+    hint_text: /ENOENT/.test(description)
+      ? 'confirm a file exists with a glob before reading it by a guessed path'
+      : 'read large generated files in ranges rather than whole, they exceed the size limit',
+    hint_kind: 'failure_preventer',
+    applies_when: [],
+  });
+
+  it('is not mistaken for every other failure of the same tool', async () => {
+    // "Read failed" is all the description says. Two unrelated failed Reads
+    // must not become one lesson seen twice — that would promote the first
+    // one's advice the second time any Read failed.
+    mockHint.mockImplementation(hindsightFromTheError);
+
+    await generateCandidateLessons([described('tool_failure', 'Read failed', 'ENOENT: no such file /srv/app/config.yaml')], 'ep1', 'proj');
+    await generateCandidateLessons([described('tool_failure', 'Read failed', 'File content exceeds maximum allowed size')], 'ep2', 'proj');
+
+    expect(lessons().map(l => ({ evidence: l.evidence, key: l.key }))).toEqual([
+      { evidence: 1, key: null },
+      { evidence: 1, key: null },
+    ]);
+  });
+
+  it.each([
+    ['a retry loop', 'retry-loop', 'Bash called 3 times with identical arguments'],
+    ['an edit-test cycle', 'edit-test-cycle', 'Edit-test cycle repeated 3 times on parser.ts'],
+    ['a tool failure with nothing recorded', 'tool_failure', 'Tool failure'],
+  ])('leaves %s unkeyed', async (_what, signal, whatFailed) => {
+    mockHint.mockResolvedValue({ hint_text: `advice for ${signal}`, hint_kind: 'rule', applies_when: [] });
+
+    await generateCandidateLessons([described(signal, whatFailed, 'why')], 'ep1', 'proj');
+
+    expect(lessons()).toEqual([{ text: `advice for ${signal}`, evidence: 1, key: null }]);
+  });
+
+  it.each([
+    ['a failed command', 'tool_failure', 'Bash command failed: terraform plan -var-file=staging.tfvars'],
+    ['a failed edit', 'tool_failure', 'Edit failed on src/services/config.ts'],
+    ['tests failing behind exit 0', 'silent-test-failure', 'Test command reported failures: npm test'],
+  ])('files %s under what it names', async (_what, signal, whatFailed) => {
+    mockHint.mockImplementation(async () => ({
+      hint_text: `advice, worded ${mockHint.mock.calls.length} way`, hint_kind: 'rule', applies_when: [],
+    }));
+
+    await generateCandidateLessons([described(signal, whatFailed, 'why')], 'ep1', 'proj');
+    await generateCandidateLessons([described(signal, whatFailed, 'why')], 'ep2', 'proj');
+
+    expect(lessons()).toEqual([{ text: 'advice, worded 1 way', evidence: 2, key: whatFailed }]);
+    expect(mockHint).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a lesson that only restates its failure', () => {
   it('is asked about again, and takes the model\'s words when it has some', async () => {
     // First sighting with no model to ask — past the hint budget, or timed out.
