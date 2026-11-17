@@ -28,6 +28,7 @@ import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
 import { extractHindsightHint } from './llm-classifier';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { BOILERPLATE_LESSONS } from '../services/memory-quality';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
 const MAX_STORE = 3;
@@ -456,10 +457,20 @@ const VALID_LESSON_KINDS = new Set([
  * remedy in what actually failed so similarity matching compares failures,
  * not the shared remedy string.
  */
-async function generateCandidateLessons(
+export async function generateCandidateLessons(
   failures: DetectedFailure[],
   episodeId: string,
   projectId: string,
+  opts: {
+    /** Aborted when the caller has run out of time: no further failure is taken up. */
+    stop?: AbortSignal;
+    /**
+     * Record no lesson for a failure the model had nothing to say about and
+     * whose remedy is still the detector's default. Such a lesson is the
+     * failure restated, and once promoted it is a rule loaded every turn.
+     */
+    skipBoilerplate?: boolean;
+  } = {},
 ): Promise<void> {
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
@@ -468,6 +479,9 @@ async function generateCandidateLessons(
     // calls per run; failures past the cap keep the grounded generic lesson.
     let hintBudget = 5;
     for (const f of failures) {
+      // A call already in flight is paid for, so its answer is still recorded
+      // below — but nothing new is started.
+      if (opts.stop?.aborted) break;
       if (f.confidence < 0.7) continue;
 
       let lessonText = `${f.content.what_should_do} (failure: ${f.content.what_failed})`;
@@ -478,6 +492,10 @@ async function generateCandidateLessons(
         `${f.content.what_failed}${f.content.why_failed ? ` — ${f.content.why_failed}` : ''}`,
         f.content.context || '',
       ) : null;
+      if (!hint && opts.skipBoilerplate
+        && BOILERPLATE_LESSONS.has(f.content.what_should_do.trim().toLowerCase())) {
+        continue;
+      }
       if (hint) {
         lessonText = hint.hint_text;
         if (VALID_LESSON_KINDS.has(hint.hint_kind)) {

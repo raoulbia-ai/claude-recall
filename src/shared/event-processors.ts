@@ -15,6 +15,7 @@ import {
   jaccardSimilarity,
   safeErrorMessage,
 } from '../hooks/shared';
+import type { ToolInteraction } from '../hooks/shared';
 import { extractSessionLearningsWithLLM, extractCheckpointWithLLM } from '../hooks/llm-classifier';
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
@@ -311,6 +312,8 @@ export async function processSessionEnd(
   sessionId: string,
   projectId: string,
   maxStore: number = 3,
+  /** The session's tool calls, when the runtime kept them: its failures become lessons. */
+  work: { interactions?: ToolInteraction[]; stopAt?: number } = {},
 ): Promise<{ stored: number; promoted: number }> {
   let stored = 0;
   let promoted = 0;
@@ -353,6 +356,13 @@ export async function processSessionEnd(
       severity: 'low',
       outcome_summary: `Session end: ${stored} memories captured`,
     });
+
+    // Distil the session's failures into candidate lessons first, so that the
+    // promotion cycle below can act on what this session taught.
+    if (work.interactions?.length) {
+      const { distilFailures } = await import('./session-distillation');
+      await distilFailures({ interactions: work.interactions, projectId, episodeId, stopAt: work.stopAt });
+    }
 
     // Run promotion cycle
     try {

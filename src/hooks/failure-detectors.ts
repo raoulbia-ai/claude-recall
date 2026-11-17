@@ -50,7 +50,8 @@ function detectNonZeroExits(
 
   for (const ix of interactions) {
     if (!ix.result) continue;
-    if (ix.call.name !== 'Bash') continue;
+    // Runtimes name the shell tool differently (Claude Code 'Bash', Pi 'bash').
+    if (ix.call.name.toLowerCase() !== 'bash') continue;
     if (!ix.result.isError) continue;
     if (consumed.has(ix.call.entryIndex)) continue;
 
@@ -58,8 +59,13 @@ function detectNonZeroExits(
     // Skip hook infrastructure errors
     if (output.includes('PreToolUse') || output.includes('PostToolUse')) continue;
 
-    const exitMatch = output.match(/Exit code (\d+)/);
+    // Each runtime prints the status its own way: Claude Code "Exit code 1",
+    // Pi "Command exited with code 1". Without a marker we cannot tell a
+    // non-zero exit from any other tool error, so the interaction is left to
+    // the detectors that follow.
+    const exitMatch = output.match(/Exit code (\d+)|Command exited with code (\d+)/);
     if (!exitMatch) continue;
+    const exitCode = exitMatch[1] ?? exitMatch[2];
 
     const command = ix.call.input?.command ?? 'unknown command';
     const commandKey = command.substring(0, 200);
@@ -69,9 +75,9 @@ function detectNonZeroExits(
       confidence: 0.85,
       content: {
         what_failed: `Command failed: ${truncate(command, 100)}`,
-        why_failed: `Exit code ${exitMatch[1]}: ${truncate(firstLine(output), 150)}`,
+        why_failed: `Exit code ${exitCode}: ${truncate(firstLine(output), 150)}`,
         what_should_do: 'Check command syntax, file paths, and prerequisites before running',
-        context: `Bash command returned non-zero exit code ${exitMatch[1]}`,
+        context: `Bash command returned non-zero exit code ${exitCode}`,
         preventative_checks: [
           'Verify command arguments and paths exist',
           'Check required tools are installed',
@@ -399,8 +405,22 @@ function detectRetryLoops(
 
 export function detectTranscriptFailures(entries: object[]): DetectedFailure[] {
   if (entries.length === 0) return [];
+  return detectFailures(extractToolInteractions(entries), entries);
+}
 
-  const interactions = extractToolInteractions(entries);
+/**
+ * The same detectors, driven by tool interactions the caller already holds.
+ *
+ * Claude Code reconstructs interactions from transcript entries; Pi has them
+ * natively in its tool_result events and no transcript file at all. Entries
+ * stay optional because only the backtracking detector reads assistant prose.
+ */
+export function detectFailures(
+  interactions: ToolInteraction[],
+  entries: object[] = [],
+): DetectedFailure[] {
+  if (interactions.length === 0 && entries.length === 0) return [];
+
   const consumed = new Set<number>();
   const allFailures: DetectedFailure[] = [];
 

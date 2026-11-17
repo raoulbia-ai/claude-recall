@@ -25,6 +25,7 @@ import {
   ConversationEntry,
 } from '../shared/event-processors';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
+import type { ToolInteraction as PiToolInteraction } from '../hooks/shared';
 import { CitableRule, extractCitations, matchCitations } from '../shared/citations';
 // Shared audited directive — memories are advisory user preferences, never
 // authoritative instructions (prompt-injection hardening, 2026-04-24 audit).
@@ -114,11 +115,23 @@ export default function(pi: PiTypes.ExtensionAPI) {
   const collectedEntries: ConversationEntry[] = [];
   const MAX_COLLECTED_ENTRIES = 100;
   /**
-   * Longest quitting may be held up by what a session owes at its end. A
-   * backstop: every piece that asks a model is capped at 10s on its own, they
-   * run side by side, and with no model to ask all of it takes milliseconds.
+   * Two points on one clock that starts when the session ends. Distillation
+   * stops taking up failures at the first, which leaves a model call already
+   * in flight (capped at 10s) and the promotion that follows room to finish
+   * before the second — where quitting stops waiting, whatever is left. With
+   * no model to ask, all of it takes milliseconds.
    */
-  const SESSION_END_BUDGET_MS = 15000;
+  const DISTILLATION_STOPS_AFTER_MS = 15000;
+  const SESSION_END_BUDGET_MS = 30000;
+
+  /** Tool calls and their outcomes, in the shape the failure detectors want. */
+  const toolInteractions: PiToolInteraction[] = [];
+  /**
+   * Position of a tool call in the session. The detectors tell calls apart by
+   * it, so it has to keep counting when the buffer below starts dropping its
+   * oldest entries — the buffer's length stops moving at the cap.
+   */
+  let toolCallSeq = 0;
 
   // Route logs through Pi's UI when available
   setLogFunction((source, msg) => {
@@ -133,6 +146,8 @@ export default function(pi: PiTypes.ExtensionAPI) {
     collectedUserTexts.length = 0;
     collectedToolResults.length = 0;
     collectedEntries.length = 0;
+    toolInteractions.length = 0;
+    toolCallSeq = 0;
     resetPendingFailures();
     try {
       ConfigService.getInstance().updateConfig({
@@ -287,6 +302,13 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
     const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId, 'pi');
 
+    const entryIndex = toolCallSeq++;
+    toolInteractions.push({
+      call: { id: event.toolCallId, name: event.toolName, input: event.input, entryIndex },
+      result: { toolUseId: event.toolCallId, content: output, isError: event.isError, entryIndex },
+    });
+    if (toolInteractions.length > MAX_COLLECTED_ENTRIES) toolInteractions.shift();
+
     // Collect for session extraction
     collectedToolResults.push({
       role: 'tool_result',
@@ -342,7 +364,15 @@ export default function(pi: PiTypes.ExtensionAPI) {
     /** Everything this session still owes the store. Each piece settles on its own. */
     const work: Promise<void>[] = [];
 
-    work.push(processSessionEnd(collectedUserTexts, sessionId, projectId).then(result => {
+    // The session's failures are distilled into lessons here too. Until now
+    // that ran only from Claude Code's Stop hook, so on a Pi host failures
+    // accumulated as rules and never became lessons. The calls are passed as a
+    // copy: the buffer belongs to the session, and this work outlives it when
+    // the session is replaced rather than ended.
+    const distil = projectId
+      ? { interactions: [...toolInteractions], stopAt: Date.now() + DISTILLATION_STOPS_AFTER_MS }
+      : {};
+    work.push(processSessionEnd(collectedUserTexts, sessionId, projectId, undefined, distil).then(result => {
       if (ctx.hasUI) {
         try {
           if (result.stored > 0) {

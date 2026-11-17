@@ -75,6 +75,9 @@ const mockCreateEpisode = jest.fn().mockReturnValue('episode-id');
 const mockUpdateEpisode = jest.fn();
 const mockPruneOldData = jest.fn();
 
+const mockCreateCandidateLesson = jest.fn();
+const mockRunCycle = jest.fn().mockReturnValue({ promoted: 0, archived: 0 });
+
 jest.mock('../../src/services/outcome-storage', () => ({
   OutcomeStorage: {
     getInstance: () => ({
@@ -83,15 +86,16 @@ jest.mock('../../src/services/outcome-storage', () => ({
       createEpisode: mockCreateEpisode,
       updateEpisode: mockUpdateEpisode,
       pruneOldData: mockPruneOldData,
+      findSimilarLessons: () => [],
+      incrementEvidenceCount: jest.fn(),
+      createCandidateLesson: mockCreateCandidateLesson,
     }),
   },
 }));
 
 jest.mock('../../src/services/promotion-engine', () => ({
   PromotionEngine: {
-    getInstance: () => ({
-      runCycle: jest.fn().mockReturnValue({ promoted: 0, archived: 0 }),
-    }),
+    getInstance: () => ({ runCycle: mockRunCycle }),
   },
 }));
 
@@ -755,13 +759,88 @@ describe('Pi Extension', () => {
           api._handlers['session_shutdown']({ type: 'session_shutdown', reason: 'quit' }, ctx),
         ).then(() => { handlerDone = true; });
 
-        await jest.advanceTimersByTimeAsync(14000);
+        await jest.advanceTimersByTimeAsync(29000);
         expect(handlerDone).toBe(false);
         await jest.advanceTimersByTimeAsync(2000);
         expect(handlerDone).toBe(true);
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+  describe('session_shutdown distillation', () => {
+    const flush = async () => {
+      for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+    };
+
+    function toolResult(n: number, failed: boolean) {
+      return {
+        type: 'tool_result',
+        toolCallId: `tc${n}`,
+        toolName: 'bash',
+        input: { command: `make target-${n}` },
+        content: [{ type: 'text', text: failed ? `boom ${n}\n\nCommand exited with code 1` : 'ok' }],
+        isError: failed,
+        details: undefined,
+      };
+    }
+
+    it('ends a session as one episode, promoted once, after its lessons exist', async () => {
+      mockExtractHindsightHint.mockResolvedValueOnce({
+        hint_text: 'check the target exists before building it', hint_kind: 'failure_preventer', applies_when: ['make'],
+      });
+      const ctx = mockCtx('/home/user/test-project');
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+      api._handlers['tool_result'](toolResult(1, true), ctx);
+      mockCreateEpisode.mockClear();
+      mockRunCycle.mockClear();
+
+      api._handlers['session_shutdown']({ type: 'session_shutdown' }, ctx);
+      await flush();
+
+      // One session is one episode, and a lesson it produced is there for the
+      // promotion pass that follows — not for the next session's.
+      expect(mockCreateEpisode).toHaveBeenCalledTimes(1);
+      expect(mockRunCycle).toHaveBeenCalledTimes(1);
+      expect(mockCreateCandidateLesson).toHaveBeenCalledTimes(1);
+      expect(mockCreateCandidateLesson.mock.invocationCallOrder[0])
+        .toBeLessThan(mockRunCycle.mock.invocationCallOrder[0]);
+    });
+
+    it('distils the session that ended, not whatever its buffer holds by then', async () => {
+      // When a session is replaced the work is left to finish behind the new
+      // one, and the new one starts by emptying the buffers.
+      const detect = jest.spyOn(require('../../src/hooks/failure-detectors'), 'detectFailures');
+      const ctx = mockCtx('/home/user/test-project');
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+      api._handlers['tool_result'](toolResult(1, true), ctx);
+      api._handlers['tool_result'](toolResult(2, false), ctx);
+
+      await api._handlers['session_shutdown']({ type: 'session_shutdown', reason: 'new' }, ctx);
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+      await flush();
+
+      expect(detect).toHaveBeenCalledTimes(1);
+      expect((detect.mock.calls[0][0] as unknown[]).length).toBe(2);
+      detect.mockRestore();
+    });
+
+    it('keeps every buffered tool call distinguishable in a long session', async () => {
+      const detect = jest.spyOn(require('../../src/hooks/failure-detectors'), 'detectFailures');
+      const ctx = mockCtx('/home/user/test-project');
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+      // Past the buffer's cap, where the oldest calls are dropped.
+      for (let n = 0; n < 150; n++) api._handlers['tool_result'](toolResult(n, n % 40 === 0), ctx);
+
+      api._handlers['session_shutdown']({ type: 'session_shutdown' }, ctx);
+      await flush();
+
+      // The detectors tell tool calls apart by index; calls that share one are
+      // treated as already handled, and their failures go unseen.
+      const interactions = detect.mock.calls[0][0] as Array<{ call: { entryIndex: number } }>;
+      expect(interactions.length).toBeGreaterThan(1);
+      expect(new Set(interactions.map(ix => ix.call.entryIndex)).size).toBe(interactions.length);
+      detect.mockRestore();
     });
   });
 });

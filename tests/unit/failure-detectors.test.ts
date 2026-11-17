@@ -1,4 +1,5 @@
-import { detectTranscriptFailures } from '../../src/hooks/failure-detectors';
+import { detectFailures, detectTranscriptFailures } from '../../src/hooks/failure-detectors';
+import type { ToolInteraction } from '../../src/hooks/shared';
 import {
   extractToolCalls,
   extractToolResults,
@@ -402,5 +403,76 @@ describe('detectTranscriptFailures', () => {
       expect(failures.length).toBeGreaterThanOrEqual(1);
       expect(failures[0].signal).toBe('non-zero-exit');
     });
+  });
+});
+
+/**
+ * Pi holds its tool calls in memory and has no transcript to rebuild them
+ * from. It also names the shell tool `bash` and reports a failed command as
+ * "Command exited with code N" — neither of which the detector recognised.
+ */
+describe('detectFailures — from interactions a runtime already holds', () => {
+  let seq = 0;
+  /** One tool call and its result, as the Pi extension records them. */
+  function call(name: string, command: string, output: string, isError = false): ToolInteraction {
+    const entryIndex = seq++;
+    const id = `tc${entryIndex}`;
+    return {
+      call: { id, name, input: { command }, entryIndex },
+      result: { toolUseId: id, content: output, isError, entryIndex },
+    };
+  }
+
+  beforeEach(() => { seq = 0; });
+
+  it('finds nothing in a session with no calls', () => {
+    expect(detectFailures([])).toEqual([]);
+  });
+
+  it('recognises a failed command the way Pi reports it', () => {
+    const failures = detectFailures([
+      call('bash', 'terraform plan', 'Error: no configuration files\n\nCommand exited with code 1', true),
+    ]);
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0].signal).toBe('non-zero-exit');
+    expect(failures[0].content.what_failed).toContain('terraform plan');
+    expect(failures[0].content.why_failed).toContain('Exit code 1');
+  });
+
+  it('reads the exit status Pi printed, not just that there was one', () => {
+    const [failure] = detectFailures([
+      call('bash', 'grep -r needle /srv/missing', 'grep: /srv/missing: No such file or directory\n\nCommand exited with code 2', true),
+    ]);
+
+    expect(failure.content.why_failed).toContain('Exit code 2');
+    expect(failure.content.context).toContain('exit code 2');
+  });
+
+  it('still recognises it the way Claude Code reports it', () => {
+    const failures = detectFailures([
+      call('Bash', 'ls /nonexistent', 'ls: cannot access: No such file or directory\nExit code 1', true),
+    ]);
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0].signal).toBe('non-zero-exit');
+  });
+
+  it('is not fooled by a command that merely printed the words', () => {
+    expect(detectFailures([
+      call('bash', 'cat notes.md', 'If the build fails you will see: Command exited with code 1'),
+    ])).toEqual([]);
+  });
+
+  it('agrees with the transcript path about the same session', () => {
+    // One implementation behind both entry points: Claude Code rebuilds the
+    // interactions from its transcript, Pi hands them over.
+    const fromTranscript = detectTranscriptFailures([
+      makeAssistantToolUse('Bash', { command: 'npm test' }, 'tc0'),
+      makeUserToolResult('tc0', '3 failing\nExit code 1', true),
+    ]);
+    const fromInteractions = detectFailures([call('Bash', 'npm test', '3 failing\nExit code 1', true)]);
+
+    expect(fromInteractions).toEqual(fromTranscript);
   });
 });
