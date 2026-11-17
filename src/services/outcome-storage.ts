@@ -8,6 +8,8 @@
 import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { MemoryService } from './memory';
+import { ConfigService, DEFAULT_TELEMETRY_DAYS } from './config';
+import { presentTables } from './sqlite-tables';
 
 export interface EpisodeData {
   project_id: string;
@@ -381,40 +383,120 @@ export class OutcomeStorage {
   }
 
   /**
-   * Prune old data from outcome tables to prevent unbounded growth.
-   * - Episodes older than 90 days
-   * - Outcome events older than 90 days
-   * - Rejected/archived candidate lessons older than 14 days
-   * - Orphaned memory_stats entries (key no longer in memories table)
-   * - Rule injection events older than 90 days
+   * Prune old data from the outcome tables to prevent unbounded growth.
+   *
+   * The window comes from `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`, so the hook
+   * path and compaction prune by the same rule instead of two cleanups with
+   * different limits.
    */
-  pruneOldData(): { episodes: number; events: number; lessons: number; stats: number; injections: number } {
-    const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const cutoff14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-    const cutoff90Ms = Date.now() - 90 * 24 * 60 * 60 * 1000;
-
-    const episodes = this.db.prepare(
-      'DELETE FROM episodes WHERE created_at < ?'
-    ).run(cutoff90).changes;
-
-    const events = this.db.prepare(
-      'DELETE FROM outcome_events WHERE created_at < ?'
-    ).run(cutoff90).changes;
-
-    const lessons = this.db.prepare(
-      "DELETE FROM candidate_lessons WHERE status IN ('rejected', 'archived') AND updated_at < ?"
-    ).run(cutoff14).changes;
-
-    const stats = this.db.prepare(
-      'DELETE FROM memory_stats WHERE memory_key NOT IN (SELECT key FROM memories)'
-    ).run().changes;
-
-    const injections = this.db.prepare(
-      'DELETE FROM rule_injection_events WHERE injected_at < ?'
-    ).run(cutoff90Ms).changes;
-
-    return { episodes, events, lessons, stats, injections };
+  pruneOldData(): PruneCounts {
+    return pruneOutcomeData(this.db, { retentionDays: telemetryRetentionDays() });
   }
+}
+
+export interface PruneCounts {
+  episodes: number;
+  events: number;
+  lessons: number;
+  stats: number;
+  injections: number;
+}
+
+/** Rejected and archived lessons are dropped on their own, shorter clock. */
+const DEAD_LESSON_DAYS = 14;
+
+/**
+ * The telemetry window, in days; -1 keeps all.
+ *
+ * The one place the setting is read. A value that is missing or does not parse
+ * falls back to the default rather than to "keep everything" or "keep nothing"
+ * — both callers go through here, so they cannot come to different answers.
+ */
+export function telemetryRetentionDays(): number {
+  try {
+    const configured = ConfigService.getInstance().getConfig()
+      ?.database?.compaction?.retention?.telemetryDays;
+    return typeof configured === 'number' && !Number.isNaN(configured)
+      ? configured
+      : DEFAULT_TELEMETRY_DAYS;
+  } catch {
+    return DEFAULT_TELEMETRY_DAYS;
+  }
+}
+
+/**
+ * Prune the outcome tables on any connection.
+ *
+ * Compaction opens its own handle to the database file, so this takes the
+ * connection rather than reaching for the `OutcomeStorage` singleton — one
+ * implementation, two callers, one retention window.
+ *
+ * Episodes are the exception to deleting by age: `episode_id` carries no
+ * foreign key, so an old episode that still owns events or a candidate lesson
+ * would leave them pointing at nothing. Those are kept until the last
+ * reference is gone.
+ */
+export function pruneOutcomeData(
+  db: Database.Database,
+  opts: { retentionDays: number; dryRun?: boolean },
+): PruneCounts {
+  const { retentionDays } = opts;
+  const dryRun = opts.dryRun === true;
+  const counts: PruneCounts = { episodes: 0, events: 0, lessons: 0, stats: 0, injections: 0 };
+
+  const present = presentTables(db, [
+    'episodes', 'outcome_events', 'rule_injection_events',
+    'candidate_lessons', 'memory_stats', 'memories',
+  ]);
+
+  const sweep = (sql: string, ...params: (string | number)[]): number => {
+    if (dryRun) {
+      const countSql = sql.replace('DELETE FROM', 'SELECT COUNT(*) AS c FROM');
+      return (db.prepare(countSql).get(...params) as any).c as number;
+    }
+    return db.prepare(sql).run(...params).changes;
+  };
+
+  if (retentionDays >= 0) {
+    const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const cutoffIso = new Date(cutoffMs).toISOString();
+
+    // created_at is ISO text; injected_at is epoch milliseconds.
+    if (present.has('outcome_events')) {
+      counts.events = sweep('DELETE FROM outcome_events WHERE created_at < ?', cutoffIso);
+    }
+    if (present.has('rule_injection_events')) {
+      counts.injections = sweep('DELETE FROM rule_injection_events WHERE injected_at < ?', cutoffMs);
+    }
+    if (present.has('episodes')) {
+      const referencing: string[] = [];
+      if (present.has('outcome_events')) {
+        referencing.push('SELECT episode_id FROM outcome_events WHERE episode_id IS NOT NULL');
+      }
+      if (present.has('candidate_lessons')) {
+        referencing.push('SELECT episode_id FROM candidate_lessons WHERE episode_id IS NOT NULL');
+      }
+      const unreferenced = referencing.length > 0
+        ? ` AND id NOT IN (${referencing.join(' UNION ')})`
+        : '';
+      counts.episodes = sweep(`DELETE FROM episodes WHERE created_at < ?${unreferenced}`, cutoffIso);
+    }
+  }
+
+  // Not telemetry: a dead lesson teaches nothing once it has been rejected,
+  // and a stat whose memory is gone has nothing to describe.
+  if (present.has('candidate_lessons')) {
+    const deadCutoff = new Date(Date.now() - DEAD_LESSON_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    counts.lessons = sweep(
+      "DELETE FROM candidate_lessons WHERE status IN ('rejected', 'archived') AND updated_at < ?",
+      deadCutoff,
+    );
+  }
+  if (present.has('memory_stats') && present.has('memories')) {
+    counts.stats = sweep('DELETE FROM memory_stats WHERE memory_key NOT IN (SELECT key FROM memories)');
+  }
+
+  return counts;
 }
 
 // --- Helpers ---
