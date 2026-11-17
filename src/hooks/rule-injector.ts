@@ -31,6 +31,7 @@ import { hookLog, hookStateDir } from './shared';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
 import { writeHarnessSessionLink } from '../services/session-link';
@@ -203,22 +204,26 @@ export async function computeInjection(
     return null;
   }
 
-  // Record each injection so PostToolUse can resolve it with the outcome
-  try {
-    const outcomeStorage = OutcomeStorage.getInstance();
-    for (const m of freshMatches) {
-      outcomeStorage.recordRuleInjection({
-        rule_key: m.rule.key,
-        tool_name: toolName,
-        tool_use_id: toolUseId,
-        project_id: projectId,
-        match_score: m.score,
-        matched_tokens: m.matchedTokens,
-      });
+  // Record each injection so PostToolUse can resolve it with the outcome.
+  // Same policy as the outcome events these rows are joined against: this is
+  // Claude Code's hook, so `auto` records, and `off` means off here too.
+  if (shouldRecordOutcomes('cc')) {
+    try {
+      const outcomeStorage = OutcomeStorage.getInstance();
+      for (const m of freshMatches) {
+        outcomeStorage.recordRuleInjection({
+          rule_key: m.rule.key,
+          tool_name: toolName,
+          tool_use_id: toolUseId,
+          project_id: projectId,
+          match_score: m.score,
+          matched_tokens: m.matchedTokens,
+        });
+      }
+    } catch (err) {
+      // Non-critical — failure to record shouldn't block the injection itself
+      hookLog('rule-injector', `Failed to record injections: ${(err as Error).message}`);
     }
-  } catch (err) {
-    // Non-critical — failure to record shouldn't block the injection itself
-    hookLog('rule-injector', `Failed to record injections: ${(err as Error).message}`);
   }
 
   // Mark them injected so they don't repeat on the next tool call.

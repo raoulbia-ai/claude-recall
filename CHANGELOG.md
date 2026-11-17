@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Backups now survive WAL, get verified, and compaction refuses a damaged file.** A shared database went malformed on 2026-11-09 and every retained backup turned out to be unreadable in the same pages as the database itself — there was nothing to restore from. `createBackup()` was `fs.copyFileSync` of the `.db` file alone: in WAL mode the committed tail lives in the `-wal` file, so a "backup" was the database minus its newest transactions, and torn besides, because other agent processes write while the copy runs. It now uses `VACUUM INTO` (online backup API as fallback below SQLite 3.27), and an `integrity_check` gates the new file **before** rotation — otherwise a corrupt backup silently evicts the last good one under keep-3, which is exactly how this incident ran out of clean copies. `compact()` also checked nothing: it VACUUMed — rewriting every page — a database SQLite was already calling malformed. It now verifies first and refuses, leaving the file untouched for recovery. Not changed: `busy_timeout`, which better-sqlite3 already defaults to 5000ms.
 
+- **Raw outcome telemetry is no longer collected on runtimes that cannot consume it.** `outcome_events` and `rule_injection_events` are written one row per tool result so that `memory-stop-hook` can later distill them into `candidate_lessons` and citation counts — but that hook is wired into Claude Code's hook CLI only. Under Pi the rows were therefore written and never read: one host reached **246845 `outcome_events` rows, about two thirds of a 133MB database, with `candidate_lessons` still empty and every `cite_count` at zero**. `rule_injection_events` is worse off still — `getInjectionStats`, its only reader, has no callers on any runtime. Collection now follows the consumer, via one pure policy function (`shouldRecordOutcomes`) that both writers consult.
+
+### Added
+
+- **`CLAUDE_RECALL_OUTCOME_TRACKING`** (`auto` | `on` | `off`, default `auto`). `auto` collects where the distillation step runs; `on` forces collection everywhere, which is what you want when reading the `outcomes` CLI or debugging capture; `off` disables it entirely. Failure memories are unaffected — Pi reads those back as rules. Every writer of these two tables consults the same policy — the Pi extension, Claude Code's `tool-outcome-watcher` and its `rule-injector` — so `off` is off on every runtime, not only where the default would already have stopped collecting.
+
 ## [0.47.0] - 2026-11-11
 
 ### Changed

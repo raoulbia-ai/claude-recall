@@ -28,6 +28,7 @@ import {
 } from './shared';
 import { MemoryService, MemorySource } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 
 const HOOK_NAME = 'tool-outcome-watcher';
 const EXIT_CODE_REGEX = /Exit code (\d+)/;
@@ -119,6 +120,10 @@ function recordOutcomeEvent(
   summary: string,
   exitCode?: number,
 ): void {
+  // This hook is Claude Code's, which is where the distillation step runs, so
+  // `auto` collects here. `off` must still mean off — the setting would be a
+  // half-truth if the largest writer ignored it.
+  if (!shouldRecordOutcomes('cc')) return;
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
     outcomeStorage.createOutcomeEvent({
@@ -474,18 +479,20 @@ export async function handleToolFailure(input: any): Promise<void> {
 
     // Record structured outcome event, attributed to the emitting session so
     // memory-stop only folds THIS session's failures into its episode
-    try {
-      const outcomeStorage = OutcomeStorage.getInstance();
-      outcomeStorage.createOutcomeEvent({
-        event_type: 'tool_failure',
-        actor: 'tool',
-        session_id: typeof input.session_id === 'string' ? input.session_id : undefined,
-        action_summary: whatFailed,
-        next_state_summary: truncate(error, 200),
-        tags: extractToolTags(toolName, input.tool_input),
-      });
-    } catch (err) {
-      hookLog(HOOK_NAME, `Failure outcome event error: ${safeErrorMessage(err)}`);
+    if (shouldRecordOutcomes('cc')) {
+      try {
+        const outcomeStorage = OutcomeStorage.getInstance();
+        outcomeStorage.createOutcomeEvent({
+          event_type: 'tool_failure',
+          actor: 'tool',
+          session_id: typeof input.session_id === 'string' ? input.session_id : undefined,
+          action_summary: whatFailed,
+          next_state_summary: truncate(error, 200),
+          tags: extractToolTags(toolName, input.tool_input),
+        });
+      } catch (err) {
+        hookLog(HOOK_NAME, `Failure outcome event error: ${safeErrorMessage(err)}`);
+      }
     }
 
     hookLog(HOOK_NAME, `Stored tool failure: ${truncate(whatFailed, 60)}`);

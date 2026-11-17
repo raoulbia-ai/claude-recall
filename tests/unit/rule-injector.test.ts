@@ -279,6 +279,40 @@ describe('handleRuleInjector — PreToolUse hook', () => {
     expect(parsed.hookSpecificOutput?.additionalContext).toBeDefined();
   });
 
+  it('records no injection events when outcome tracking is off', async () => {
+    // These rows are only read alongside the outcome events; `off` turns both
+    // off, on Claude Code as much as on Pi.
+    mockLoadActiveRules.mockReturnValueOnce({
+      preferences: [],
+      corrections: [],
+      failures: [],
+      devops: [
+        { key: 'd-off', type: 'devops', value: { content: 'always run npm test from project root' }, is_active: true, timestamp: Date.now() },
+      ],
+      summary: '',
+    });
+
+    const previous = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'off';
+    const stdout = captureStdout();
+    let output: string;
+    try {
+      await handleRuleInjector({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        tool_use_id: 'tu-off-1',
+      });
+    } finally {
+      output = stdout.restore();
+      if (previous === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+      else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = previous;
+    }
+
+    expect(mockRecordRuleInjection).not.toHaveBeenCalled();
+    // The rule is still injected — this setting governs telemetry, not memory.
+    expect(JSON.parse(output).hookSpecificOutput?.additionalContext).toContain('npm test');
+  });
+
   // --- #5: per-session dedup ---
 
   const buildDevopsRule = (content: string) => ({
