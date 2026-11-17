@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { ensurePrivateDir, defaultDataDir } from './private-dir';
 
 export interface ClaudeRecallConfig {
   // Database configuration
@@ -196,8 +197,10 @@ export class ConfigService {
 
     // Ensure database directory exists. Skip for in-memory DBs (`:memory:`)
     // and any path that doesn't look like a real filesystem location.
-    if (dbDir && dbDir !== ':memory:' && !fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+    // Owner-only (0o700): the DB holds whatever the user typed. The default
+    // ~/.claude-recall is also tightened if it already exists with wider perms.
+    if (dbDir && dbDir !== ':memory:') {
+      ensurePrivateDir(dbDir, { tighten: path.resolve(dbDir) === defaultDataDir() });
     }
 
     return dbPath;

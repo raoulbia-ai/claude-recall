@@ -15,6 +15,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`CLAUDE_RECALL_OUTCOME_TRACKING`** (`auto` | `on` | `off`, default `auto`). `auto` collects where the distillation step runs; `on` forces collection everywhere, which is what you want when reading the `outcomes` CLI or debugging capture; `off` disables it entirely. Failure memories are unaffected — Pi reads those back as rules.
 
+## [0.47.0] - 2026-11-11
+
+### Changed
+
+- **The memory janitor checks rules against the user's words.** Each rule with a source (0.46.0+) goes to the janitor's LLM with its `source_excerpt` as evidence, shortened to 400 chars with the original length noted, so a fragment mined from a long paste is visible as one. The prompt tells the reviewer to demote rules the evidence doesn't support, mainly text the user was showing rather than stating, and not to demote rules the evidence plainly states. Merge and rewrite replacements keep the first source rule's provenance, so later passes can still check them. Rules without a source are reviewed as before.
+
+### Added
+
+- **Confirmed rules load first.** The janitor has a new `confirm` action for rules whose source text plainly states them. It sets a new `confirmed_at` column. Only active rules with a `source_excerpt` can be confirmed, and the parser drops confirm ids that have no evidence. `loadActiveRules` sorts corrections, failures and solutions confirmed-first before their caps, and `load_rules` puts confirmed rules first within each section, so the token budget cuts unconfirmed rules first. A same-key re-save with identical content keeps the confirmation, and changed content clears it. Existing databases gain the column on startup, with every rule unconfirmed. Export → import doesn't carry the confirmation, so imported rules start unconfirmed.
+
+## [0.46.0] - 2026-10-27
+
+### Added
+
+- **Memories link back to where they came from.** Hook captures (corrections, preferences, PreCompact, Stop, tool failures) now record the Claude Code session, its transcript path and, when the capture came from a transcript entry, that entry's `uuid`, in new columns (`source_session`, `source_transcript`, `source_entry`), plus `source_excerpt`, a copy of the user's text up to 2,000 chars. Claude Code deletes old transcripts (`cleanupPeriodDays`, 30 days by default), so the excerpt keeps the user's words after the link is gone. `search_memory` prints the transcript path while the file exists, otherwise the saved excerpt, and tells the agent it can read the original exchange: the stored text is the classifier's summary, and a stronger model can check it against what the user actually said. Existing databases gain the columns on startup, with no backfill. A same-key re-save without a source keeps the original one. Sources survive export → import, and are validated on the way in (ids must be uuid-shaped, the transcript an absolute `.jsonl` path), since the agent may be told to read that file.
+
+## [0.45.1] - 2026-10-22
+
+### Security
+
+- **`~/.claude-recall` is now owner-only (`0700`).** The memory DB, hook logs and session state were created with the default umask (usually `0755`), so any other account on the machine could read everything you'd typed. New dirs are created `0700`, and an existing default `~/.claude-recall` is tightened on startup and on install. A custom `CLAUDE_RECALL_DB_PATH` is created `0700` but never chmodded (it may be shared deliberately).
+- **`import` validates each memory.** Import files are untrusted, and active rules are injected into every session. Malformed types and values over 10,000 chars are skipped with a warning. Types are checked by shape rather than a fixed list, so every real type (`solution`, `task-checkpoint`, …) survives an export → import round trip.
+
+### Documentation
+
+- **Privacy wording corrected.** The README said no prompts are transmitted; capture actually sends each prompt to the agent's own LLM (`claude -p` / Kiro, or the Anthropic API on opt-in) for classification. The memory DB itself never leaves the machine.
+
+## [0.45.0] - 2026-10-21
+
+### Added
+
+- **`doctor` now checks launches from outside a terminal (Claude desktop app / IDEs).** nvm adds Node to `PATH` only in interactive shells, so an nvm install works in a terminal while the desktop app fails with `ENOENT: Executable not found in $PATH: "claude-recall"` and every hook with `claude-recall: not found` — and `doctor`, running in that same terminal, reported all green. A new *Launch outside a terminal* section collects every launch command Claude Code runs (MCP server entries, hooks, statusLine) and actually starts each distinct executable with `--version` under a minimal system `PATH` and bare environment, which also catches a resolvable script whose `#!/usr/bin/env node` line fails. Failures are shown as warnings with a pointer to the README fix; they don't fail `doctor` (terminal-only users are unaffected). Skipped on Windows.
+
+### Fixed
+
+- **`setup --install` and `doctor --fix` no longer undo a custom launcher.** An MCP entry or hooks registered by absolute path to a claude-recall launcher (e.g. the README's nvm wrapper) were treated as drift: `doctor --fix` rewrote the MCP command back to bare `claude-recall`, and a hooks-version upgrade via `setup --install` did the same to every hook — reintroducing the desktop-app failure. An existing absolute launcher whose basename starts with `claude-recall` is now kept by both.
+
+### Documentation
+
+- **README: nvm + desktop app troubleshooting.** New *nvm: "Executable not found"* entry in Install & upgrade troubleshooting with a wrapper script and where to register it, plus a pointer from the Quick Start *Using nvm?* note.
+
+## [0.44.1] - 2026-10-13
+
+### Fixed
+
+- **Follow-up to 0.44.0: `git config` reads are recognised regardless of flag order, and ssh connection errors are transient.** 0.44.0 matched `git config --get …` with the flag immediately after the subcommand, but real invocations put read flags first — `git config --show-origin --show-scope --get-regexp "gpg|sign"` and `git config --list --show-origin` (both observed in the hook log) were still captured as failures. The matcher is now order-insensitive: `git config` plus **any** read-only flag (`--get`/`--get-all`/`--get-regexp`/`--list`/`-l`/`--show-origin`/`--show-scope`). A failing `git config` **write** has no read flag and is still captured. Separately, `ssh` exit **255** (ssh's own connection error, e.g. a `BatchMode` reachability probe) joins the transient set; a remote command's exit code passes through unchanged, so genuine remote failures are still captured.
+
+## [0.44.0] - 2026-10-13
+
+### Fixed
+
+- **Benign non-zero exits are no longer captured as "failures" — the biggest source of capture noise.** The watcher treated *any* non-zero Bash exit as a failure, but a large family of Unix tools use non-zero as a normal query answer: `git config --get x` exits 1 when the key is simply **unset**, `grep`/`rg` exit 1 on **no match**, `test`/`[` on **false**, `diff`/`cmp` on **differs**, `git diff --quiet` when there **are** changes, plus `pgrep`/`pidof`/`jq -e`. These are now recognised as benign (exit 1 only — `grep`'s exit 2 is still a real error), including when they end a pipeline (`… | grep x`). Transient network/timeout exits (`curl` 6/7/28/35, `wget` 4, `timeout` 124/137) are likewise not durable lessons. Also closed an own-goal: the low-output skip **exempted `git`**, so an output-less `git config --get` was captured *because* it started with `git` — real git failures always print to stderr, so the exemption is gone. Reported from the field: a project showed three "rules" that were all noise of exactly this kind.
+- **Auto-captured failures are no longer labelled "rules".** The statusline counted preferences + corrections + devops + solutions **+ failures** and called the total "rules", so a user who had taught it nothing could still see `🧠 Recall · 3 rules`. It now reports them separately — `🧠 Recall · 2 rules · 3 failures` — and omits the failure segment when there are none. The session-start banner counts consistently.
+- **The surfaces can no longer contradict each other.** `memory-sync` already refused to sync boilerplate-only failures into `MEMORY.md`, but `loadActiveRules` had no such filter — so the same memories were injected, counted and advertised as "rules" while the file index said "No recall rules synced". That predicate now lives in `services/memory-quality.ts` and is applied by **both**, so injection, `load_rules`, the statusline and the file index agree. Boilerplate failures are no longer injected at all (they cost context and teach nothing); the underlying failure still lives in the DB, so fix-pairing and evidence counting are unaffected, and a lesson enriched by a real fix becomes active again.
+
 ## [0.43.0] - 2026-09-30
 
 ### Added
