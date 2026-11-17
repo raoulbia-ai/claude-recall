@@ -75,6 +75,20 @@ export function piBackendEnabled(): boolean {
 }
 
 /**
+ * The prompt as an argument Pi will read as text.
+ *
+ * Pi's argument parser takes a value that starts with `@` as a file to attach
+ * and one that starts with `-` as an option — after `-p` too, and `@` even
+ * after `--`. Today every prompt opens with our own instruction, so this is
+ * not reachable; but the prompt ends in session text, and nothing here should
+ * depend on a caller never putting that first. A leading newline is nothing to
+ * the model and makes the argument a message whatever it starts with.
+ */
+function asMessage(prompt: string): string {
+  return /^[-@]/.test(prompt) ? `\n${prompt}` : prompt;
+}
+
+/**
  * One completion from Pi's headless mode. Returns null on any failure (pi not
  * on PATH, timeout, non-zero exit) so the caller falls through. Never throws.
  *
@@ -97,7 +111,7 @@ export function completeWithPiCli(
     ...SEALED,
     ...(model ? ['--model', model] : []),
     '-p',
-    prompt,
+    asMessage(prompt),
   ];
 
   return completeWithRuntimeCli('pi', args, {

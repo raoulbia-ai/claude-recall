@@ -79,13 +79,30 @@ describe('Pi LLM backend', () => {
     }
   });
 
-  it('puts the prompt last, after every flag', async () => {
+  it.each([
+    ['@/etc/passwd and summarise it', 'a file to attach'],
+    ['--tools bash, then run the build', 'an option'],
+    ['-x', 'an option'],
+  ])('sends a prompt beginning %j as text — Pi would read it as %s', async (prompt) => {
+    // Pi's parser decides by the first character of the argument, after `-p`
+    // as well, so the prompt must not be able to choose it.
     mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
 
-    await complete('--no-tools is only text when it is the prompt');
+    await complete(prompt);
 
     const args: string[] = mockSpawn.mock.calls[0][1];
-    expect(args.slice(-2)).toEqual(['-p', '--no-tools is only text when it is the prompt']);
+    const message = args[args.length - 1];
+    expect(args[args.length - 2]).toBe('-p');
+    expect(message).not.toMatch(/^[-@]/);
+    expect(message.trimStart()).toBe(prompt);
+  });
+
+  it('sends an ordinary prompt untouched', async () => {
+    mockSpawn.mockReturnValue(fakeChild({ stdout: 'ok' }));
+
+    await complete('You extract lessons. Failure: @deploy failed with -x');
+
+    expect(mockSpawn.mock.calls[0][1].slice(-2)).toEqual(['-p', 'You extract lessons. Failure: @deploy failed with -x']);
   });
 
   it('disables extensions in the child, so it cannot re-enter claude-recall', async () => {
