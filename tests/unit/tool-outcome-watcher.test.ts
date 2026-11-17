@@ -181,6 +181,28 @@ describe('tool-outcome-watcher', () => {
       );
     });
 
+    it('records nothing when outcome tracking is off', async () => {
+      // `off` is documented as collecting nowhere, and this hook is the largest
+      // writer of these rows on Claude Code.
+      const previous = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+      process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'off';
+      try {
+        await handleToolOutcomeWatcher({
+          tool_name: 'Bash',
+          tool_input: { command: 'npm test' },
+          tool_output: 'Error\nExit code 1',
+          session_id: SESSION,
+        });
+      } finally {
+        if (previous === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+        else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = previous;
+      }
+
+      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+      // The failure memory itself is a rule the agent reads back, so it stays.
+      expect(mockStore).toHaveBeenCalled();
+    });
+
     it('skips hook infrastructure errors', async () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Bash',
