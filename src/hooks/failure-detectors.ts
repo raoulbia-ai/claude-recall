@@ -429,9 +429,42 @@ export function detectTranscriptFailures(entries: object[]): DetectedFailure[] {
 
 // --- Helpers ---
 
-function isTestCommand(command: string): boolean {
-  const lower = command.toLowerCase();
-  return /\b(test|jest|pytest|cargo\s+test|go\s+test|vitest|mocha|rspec|phpunit)\b/.test(lower);
+/**
+ * Does this command RUN a test suite? Each part of a chained command
+ * (`&&`, `||`, `;`, `|`, newlines) is checked for a test runner at its start,
+ * after launchers (`npx`, `pnpm exec`, `uv run`, `python -m`, `time`, env
+ * assignments). Mentioning a test — a branch called `fix/test-x`, a path like
+ * `tests/foo.test.ts` in a grep or a heredoc — is not running one: the old
+ * word match made every such command a "test run", and any FAIL in its output
+ * (a grep hit on source code) a test failure.
+ */
+const TEST_RUNNER = new RegExp(
+  '^(?:' + [
+    'jest', 'vitest', 'mocha', 'ava', 'tap', 'karma', 'jasmine',
+    'pytest', 'py\\.test', 'nosetests', 'tox', 'nox',
+    'rspec', 'phpunit', 'pest', 'ctest', 'swift\\s+test',
+    'playwright\\s+test', 'cypress\\s+run',
+    'go\\s+test', 'cargo\\s+(?:test|nextest)', 'dotnet\\s+test',
+    'mvn\\s+(?:\\S+\\s+)*?(?:test|verify)', '(?:\\./)?gradlew?\\s+(?:\\S+\\s+)*?test',
+    'make\\s+(?:\\S+\\s+)*?(?:test|check)\\S*',
+    'node\\s+--test', 'deno\\s+test', 'bun\\s+test',
+    '(?:npm|pnpm|yarn|bun)\\s+(?:run\\s+)?test[\\w:-]*',
+  ].join('|') + ')(?:\\s|$)',
+);
+const LAUNCHER = /^(?:(?:\w+=\S*\s+)+|time\s+|sudo\s+|npx\s+(?:-\S+\s+)*|pnpx\s+|bunx\s+|yarn\s+dlx\s+|(?:pnpm|npm)\s+exec\s+(?:--\s+)?|(?:uv|poetry|pipenv|hatch)\s+run\s+|python3?\s+-m\s+|exec\s+)/;
+
+export function isTestCommand(command: string): boolean {
+  for (const raw of command.split(/&&|\|\||;|\||\n/)) {
+    let part = raw.trim().replace(/^[({]\s*/, '');
+    // Strip launchers repeatedly: `FOO=1 npx jest`, `time uv run pytest`
+    for (let i = 0; i < 5; i++) {
+      const next = part.replace(LAUNCHER, '');
+      if (next === part) break;
+      part = next;
+    }
+    if (TEST_RUNNER.test(part.toLowerCase())) return true;
+  }
+  return false;
 }
 
 function truncate(s: string, maxLen: number): string {

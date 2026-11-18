@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A command that only mentions tests is no longer treated as a test run.** The failure detector counted any command containing the word "test" as a test run — a branch named `fix/test-x`, a path like `tests/foo.test.ts` in a grep or a script — and then any `FAIL` in its output, such as a grep hit on source code, as a failed test. That produced failure memories describing failures that never happened. A command now counts only if one of its parts actually starts a test runner (jest, vitest, pytest, `npm test`, `go test`, `cargo test` and others), after launchers like `npx`, `uv run` or `python -m`.
+
 ### Security
 
 - **Auto-generated skills are removed.** Every `store_memory` used to regenerate `.claude/skills/auto-*/SKILL.md` from stored memories, and Claude Code loads those files as skills: a persistent instruction built from whatever the agent had just stored, including anything an attacker steered it into storing. The integration tests showed it by regenerating this repository's own `auto-preferences` skill with test fixtures, and across the maintainer's projects only two such files existed, repeating what `load_rules` already injects. `skills generate` and `skills list` are gone; `claude-recall skills clean --force` deletes files earlier releases left behind (only folders whose SKILL.md says claude-recall generated them). Part of the memory-poisoning defense plan, [docs/design-memory-poisoning-defense.md](docs/design-memory-poisoning-defense.md).

@@ -198,6 +198,30 @@ describe('detectTranscriptFailures', () => {
       expect(failures[0].confidence).toBe(0.80);
     });
 
+    it('ignores a FAIL that grep found in source code (the #5420 false positive)', () => {
+      const entries = [
+        makeAssistantToolUse('Bash', { command: 'git checkout -q -b fix/test-enforcement-default-mode && grep -rn "enforceMode\\|ENFORCE_MODE" src' }, 'tc1'),
+        makeUserToolResult('tc1', "src/cli/claude-recall-cli.ts:1920:      console.log('❌ FAIL: Hook allowed Write without search\\n');"),
+      ];
+      expect(detectTranscriptFailures(entries)).toEqual([]);
+    });
+
+    it('ignores a test path mentioned in a heredoc script', () => {
+      const entries = [
+        makeAssistantToolUse('Bash', { command: "python3 - <<'EOF'\nfiles={'tests/unit/event-processors.test.ts':1}\nEOF" }, 'tc1'),
+        makeUserToolResult('tc1', 'Tests:       1 failed, 999 passed, 1000 total'),
+      ];
+      expect(detectTranscriptFailures(entries)).toEqual([]);
+    });
+
+    it('still catches a real failing run behind cd and a pipe', () => {
+      const entries = [
+        makeAssistantToolUse('Bash', { command: 'cd pkg && npm test 2>&1 | tail -5' }, 'tc1'),
+        makeUserToolResult('tc1', 'FAIL tests/unit/foo.test.ts\nTests: 1 failed, 9 passed, 10 total'),
+      ];
+      expect(detectTranscriptFailures(entries).map(f => f.signal)).toEqual(['silent-test-failure']);
+    });
+
     it('ignores non-test commands', () => {
       const entries = [
         makeAssistantToolUse('Bash', { command: 'npm run build' }, 'tc1'),
@@ -404,3 +428,24 @@ describe('detectTranscriptFailures', () => {
     });
   });
 });
+
+describe('isTestCommand', () => {
+  const { isTestCommand } = require('../../src/hooks/failure-detectors');
+  it.each([
+    'npx jest tests/unit/foo.test.ts', 'npm test', 'npm run test:unit', 'pnpm test', 'yarn test',
+    'cd x && npm test 2>&1 | tail', 'pytest -q', 'python -m pytest tests', 'uv run pytest',
+    'go test ./...', 'cargo test', 'CI=1 npx vitest run', 'make test', './gradlew test', 'mvn -q test', 'node --test',
+  ])('runs tests: %s', (cmd) => {
+    expect(isTestCommand(cmd)).toBe(true);
+  });
+
+  it.each([
+    'git checkout -q -b fix/test-enforcement-default-mode && grep -rn "enforceMode" src',
+    "python3 - <<'EOF'\nfiles={'tests/unit/a.test.ts':1}\nEOF",
+    'grep -rn FAIL tests/', 'cat tests/foo.test.ts', 'npm run build', 'ls test', 'echo test',
+    'git commit -m "fix test"', 'test -f x && echo ok',
+  ])('only mentions tests: %s', (cmd) => {
+    expect(isTestCommand(cmd)).toBe(false);
+  });
+});
+
