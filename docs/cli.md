@@ -125,6 +125,23 @@ These keep the active rule set small and accurate. None of them deletes a
 memory: a demoted rule is excluded from `load_rules` and injection, and
 `rules promote <id>` brings it back. Re-teaching a demoted rule also revives it.
 
+### rules history
+
+Show how a memory was created and changed: every create, rewrite (with the old
+and new text), deactivation (with its reason), reactivation, confirmation,
+origin change and deletion, with the origin of each change. With no argument it
+lists the latest changes across all memories.
+
+```bash
+npx claude-recall rules history 5425          # by id
+npx claude-recall rules history memory_17…    # by key
+npx claude-recall rules history --limit 50    # latest changes
+```
+
+The history is written by database triggers, so every path that changes a
+memory is recorded. It's kept for a year (`CLAUDE_RECALL_RETAIN_HISTORY_DAYS`,
+`-1` keeps all).
+
 ### janitor
 
 Review the stored rules with the runtime's own LLM (`claude -p` under Claude

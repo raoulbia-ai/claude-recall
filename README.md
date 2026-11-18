@@ -302,6 +302,7 @@ claude-recall rules demote [--dry-run]   # Demote rules loaded >=N times but nev
                                          # (citations are counted under both Claude Code and Pi)
 claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
 claude-recall rules promote <id>         # Restore an auto-demoted or auto-deduped rule
+claude-recall rules history [id]         # How a memory was created and changed (latest changes with no id)
 claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)
 
 # ── Task Checkpoints ────────────────────────────────────────────────
@@ -490,6 +491,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_COMPACT_THRESHOLD`        | `10MB`  | DB size at which automatic compaction kicks in.                                                          |
 | `CLAUDE_RECALL_MAX_MEMORIES`             | `10000` | Memory-row soft cap.                                                                                     |
 | `CLAUDE_RECALL_RETAIN_FAILURES`          | `1000`  | Auto-captured failures kept at compaction, strongest first. `-1` keeps all. Confirmed rules and promoted lessons are never capped away, and inactive rows go first. Failures are the highest-volume automatic write, so an uncapped store grows until every turn pays to load it. |
+| `CLAUDE_RECALL_RETAIN_HISTORY_DAYS`      | `365`   | How long the change history (`rules history`) is kept. `-1` keeps all. |
 | `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`    | `30`    | Age limit for outcome telemetry (`outcome_events`, `rule_injection_events`, and episodes no outcome event or candidate lesson references any more). One row per tool result, so this is usually the largest table in the file. `-1` keeps all. |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `warn`  | `block` / `warn` / `off` for the search-enforcer hook. Env wins, else `~/.claude-recall/config.json` `"enforceMode"`, else `warn`. |
 | `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification). Hooks fall back to regex when it fires. |
