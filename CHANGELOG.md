@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Auto-generated skills are off by default.** Every `store_memory` used to regenerate `.claude/skills/auto-*/SKILL.md` from stored memories, and Claude Code loads those files as skills: a persistent instruction built from whatever the agent had just stored, including anything an attacker steered it into storing. The integration tests showed it by regenerating this repository's own `auto-preferences` skill with test fixtures. Set `CLAUDE_RECALL_AUTO_SKILLS=1` to keep the old behaviour; `claude-recall skills generate` still works by hand. Existing skill files are not deleted. Part of the memory-poisoning defense plan, [docs/design-memory-poisoning-defense.md](docs/design-memory-poisoning-defense.md).
+
+### Fixed
+
+- **The MCP integration test no longer writes into the repository.** Its server now gets the temp directory as its project root.
+
 ## [0.50.1] - 2026-11-18
 
 ### Removed
