@@ -92,7 +92,7 @@ export async function handleSubagentStop(input: any): Promise<void> {
     const lastMessage = input?.last_assistant_message ?? '';
 
     // Record outcome event — unless CLAUDE_RECALL_OUTCOME_TRACKING=off
-    if (shouldRecordOutcomes('cc')) {
+    if (shouldRecordOutcomes('cc', 'detail')) {
       try {
         const outcomeStorage = OutcomeStorage.getInstance();
         outcomeStorage.createOutcomeEvent({

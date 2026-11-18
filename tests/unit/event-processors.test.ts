@@ -77,6 +77,16 @@ import {
 } from '../../src/shared/event-processors';
 
 describe('event-processors', () => {
+  // These cases check what gets written when tracking records everything.
+  // The default (lesson input only) is covered in outcome-capture.test.ts and
+  // by the 'default' cases below.
+  const outcomeTrackingBefore = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+  beforeAll(() => { process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on'; });
+  afterAll(() => {
+    if (outcomeTrackingBefore === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = outcomeTrackingBefore;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockSearch.mockReturnValue([]);
@@ -93,10 +103,14 @@ describe('event-processors', () => {
       );
     });
 
-    it('skips the outcome event when the reporting runtime has no consumer for it', () => {
-      processToolOutcome('Read', { file_path: '/test.ts' }, 'file contents', false, 'sess1', 'pi');
-
-      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+    it('by default, writes no outcome event — a tool result is a detail row', () => {
+      delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+      try {
+        processToolOutcome('Read', { file_path: '/test.ts' }, 'file contents', false, 'sess1', 'pi');
+        expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+      } finally {
+        process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on';
+      }
     });
 
     it('stores failure for Bash with non-zero exit', () => {
