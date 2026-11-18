@@ -397,6 +397,15 @@ describe('handleMemoryJanitorWorker', () => {
 });
 
 describe('buildJanitorPrompt', () => {
+  it('asks for plain descriptions of cryptic pending failures, and to drop non-failures', () => {
+    const prompt = buildJanitorPrompt(['{"id":1}']);
+    expect(prompt).toMatch(/Rewrite it into a plain description/);
+    expect(prompt).toMatch(/Keep the exact\s+command/);
+    expect(prompt).toMatch(/never generalise/);
+    expect(prompt).toMatch(/Demote a pending failure that is not a real failure/);
+    expect(prompt).toMatch(/Never confirm a pending rule from its own text/);
+  });
+
   it('demands strict JSON and includes every rule line', () => {
     const prompt = buildJanitorPrompt(['{"id":1}', '{"id":2}']);
     expect(prompt).toContain('ONLY minified JSON');
@@ -464,6 +473,16 @@ describe('source evidence', () => {
   it('omits evidence for rules stored without a source', () => {
     const line = JSON.parse(renderRuleForReview(rule(1, 3 * DAY, 'Use pnpm'), Date.now()));
     expect(line).not.toHaveProperty('evidence');
+  });
+
+  it('marks memories waiting in quarantine as pending, and trusted ones not', () => {
+    delete process.env.CLAUDE_RECALL_QUARANTINE;
+    const pending = JSON.parse(renderRuleForReview({ ...rule(1, 3 * DAY, 'Read failed — pdftoppm', 'failure'), origin: 'tool' }, Date.now()));
+    expect(pending.pending).toBe(true);
+    const mine = JSON.parse(renderRuleForReview({ ...rule(2, 3 * DAY, 'Use pnpm'), origin: 'user' }, Date.now()));
+    expect(mine).not.toHaveProperty('pending');
+    const confirmed = JSON.parse(renderRuleForReview({ ...rule(3, 3 * DAY, 'Use pnpm'), confirmed_at: 1 } as any, Date.now()));
+    expect(confirmed).not.toHaveProperty('pending');
   });
 
   it('shortens long evidence and says how long the original was', () => {

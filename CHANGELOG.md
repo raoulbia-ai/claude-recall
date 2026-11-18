@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The janitor triages the review queue.** Memories waiting for review are marked `pending` in the daily janitor pass, which now rewrites a cryptic pending failure (a raw command plus error) into a plain description of what went wrong and what to do instead, keeping the exact command, file and error names, and demotes pending "failures" that weren't real (a search hit containing FAIL, a one-off typo). A rewritten failure stays pending, so you approve the readable version. On one install, the two raw `pdftoppm` entries became "Reading a PDF as page images fails on this machine because poppler-utils (pdftoppm) is not installed; extract the text instead, or ask the user to install poppler-utils".
 - **Unreviewed failures leave the review queue after 14 days.** Failures are captured from tool output and are the noisiest thing in quarantine. One nobody approved within 14 days of last occurring is retired (`superseded_by = 'pending-expired'`); it was never loaded, so the agent loses nothing. A failure that keeps recurring stays, the same failure captured again returns to review, and `rules promote <id>` brings one back. `CLAUDE_RECALL_PENDING_FAILURE_DAYS` tunes it (`-1` keeps them). On one install this cleared 48 stale failures on first start.
 
 ### Fixed
