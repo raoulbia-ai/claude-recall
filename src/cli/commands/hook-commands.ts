@@ -40,6 +40,22 @@ export class HookCommands {
   private static async runOne(name: string, input: any): Promise<void> {
     switch (name) {
       case 'correction-detector': {
+        // In-session review of quarantined memories comes first: a `recall …`
+        // command (or a reply during a review) typed by the USER is handled
+        // here and blocked, so it never reaches the agent and is never
+        // captured. Claude Code shows the block reason to the user directly.
+        const { handleReviewInput } = await import('../../shared/review-command');
+        const { hookStateDir } = await import('../../hooks/shared');
+        const reviewMessage = handleReviewInput(input?.prompt ?? '', String(input?.session_id ?? ''), hookStateDir());
+        if (reviewMessage) {
+          process.stdout.write(JSON.stringify({
+            decision: 'block',
+            reason: reviewMessage,
+            hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true },
+          }));
+          break;
+        }
+
         // Kept as the registered name in every existing settings.json, but
         // capture no longer classifies inline: the handler spawns a detached
         // cc-capture-worker so the ~4s `claude -p` subscription classifier

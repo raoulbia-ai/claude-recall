@@ -148,6 +148,22 @@ npx claude-recall rules reject --all --origin agent
 | `--all-projects` | Every project, not just this one |
 | `--all` | (`approve` / `reject`) every pending memory matching the filters |
 
+**In the chat (Claude Code and Pi):** type `recall review` to step through
+pending memories (`y` approve, `n` reject, `s` skip, `all` approve the rest,
+`q` stop), `recall pending` to list them, or `recall approve <ids|all>` /
+`recall reject <ids|all>`. The prompt hook (Claude Code) or the input handler
+(Pi, interactive input only) handles these before the agent sees them, and
+shows you the result directly, so the agent can neither start a review nor
+answer one. Any other prompt ends a running review and goes to the agent as
+usual.
+
+**Keeping the agent out:** `claude-recall setup` and `claude-recall doctor
+--fix` add Claude Code deny rules for `Bash(* rules approve *)` and
+`Bash(*CLAUDE_RECALL_QUARANTINE*)`. Your own `!` commands aren't affected.
+Claude Code notes that a Bash deny rule isn't a security boundary (the same
+program in another form isn't matched), so this closes the obvious path; the
+change history records whatever happens.
+
 A rejected memory is deactivated, and the same text is refused if an untrusted
 source stores it again (you can still state it yourself). Approval and
 rejection are CLI-only: no agent tool can do either. The statusLine shows

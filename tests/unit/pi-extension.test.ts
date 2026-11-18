@@ -34,6 +34,13 @@ jest.mock('../../src/services/memory', () => ({
   },
 }));
 
+// In-session review: the real logic is tested in review-command.test.ts; here
+// only the wiring (which input reaches it, and what Pi does with the answer).
+const mockHandleReviewInput = jest.fn((text: string) => (/^recall /i.test(text) ? 'REVIEW SHOWN' : null));
+jest.mock('../../src/shared/review-command', () => ({
+  handleReviewInput: (...a: any[]) => (mockHandleReviewInput as any)(...a),
+}));
+
 // Mock LLM classifier so checkpoint extraction is deterministic in tests
 const mockExtractCheckpointWithLLM = jest.fn();
 const mockExtractSessionLearningsWithLLM = jest.fn().mockResolvedValue(null);
@@ -394,6 +401,27 @@ describe('Pi Extension', () => {
       );
 
       expect(result).toEqual({ action: 'continue' });
+    });
+
+    it('handles a review command the user typed: shown to them, never sent to the model', () => {
+      const notify = jest.fn();
+      const result = api._handlers['input'](
+        { type: 'input', text: 'recall review', source: 'interactive' },
+        { ...mockCtx(), hasUI: true, ui: { notify } },
+      );
+      expect(result).toEqual({ action: 'handled' });
+      expect(notify).toHaveBeenCalledWith('REVIEW SHOWN', 'info');
+    });
+
+    it('ignores review commands that did not come from the user typing', () => {
+      for (const source of ['extension', 'rpc'] as const) {
+        const result = api._handlers['input'](
+          { type: 'input', text: 'recall approve all', source },
+          mockCtx(),
+        );
+        expect(result).toEqual({ action: 'continue' });
+      }
+      expect(mockHandleReviewInput).not.toHaveBeenCalledWith('recall approve all', expect.anything(), expect.anything());
     });
   });
 

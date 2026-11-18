@@ -90,4 +90,5 @@ Each phase is its own PR, merged only when its tests pass.
 - **Task checkpoints are another injection channel.** `save_checkpoint` text (agent-written) is shown at session start; it isn't a rule type, so quarantine doesn't cover it. Consider the same origin tag and an "unverified" label.
 - ~~`MemoryService.storePreferenceWithOverride` bypasses the guardrails~~ — removed.
 - ~~Auto-skills: remove the feature~~ — removed.
+- **Approval through the agent's shell.** Found 2026-11-18: in Claude Code the agent has Bash, so it could run `claude-recall rules approve` itself. Mitigated: `setup` / `doctor --fix` add deny rules, and in-session review runs in the prompt hook, which only sees what the user typed. Claude Code's deny rules aren't a security boundary (another invocation form isn't matched), and an agent with a shell can still edit the database file; the change history is the backstop. Red-team RT-13, RT-14.
 

@@ -675,9 +675,10 @@ class ClaudeRecallCLI {
     }
     console.log(`\n${pending.length} memor${pending.length === 1 ? 'y' : 'ies'} waiting for your review (not loaded as rules until approved):\n`);
     for (const m of pending) this.printPending(m);
-    console.log('\nReview one by one:  claude-recall rules review');
-    console.log('Or by id:           claude-recall rules approve <id...>   |   claude-recall rules reject <id...>');
-    console.log('Or in bulk:         claude-recall rules approve --all [--type <t>] [--origin <o>]\n');
+    console.log('\nIn a Claude Code or Pi chat, type:  recall review   (or: recall approve <ids>, recall reject <ids>, recall approve all)');
+    console.log('In a terminal:                    claude-recall rules review');
+    console.log('By id:                            claude-recall rules approve <id...>   |   claude-recall rules reject <id...>');
+    console.log('In bulk:                          claude-recall rules approve --all [--type <t>] [--origin <o>]\n');
   }
 
   /** Approve or reject pending memories by id, or all matching a filter. */
@@ -709,8 +710,9 @@ class ClaudeRecallCLI {
       return;
     }
     if (!process.stdin.isTTY) {
-      console.error('`rules review` needs an interactive terminal. Use `claude-recall rules pending`, then `rules approve` / `rules reject`.');
-      process.exitCode = 1;
+      // No keyboard (e.g. a `!` command in Claude Code): show the list instead.
+      this.showPending(options);
+      console.log('(Step-through review needs a terminal; in a chat, type "recall review".)');
       return;
     }
     const readline = await import('readline');
@@ -1765,6 +1767,13 @@ async function main() {
       console.log('✅ Added statusLine memory indicator (🧠 Recall · N rules · <project>)');
     } else {
       console.log(`ℹ️  Existing statusLine left untouched — for the memory indicator use: ${statuslineCmd}`);
+    }
+
+    // Keep the agent from approving quarantined memories via Bash; the user
+    // approves in chat ("recall review"), with `!` commands, or in a terminal.
+    const { addQuarantineDenyRules } = require('./commands/quarantine-permissions');
+    if (addQuarantineDenyRules(settings) > 0) {
+      console.log('✅ Added permission rules so the agent cannot approve quarantined memories');
     }
 
     if (!fs.existsSync(claudeDir)) {

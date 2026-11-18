@@ -503,7 +503,7 @@ export class MemoryStorage {
       else { where.push('origin = ?'); params.push(opts.origin); }
     }
     return (this.db.prepare(
-      `SELECT * FROM memories WHERE ${where.join(' AND ')} ORDER BY timestamp DESC`
+      `SELECT * FROM memories WHERE ${where.join(' AND ')} ORDER BY timestamp DESC, id DESC`
     ).all(...params) as any[]).map(r => this.rowToMemory(r));
   }
 
