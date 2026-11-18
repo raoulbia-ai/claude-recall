@@ -1860,7 +1860,21 @@ async function main() {
   // Test enforcement function - simulates the hook chain to verify it works
   function testEnforcement(): void {
     const os = require('os');
-    const { execSync } = require('child_process');
+    const { spawnSync } = require('child_process');
+
+    // Feed the hook its JSON on stdin with no shell in between: an enforcer
+    // path with a space or a quote in it would break an `echo … | python3`
+    // string. Throws like execSync on a non-zero exit, which the callers
+    // below rely on to read the hook's exit code.
+    const runEnforcer = (input: string): void => {
+      const r = spawnSync('python3', [enforcerPath as string], {
+        input,
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      if (r.error) throw r.error;
+      if (r.status !== 0) throw Object.assign(new Error(`exit ${r.status}`), { status: r.status, stderr: r.stderr });
+    };
 
     console.log('\n🧪 Testing Memory Search Enforcement...\n');
 
@@ -1912,11 +1926,7 @@ async function main() {
 
     let test1Passed = false;
     try {
-      execSync(`echo '${testInput1}' | python3 ${enforcerPath}`, {
-        encoding: 'utf8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+      runEnforcer(testInput1);
       console.log('❌ FAIL: Hook allowed Write without search\n');
     } catch (e: unknown) {
       const execError = e as { status?: number; stderr?: string };
@@ -1952,11 +1962,7 @@ async function main() {
 
     let test2Passed = false;
     try {
-      execSync(`echo '${testInput2}' | python3 ${enforcerPath}`, {
-        encoding: 'utf8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+      runEnforcer(testInput2);
       console.log('✅ PASS: Hook allowed Write after search (exit code 0)\n');
       test2Passed = true;
     } catch (e: unknown) {

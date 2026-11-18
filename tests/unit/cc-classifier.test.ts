@@ -70,6 +70,22 @@ describe('classifyWithClaudeCli', () => {
     expect(opts.env.CLAUDE_RECALL_NESTED).toBe('1');
   });
 
+  it('seals the nested call: no tools, no MCP servers, no session file', async () => {
+    mockSpawn.mockImplementation(() => scriptChild((c) => c.emit('close', 0)));
+
+    await classifyWithClaudeCli('we use pnpm here, not npm');
+
+    const [, args] = mockSpawn.mock.calls[0];
+    // Written out rather than imported, so emptying the list fails this test.
+    const toolsAt = args.indexOf('--tools');
+    expect(toolsAt).toBeGreaterThan(-1);
+    expect(args[toolsAt + 1]).toBe('');
+    expect(args).toContain('--strict-mcp-config');
+    expect(args).toContain('--no-session-persistence');
+    // The prompt stays the last argument.
+    expect(args[args.length - 1]).toContain('we use pnpm here, not npm');
+  });
+
   it('returns null on a deliberate "none" verdict', async () => {
     mockSpawn.mockImplementation(() => scriptChild((c) => {
       c.stdout.emit('data', '{"type":"none","confidence":0,"extract":""}');

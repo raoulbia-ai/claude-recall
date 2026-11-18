@@ -33,6 +33,25 @@ const DEFAULT_MODEL = 'haiku';
 const DEFAULT_TIMEOUT_MS = 30000;
 
 /**
+ * Flags that seal the nested call. The prompt carries session text (tool
+ * output, fetched pages, pasted documents), so the child must be unable to act
+ * on instructions hidden in it, and must leave nothing behind:
+ *
+ * - `--tools ""`: no built-in tools. Read/Grep/Glob need no permission, so
+ *   without this an injected prompt could read files under the temp cwd into
+ *   the answer, and the janitor stores answers as rules.
+ * - `--strict-mcp-config`: no MCP servers. Otherwise every user-scope server
+ *   starts for a one-line answer (measured: 21s per call against 9s).
+ * - `--no-session-persistence`: no session file. Otherwise each call saves the
+ *   prompt under ~/.claude/projects/-tmp/ (one install had 532 files, 212MB).
+ */
+export const SEALED_CLAUDE_ARGS: readonly string[] = [
+  '--tools', '',
+  '--strict-mcp-config',
+  '--no-session-persistence',
+];
+
+/**
  * Run one headless `claude -p` completion on the user's Claude SUBSCRIPTION
  * and return raw stdout, or null on any failure (claude not on PATH, timeout,
  * non-zero exit). Never throws. This is the generic primitive: capture
@@ -61,7 +80,7 @@ export function completeWithClaudeCli(
   };
   delete env.ANTHROPIC_API_KEY;
 
-  return completeWithRuntimeCli('claude', ['-p', '--model', model, prompt], {
+  return completeWithRuntimeCli('claude', ['-p', ...SEALED_CLAUDE_ARGS, '--model', model, prompt], {
     tag: 'cc-classifier',
     timeoutMs: timeout,
     // Temp cwd: the nested session must load no project settings or hooks.
