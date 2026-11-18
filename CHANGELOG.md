@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A lesson is recognised by the failure it came from, not by its wording.** A candidate lesson is promoted once its failure has been seen twice, and "seen again" was decided by comparing the new lesson's text with the old (Jaccard ≥ 0.6). With the model writing the lesson that almost never held: asked twice about the same failure it answers in different words — 0.45, 0.52 and 0.33 alike for three real pairs — so each repeat was filed as a new lesson, evidence stayed at 1, and nothing was promoted. Lessons now carry the failure they were distilled from (`candidate_lessons.failure_key`, added on startup), and a failure seen again goes to that lesson: three failures over two sessions are three lessons with evidence 2, all promoted, where they were six lessons and none. The model is also no longer asked about a failure that already has a lesson — the answer could only be thrown away — which halves the calls in that run. A lesson that is still only the failure restated (recorded when no model answered) is asked about once more and takes the model's words. Only a failure whose description names its subject is keyed — a failed command, a failed edit of a named file. "Read failed" or "Bash called 3 times with identical arguments" say nothing about what failed, and keying on them would make every failed Read one failure; those keep matching by text. So do lessons recorded before this, and text stays the fallback for the same advice reached from a different failure.
 
+## [0.48.1] - 2026-11-18
+
+### Changed
+
+- **`claude-recall upgrade` checks your hooks.** After upgrading, it runs the same hook-path check as `doctor` and, only if a Claude Code hook points at a path that no longer runs (typically after switching Node versions under nvm), says so and names the fix: `claude-recall repair --auto`. On a healthy setup it prints nothing extra.
+- **The README mentions `upgrade` in one place.** The duplicate lines in Everyday commands and Troubleshooting now point to the Upgrading section.
+
 ## [0.48.0] - 2026-11-18
 
 ### Fixed
