@@ -4,6 +4,11 @@ import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
 import { SearchMonitor } from '../../services/search-monitor';
 import { SkillGenerator, GenerationResult } from '../../services/skill-generator';
+
+/** Auto-skills are off by default; CLAUDE_RECALL_AUTO_SKILLS=1 turns them on. */
+export function autoSkillsEnabled(): boolean {
+  return /^(1|true|on)$/i.test(process.env.CLAUDE_RECALL_AUTO_SKILLS || '');
+}
 import { OutcomeStorage } from '../../services/outcome-storage';
 import { MCPTool, MCPContext } from '../server';
 import { LOAD_RULES_DIRECTIVE } from '../../shared/directives';
@@ -286,12 +291,17 @@ export class MemoryTools {
         sessionId: context.sessionId
       });
 
-      // Auto-generate skills if thresholds are met
+      // Auto-generate skills — opt-in only. A skill file is a persistent
+      // instruction Claude Code loads; building one from whatever was just
+      // stored turns any steered store_memory into a lasting instruction
+      // (docs/design-memory-poisoning-defense.md, finding 3).
       let skillResults: GenerationResult[] = [];
       try {
-        const generator = SkillGenerator.getInstance();
-        const projectDir = ConfigService.getInstance().getConfig().project.rootDir;
-        skillResults = generator.checkAndGenerate(projectDir, context.projectId);
+        if (autoSkillsEnabled()) {
+          const generator = SkillGenerator.getInstance();
+          const projectDir = ConfigService.getInstance().getConfig().project.rootDir;
+          skillResults = generator.checkAndGenerate(projectDir, context.projectId);
+        }
       } catch (e) {
         // Non-critical — don't fail the store
         this.logger.debug('MemoryTools', 'Skill generation check failed', e);

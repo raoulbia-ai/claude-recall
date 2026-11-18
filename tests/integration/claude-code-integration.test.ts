@@ -12,10 +12,13 @@ describe('Claude Code MCP Integration', () => {
     testDbDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-recall-test-'));
 
     // MCPTestClient spawns its own server process — pass DB path via env
+    // CLAUDE_PROJECT_DIR points the server's project root at the temp dir too:
+    // anything it writes into a project (skills, settings) must not land in
+    // this repository. It once regenerated .claude/skills/auto-preferences here.
     client = new MCPTestClient(
       'node',
       ['dist/cli/claude-recall-cli.js', 'mcp', 'start'],
-      { CLAUDE_RECALL_DB_PATH: testDbDir },
+      { CLAUDE_RECALL_DB_PATH: testDbDir, CLAUDE_PROJECT_DIR: testDbDir },
     );
     await client.connect();
   });
@@ -137,6 +140,13 @@ describe('Claude Code MCP Integration', () => {
 
       const rules = JSON.parse(rulesResponse.result.content[0].text);
       expect(rules.counts.preferences).toBeGreaterThanOrEqual(3);
+    });
+
+    it('does not write auto-skill files by default — not here, not in the repository', async () => {
+      // Three preferences is past the auto-skill threshold, so before skills
+      // became opt-in this regenerated .claude/skills/auto-preferences.
+      const skillsDir = path.join(testDbDir, '.claude', 'skills');
+      await expect(fs.access(skillsDir)).rejects.toThrow();
     });
   });
 
