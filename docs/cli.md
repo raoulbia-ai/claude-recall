@@ -164,6 +164,10 @@ Claude Code notes that a Bash deny rule isn't a security boundary (the same
 program in another form isn't matched), so this closes the obvious path; the
 change history records whatever happens.
 
+Failures you don't review leave the queue after 14 days without recurring
+(`CLAUDE_RECALL_PENDING_FAILURE_DAYS`, `-1` keeps them); they were never loaded,
+so nothing is lost, and the same failure captured again comes back for review.
+
 A rejected memory is deactivated, and the same text is refused if an untrusted
 source stores it again (you can still state it yourself). Approval and
 rejection are CLI-only: no agent tool can do either. The statusLine shows

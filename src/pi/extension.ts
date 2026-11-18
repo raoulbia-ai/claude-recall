@@ -164,6 +164,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
     // Quarantine: tell the user directly; Pi's notify is user-visible.
     try {
+      MemoryService.getInstance().expireStalePending();
       const notice = pendingNoticeForUser(MemoryService.getInstance().countPending(projectId));
       if (notice && ctx.hasUI) ctx.ui.notify(notice, 'info');
     } catch { /* non-critical */ }

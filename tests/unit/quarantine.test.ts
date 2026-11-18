@@ -104,3 +104,52 @@ describe('quarantine', () => {
     expect(st.getHistory({ key: 'b' }).map(h => h.event)).toEqual(['create', 'reject']);
   });
 });
+
+describe('quarantine: unreviewed failures expire', () => {
+  const ms = () => MemoryService.getInstance();
+  const db = () => ms().getStorage().getDatabase();
+  const age = (key: string, days: number) =>
+    db().prepare('UPDATE memories SET timestamp = ? WHERE key = ?').run(Date.now() - days * 86400000, key);
+  const put = (key: string, origin: any, type: string, content: string) =>
+    ms().store({ key, origin, type, value: { content }, context: { projectId: 'proj' } });
+
+  beforeEach(() => {
+    delete process.env.CLAUDE_RECALL_QUARANTINE;
+    delete process.env.CLAUDE_RECALL_PENDING_FAILURE_DAYS;
+    db().prepare('DELETE FROM memories').run();
+  });
+
+  it('retires pending failures older than 14 days, and nothing else', () => {
+    put('old-fail', 'tool', 'failure', 'Command failed: cargo build');
+    put('new-fail', 'tool', 'failure', 'Command failed: npm run lint');
+    put('old-pref', 'agent', 'preference', 'prefer tabs');
+    put('old-user-fail', 'user', 'failure', 'the deploy script needs sudo');
+    for (const k of ['old-fail', 'old-pref', 'old-user-fail']) age(k, 20);
+
+    expect(ms().expireStalePending()).toBe(1);
+    expect(ms().getPendingRules({}).map(m => m.key).sort()).toEqual(['new-fail', 'old-pref']);
+    expect(ms().getStorage().retrieve('old-fail')?.superseded_by).toBe('pending-expired');
+    expect(ms().getStorage().retrieve('old-user-fail')?.is_active).not.toBe(false);
+  });
+
+  it('keeps a failure that keeps recurring, and brings back one that returns after expiring', () => {
+    put('f', 'tool', 'failure', 'Command failed: make');
+    age('f', 20);
+    ms().expireStalePending();
+    expect(ms().getPendingRules({}).map(m => m.key)).toEqual([]);
+    // the same failure captured again: back in review
+    put('f2', 'tool', 'failure', 'Command failed: make');
+    expect(ms().getPendingRules({}).map(m => m.key)).toEqual(['f']);
+  });
+
+  it('can be tuned or switched off', () => {
+    put('f', 'tool', 'failure', 'Command failed: make');
+    age('f', 20);
+    process.env.CLAUDE_RECALL_PENDING_FAILURE_DAYS = '-1';
+    expect(ms().expireStalePending()).toBe(0);
+    process.env.CLAUDE_RECALL_PENDING_FAILURE_DAYS = '30';
+    expect(ms().expireStalePending()).toBe(0);
+    process.env.CLAUDE_RECALL_PENDING_FAILURE_DAYS = '7';
+    expect(ms().expireStalePending()).toBe(1);
+  });
+});

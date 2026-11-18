@@ -118,6 +118,9 @@ export const QUARANTINED_TYPES = ['preference', 'correction', 'failure', 'devops
 /** superseded_by sentinel for a rule the user rejected. Not revivable. */
 export const USER_REJECTED = 'user-rejected';
 
+/** superseded_by sentinel for an unreviewed failure that timed out of quarantine. */
+export const PENDING_EXPIRED = 'pending-expired';
+
 /** The provenance columns, as returned alongside rule rows. */
 export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
 
@@ -533,6 +536,25 @@ export class MemoryStorage {
     return n;
   }
 
+  /**
+   * Retire failures that waited in quarantine longer than `days` without
+   * being reviewed. A failure nobody approved in that time wasn't worth
+   * keeping, and it was never loaded, so nothing the agent relied on is lost.
+   * "Waited" counts from the last time it was seen: a failure that keeps
+   * recurring stays in the queue. Reversible with `rules promote <id>`.
+   */
+  expirePendingFailures(days: number): number {
+    if (!(days >= 0)) return 0;
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const n = this.db.prepare(
+      `UPDATE memories SET is_active = 0, superseded_by = ?, superseded_at = ?
+       WHERE is_active = 1 AND type = 'failure' AND ${MemoryStorage.UNTRUSTED_SQL}
+         AND timestamp < ?`
+    ).run(PENDING_EXPIRED, Date.now(), cutoff).changes;
+    if (n > 0) this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return n;
+  }
+
   /** Did the user already reject this exact content (same type, same project scope)? */
   wasRejected(value: any, type: string, projectId?: string): boolean {
     const hash = this.computeContentHash(value, type);
@@ -672,7 +694,9 @@ export class MemoryStorage {
    * Rows carrying one of these are revivable: by content-hash re-teach in
    * save() and individually via promoteRule().
    */
-  private static readonly REVIVABLE_SENTINELS = ['auto-demote', 'auto-dedup', 'janitor'];
+  // 'pending-expired': an unreviewed failure that timed out. The same failure
+  // captured again (or `rules promote`) brings it back into review.
+  private static readonly REVIVABLE_SENTINELS = ['auto-demote', 'auto-dedup', 'janitor', PENDING_EXPIRED];
 
   /**
    * Find a same-type memory whose text content is a near-duplicate (Jaccard >= 0.65).
