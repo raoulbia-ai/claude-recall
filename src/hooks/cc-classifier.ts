@@ -23,10 +23,10 @@
  * (cc-capture-worker), never inline on the user's turn.
  */
 
-import { spawn } from 'child_process';
 import * as os from 'os';
 import type { ClassifyResult } from './shared';
-import { hookLog, safeErrorMessage } from './shared';
+import { completeWithRuntimeCli } from './runtime-cli';
+import { hookLog } from './shared';
 import { buildClassifyPrompt, extractClassification } from './kiro-classifier';
 
 const DEFAULT_MODEL = 'haiku';
@@ -61,54 +61,12 @@ export function completeWithClaudeCli(
   };
   delete env.ANTHROPIC_API_KEY;
 
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (result: string | null) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-
-    let child;
-    try {
-      // args array (no shell) — the user's text is a single argv entry, so no
-      // shell escaping or injection is possible. cwd is the temp dir so the
-      // nested session loads no project settings or hooks.
-      child = spawn(
-        'claude',
-        ['-p', '--model', model, prompt],
-        { cwd: os.tmpdir(), env, stdio: ['ignore', 'pipe', 'ignore'] },
-      );
-    } catch (err) {
-      hookLog('cc-classifier', `spawn threw: ${safeErrorMessage(err)}`);
-      return done(null);
-    }
-
-    const timer = setTimeout(() => {
-      hookLog('cc-classifier', `timeout after ${timeout}ms — killing claude -p`);
-      try { child.kill('SIGKILL'); } catch { /* already gone */ }
-      done(null);
-    }, timeout);
-
-    let stdout = '';
-    child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
-
-    child.on('error', (err: any) => {
-      clearTimeout(timer);
-      // ENOENT = claude not on PATH; anything else = spawn failure
-      hookLog('cc-classifier', `claude error: ${err?.code ?? ''} ${err?.message ?? err}`);
-      done(null);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (settled) return;
-      if (code !== 0) {
-        hookLog('cc-classifier', `claude -p exited ${code}`);
-        return done(null);
-      }
-      done(stdout);
-    });
+  return completeWithRuntimeCli('claude', ['-p', '--model', model, prompt], {
+    tag: 'cc-classifier',
+    timeoutMs: timeout,
+    // Temp cwd: the nested session must load no project settings or hooks.
+    cwd: os.tmpdir(),
+    env,
   });
 }
 

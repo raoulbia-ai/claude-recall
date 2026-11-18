@@ -313,6 +313,46 @@ describe('Pi Extension', () => {
     });
   });
 
+  describe('announcing the Pi host', () => {
+    const saved = { ...process.env };
+
+    afterEach(() => { process.env = { ...saved }; });
+
+    it('tells the LLM backends in-process, and leaves the environment alone', () => {
+      delete process.env.CLAUDE_RECALL_RUNTIME;
+      delete process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_PI_LLM = '1';
+      jest.resetModules();
+      const backend = require('../../src/hooks/pi-classifier');
+      expect(backend.piBackendEnabled()).toBe(false);
+
+      require('../../src/pi/extension').default(createMockPiApi());
+
+      expect(backend.piBackendEnabled()).toBe(true);
+      // A child of this process — `claude` from Pi's bash tool, say — inherits
+      // the environment, and must not inherit a claim to be Pi with it.
+      expect(process.env.CLAUDE_RECALL_RUNTIME).toBeUndefined();
+    });
+  });
+
+  describe('nested session', () => {
+    it('does nothing at all when spawned by our own LLM backend', () => {
+      const prev = process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_NESTED = '1';
+      jest.resetModules();
+      const nestedApi: any = { on: jest.fn(), registerTool: jest.fn(), registerCommand: jest.fn() };
+
+      try {
+        require('../../src/pi/extension').default(nestedApi);
+        expect(nestedApi.on).not.toHaveBeenCalled();
+        expect(nestedApi.registerTool).not.toHaveBeenCalled();
+      } finally {
+        if (prev === undefined) delete process.env.CLAUDE_RECALL_NESTED;
+        else process.env.CLAUDE_RECALL_NESTED = prev;
+      }
+    });
+  });
+
   describe('before_agent_start handler', () => {
     it('injects rules into system prompt on first call', () => {
       mockLoadActiveRules.mockReturnValueOnce({
