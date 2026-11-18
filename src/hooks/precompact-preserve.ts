@@ -70,6 +70,7 @@ export async function handlePrecompactPreserve(input: any): Promise<void> {
 
     const prefixed = `[PreCompact] ${result.extract}`;
     storeMemory(prefixed, result.type, undefined, result.confidence, {
+      origin: 'user', // classified from the user's own messages
       source: hookSource(input, entries[textsWithIndex[i].idx], textsWithIndex[i].text),
     });
     stored++;

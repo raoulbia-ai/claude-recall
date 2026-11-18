@@ -62,7 +62,7 @@ describe('MemoryService', () => {
 
   describe('store + retrieve', () => {
     it('round-trips a memory and defaults project_id to the configured project', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'rt_1',
         value: { content: 'round trip fixture value' },
         type: 'project-knowledge',
@@ -76,7 +76,7 @@ describe('MemoryService', () => {
     });
 
     it('honors an explicit context.projectId', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'ctx_proj_1',
         value: { content: 'belongs to beta project fixture' },
         type: 'project-knowledge',
@@ -91,7 +91,7 @@ describe('MemoryService', () => {
     });
 
     it('silently drops writes matching test-pollution patterns', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'pollution_1',
         value: 'Test memory content',
         type: 'preference',
@@ -119,7 +119,7 @@ describe('MemoryService', () => {
 
   describe('detectScope (through store())', () => {
     it('detects project scope from "for this project"', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'scope_project_1',
         value: 'use tabs for this project',
         type: 'preference',
@@ -131,7 +131,7 @@ describe('MemoryService', () => {
     });
 
     it('detects universal scope from "always use ... globally" and stores NULL project_id', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'scope_universal_1',
         value: 'always use pnpm globally',
         type: 'preference',
@@ -144,7 +144,7 @@ describe('MemoryService', () => {
 
     it('project indicators win over universal indicators in the same content', () => {
       // Regression guard: "always use --no-verify in this project" must stay project-scoped
-      service.store({
+      service.store({ origin: 'user',
         key: 'scope_precedence_1',
         value: 'always use --no-verify in this project',
         type: 'preference',
@@ -154,7 +154,7 @@ describe('MemoryService', () => {
     });
 
     it('explicit context.scope wins over content indicators', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'scope_explicit_1',
         value: 'use two-space indent in this project',
         type: 'preference',
@@ -167,7 +167,7 @@ describe('MemoryService', () => {
     });
 
     it('plain content stays unscoped (scope null)', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'scope_plain_1',
         value: 'prefer descriptive variable names',
         type: 'preference',
@@ -311,7 +311,7 @@ describe('MemoryService', () => {
 
   describe('mergeIntoValue', () => {
     it('merges fields into an existing value and returns true', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'merge_1',
         value: { content: 'merge target fixture' },
         type: 'project-knowledge',
@@ -331,11 +331,11 @@ describe('MemoryService', () => {
 
   describe('clear + getAllMemories', () => {
     it('clear(type, projectId) only removes matching rows in that project', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'clear_pref_1', value: { content: 'clearable pref fixture' },
         type: 'preference', context: { projectId: 'proj-clear' },
       });
-      service.store({
+      service.store({ origin: 'user',
         key: 'clear_know_1', value: { content: 'surviving knowledge fixture' },
         type: 'project-knowledge', context: { projectId: 'proj-clear' },
       });
@@ -359,12 +359,12 @@ describe('MemoryService', () => {
 
   describe('search', () => {
     it('scopes to the current project by default and spans all with includeAllProjects', () => {
-      service.store({
+      service.store({ origin: 'user',
         key: 'search_local_1',
         value: { content: 'zebrafish local knowledge fixture' },
         type: 'project-knowledge',
       });
-      service.store({
+      service.store({ origin: 'user',
         key: 'search_other_1',
         value: { content: 'zebrafish notes stored elsewhere entirely' },
         type: 'project-knowledge',

@@ -123,7 +123,7 @@ describe('MemoryService.store write-time guard', () => {
     const service = MemoryService.getInstance();
     const before = service.getStats().total;
 
-    service.store({
+    service.store({ origin: 'user',
       key: 'pollution-live',
       value: 'Test preference 1775766122953-0',
       type: 'preference',
@@ -138,7 +138,7 @@ describe('MemoryService.store write-time guard', () => {
     const uniqueKey = `guard-benign-${Date.now()}`;
     const uniqueValue = `guard-benign-fixture-${Date.now()}`;
 
-    service.store({
+    service.store({ origin: 'user',
       key: uniqueKey,
       value: uniqueValue,
       type: 'preference',

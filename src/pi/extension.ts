@@ -504,8 +504,9 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
         const key = `memory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ms = MemoryService.getInstance();
-        ms.store({
+        const outcome = ms.store({
           key,
+          origin: 'agent', // the agent chose this; it may have been steered
           value: { content, ...metadata, sessionId, timestamp: Date.now() },
           type: detectedType,
           context: {
@@ -515,6 +516,17 @@ export default function(pi: PiTypes.ExtensionAPI) {
             scope: params.scope || null,
           },
         });
+
+        if (!outcome.stored) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({
+              success: false,
+              stored: false,
+              reason: outcome.reason,
+              _directive: `Not stored: ${outcome.reason}. Do not retry with reworded text; if the user asked for this rule, tell them it was refused and why.`,
+            }) }],
+          };
+        }
 
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({

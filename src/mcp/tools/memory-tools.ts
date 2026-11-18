@@ -253,8 +253,9 @@ export class MemoryTools {
         : undefined;
       const isOverride = metadata?.isOverride === true;
 
-      this.memoryService.store({
+      const outcome = this.memoryService.store({
         key,
+        origin: 'agent', // the agent chose this; it may have been steered
         value: {
           content,
           ...metadata,
@@ -271,6 +272,15 @@ export class MemoryTools {
         preferenceKey,
         isOverride
       });
+
+      if (!outcome.stored) {
+        return {
+          success: false,
+          stored: false,
+          reason: outcome.reason,
+          _directive: `Not stored: ${outcome.reason}. Do not retry with reworded text; if the user asked for this rule, tell them it was refused and why.`,
+        };
+      }
 
       // If this store overrides an existing rule, mark previous active rules with
       // the same preference_key as superseded and surface their keys so the agent

@@ -979,6 +979,7 @@ class ClaudeRecallCLI {
           // every imported memory to the CURRENT project. --project overrides.
           this.memoryService.store({
             key: memory.key || `imported_${Date.now()}_${Math.random()}`,
+            origin: 'import', // an import file is untrusted, whatever it claims
             value: memory.value,
             type: memory.type || 'imported',
             context: {
@@ -1250,6 +1251,7 @@ class ClaudeRecallCLI {
       // Store memory
       this.memoryService.store({
         key,
+        origin: 'user', // typed by the user at the CLI
         value: {
           content,
           confidence,
@@ -2608,6 +2610,7 @@ async function main() {
       const testKey = `test_${Date.now()}`;
       memoryService.store({
         key: testKey,
+        origin: 'user',
         value: 'save all tests in test-pasta/',
         type: 'preference',
         context: { projectId: 'test', type: 'location_preference' }

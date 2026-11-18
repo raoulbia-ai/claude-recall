@@ -201,6 +201,7 @@ function storeToolFailure(
   const key = `hook_failure_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   MemoryService.getInstance().store({
     key,
+    origin: 'tool',
     value: {
       content: `${failureContent.what_failed}. ${failureContent.why_failed}`,
       ...failureContent,
@@ -288,7 +289,7 @@ export async function processUserInput(text: string, _sessionId: string): Promis
   const existing = searchExisting(result.extract.substring(0, 100));
   if (isDuplicate(result.extract, existing)) return null;
 
-  storeMemory(result.extract, result.type, undefined, result.confidence);
+  storeMemory(result.extract, result.type, undefined, result.confidence, { origin: 'user' });
 
   const summary = result.extract.length > 60 ? result.extract.substring(0, 60) + '...' : result.extract;
   logFn('event-processor', `Captured ${result.type}: ${result.extract.substring(0, 80)}`);
@@ -339,7 +340,7 @@ export async function processSessionEnd(
         const existing = searchExisting(result.extract.substring(0, 100));
         if (isDuplicate(result.extract, existing)) continue;
 
-        storeMemory(result.extract, result.type, projectId, result.confidence);
+        storeMemory(result.extract, result.type, projectId, result.confidence, { origin: 'user' });
         stored++;
       }
     }
@@ -400,7 +401,7 @@ export async function processPreCompact(
       if (isDuplicate(result.extract, existing)) continue;
 
       const prefixed = `[PreCompact] ${result.extract}`;
-      storeMemory(prefixed, result.type, undefined, result.confidence);
+      storeMemory(prefixed, result.type, undefined, result.confidence, { origin: 'user' });
       stored++;
 
       logFn('event-processor', `PreCompact captured ${result.type}: ${result.extract.substring(0, 80)}`);
@@ -506,7 +507,8 @@ export async function extractSessionLearnings(
       const existing = searchExisting(learning.content.substring(0, 100));
       if (isDuplicate(learning.content, existing)) continue;
 
-      storeMemory(learning.content, learning.type, projectId, learning.confidence);
+      // A model's reading of the transcript, tool output included: untrusted
+      storeMemory(learning.content, learning.type, projectId, learning.confidence, { origin: 'tool' });
       stored++;
       logFn('event-processor', `Session extraction: ${learning.type} — ${truncate(learning.content, 60)}`);
     }

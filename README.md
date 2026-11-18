@@ -507,7 +507,8 @@ Defaults work out of the box; tune via environment variables as needed.
 - **Prompts are classified by an LLM.** To decide what's worth remembering, capture sends each prompt to the agent's own LLM: headless `claude -p` on your Claude login under Claude Code, Kiro's LLM under Kiro, or the Anthropic API only if you opt in with `CLAUDE_RECALL_PREFER_API_KEY=1`. That's the same provider your session already talks to, but avoid pasting secrets into prompts
 - **Captured memories keep a copy of your words.** Since 0.46.0, a hook capture stores the message it came from (up to 2,000 chars, including anything pasted into it) and the path of the Claude Code transcript. That text stays in the local database and in `export` files. The daily janitor sends it, shortened to 400 chars per rule, to the same LLM as capture
 - Full transparency via CLI (`stats`, `search`, `export`)
-- Never intentionally stores secrets (API keys, passwords, tokens)
+- **Secrets are redacted before storing.** Tokens, keys and `password=…`-style values in captured text are replaced with `[REDACTED]` on every write path
+- **Every memory records where it came from** (your words, the agent, tool output, an import). Text that looks like an attack (`curl … | sh`, "ignore previous instructions", encoded payloads) is refused unless it's your own words. See [docs/design-memory-poisoning-defense.md](docs/design-memory-poisoning-defense.md)
 
 Details in [docs/security.md](docs/security.md).
 

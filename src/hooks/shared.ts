@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { MemoryService, MemorySource } from '../services/memory';
+import type { MemoryOrigin } from '../memory/storage';
 import { ConfigService } from '../services/config';
 import { ScoredMemory } from '../core/retrieval';
 import { classifyWithLLM, classifyBatchWithLLM } from './llm-classifier';
@@ -271,9 +272,10 @@ export function hookSource(input: any, entry?: any, excerpt?: string): MemorySou
 export function storeMemory(
   content: string,
   type: string,
-  projectId?: string,
-  confidence: number = 0.8,
-  opts?: { needsPrecision?: boolean; fuzzyNewestWins?: boolean; source?: MemorySource },
+  projectId: string | undefined,
+  confidence: number,
+  /** `origin` is required: every capture path must say where its text came from. */
+  opts: { origin: MemoryOrigin | null; needsPrecision?: boolean; fuzzyNewestWins?: boolean; source?: MemorySource },
 ): void {
   const memoryService = MemoryService.getInstance();
   const key = `hook_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -287,7 +289,7 @@ export function storeMemory(
       timestamp: Date.now(),
       // Vague-but-durable rule: injection nudges the agent to ask the user
       // for a precise restatement (trigger + concrete pattern).
-      ...(opts?.needsPrecision ? { needs_precision: true } : {}),
+      ...(opts.needsPrecision ? { needs_precision: true } : {}),
     },
     type,
     context: {
@@ -295,8 +297,9 @@ export function storeMemory(
       timestamp: Date.now(),
     },
     relevanceScore: confidence,
-    source: opts?.source,
-  }, { fuzzyNewestWins: opts?.fuzzyNewestWins });
+    source: opts.source,
+    origin: opts.origin,
+  }, { fuzzyNewestWins: opts.fuzzyNewestWins });
 }
 
 /**

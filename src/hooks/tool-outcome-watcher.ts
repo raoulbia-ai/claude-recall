@@ -313,6 +313,7 @@ async function handleBashFailure(
   const memoryService = MemoryService.getInstance();
   memoryService.store({
     key,
+    origin: 'tool',
     value: {
       content: `${failureContent.what_failed}. ${failureContent.why_failed}`,
       ...failureContent,
@@ -473,7 +474,7 @@ export async function handleToolFailure(input: any): Promise<void> {
       preventative_checks: ['Verify tool inputs are correct', 'Check preconditions'],
     };
 
-    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8, { source: hookSource(input) });
+    storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8, { origin: 'tool', source: hookSource(input) });
 
     // Outcome history, attributed to the emitting session — only when tracking is on
     if (shouldRecordOutcomes()) {

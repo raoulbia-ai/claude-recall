@@ -3,7 +3,7 @@
  * Mocks Pi's ExtensionAPI and verifies tools are registered correctly.
  */
 
-const mockStore = jest.fn();
+const mockStore = jest.fn().mockReturnValue({ stored: true });
 const mockDelete = jest.fn().mockReturnValue(true);
 const mockSearch = jest.fn().mockReturnValue([]);
 const mockFindRelevant = jest.fn().mockReturnValue([]);

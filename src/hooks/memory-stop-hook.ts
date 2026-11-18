@@ -138,6 +138,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
     if (isDuplicate(result.extract, existing)) continue;
 
     storeMemory(result.extract, result.type, undefined, result.confidence, {
+      origin: 'user', // classified from the user's own messages
       source: hookSource(input, entries[textsWithIndex[i].idx], textsWithIndex[i].text),
     });
     stored++;
@@ -368,6 +369,7 @@ function detectAndStoreFailures(transcriptPath: string): DetectedFailure[] {
 
       memoryService.store({
         key,
+        origin: 'tool', // derived from the transcript's tool output
         value: {
           title: `Avoid: ${failure.content.what_failed.substring(0, 50)}`,
           description: failure.content.why_failed.substring(0, 100),
