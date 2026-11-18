@@ -313,6 +313,46 @@ describe('Pi Extension', () => {
     });
   });
 
+  describe('announcing the Pi host', () => {
+    const saved = { ...process.env };
+
+    afterEach(() => { process.env = { ...saved }; });
+
+    it('tells the LLM backends in-process, and leaves the environment alone', () => {
+      delete process.env.CLAUDE_RECALL_RUNTIME;
+      delete process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_PI_LLM = '1';
+      jest.resetModules();
+      const backend = require('../../src/hooks/pi-classifier');
+      expect(backend.piBackendEnabled()).toBe(false);
+
+      require('../../src/pi/extension').default(createMockPiApi());
+
+      expect(backend.piBackendEnabled()).toBe(true);
+      // A child of this process — `claude` from Pi's bash tool, say — inherits
+      // the environment, and must not inherit a claim to be Pi with it.
+      expect(process.env.CLAUDE_RECALL_RUNTIME).toBeUndefined();
+    });
+  });
+
+  describe('nested session', () => {
+    it('does nothing at all when spawned by our own LLM backend', () => {
+      const prev = process.env.CLAUDE_RECALL_NESTED;
+      process.env.CLAUDE_RECALL_NESTED = '1';
+      jest.resetModules();
+      const nestedApi: any = { on: jest.fn(), registerTool: jest.fn(), registerCommand: jest.fn() };
+
+      try {
+        require('../../src/pi/extension').default(nestedApi);
+        expect(nestedApi.on).not.toHaveBeenCalled();
+        expect(nestedApi.registerTool).not.toHaveBeenCalled();
+      } finally {
+        if (prev === undefined) delete process.env.CLAUDE_RECALL_NESTED;
+        else process.env.CLAUDE_RECALL_NESTED = prev;
+      }
+    });
+  });
+
   describe('before_agent_start handler', () => {
     it('injects rules into system prompt on first call', () => {
       mockLoadActiveRules.mockReturnValueOnce({
@@ -667,6 +707,101 @@ describe('Pi Extension', () => {
           toolResults: [{ name: 'Edit', output: 'ok' }],
         }),
       ).resolves.toBeUndefined();
+    });
+  });
+  describe('session_shutdown waits for its own work', () => {
+    const flush = async () => {
+      for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+    };
+
+    function startSession() {
+      const ctx = mockCtx('/home/user/test-project');
+      api._handlers['session_start']({ type: 'session_start' }, ctx);
+      api._handlers['input']({ type: 'input', text: 'please always run the linter before committing', source: 'interactive' }, ctx);
+      mockUpdateEpisode.mockClear();
+      return ctx;
+    }
+
+    it('has finished by the time Pi is told the handler is done', async () => {
+      // Pi awaits this handler and then calls process.exit. Work the handler
+      // merely started is cut off there, so "done" must mean done.
+      let closeBatch: (results: null) => void = () => {};
+      mockClassifyBatchWithLLM.mockImplementationOnce(() => new Promise(resolve => { closeBatch = resolve; }));
+      const ctx = startSession();
+
+      let handlerDone = false;
+      const handler = Promise.resolve(
+        api._handlers['session_shutdown']({ type: 'session_shutdown', reason: 'quit' }, ctx),
+      ).then(() => { handlerDone = true; });
+      await flush();
+
+      // The session's classification is still out: the handler must be too.
+      expect(handlerDone).toBe(false);
+      expect(mockUpdateEpisode).not.toHaveBeenCalled();
+
+      closeBatch(null);
+      await handler;
+
+      // The episode it opened is closed, which is the last thing before pruning.
+      expect(mockUpdateEpisode).toHaveBeenCalledTimes(1);
+      expect(mockPruneOldData).toHaveBeenCalled();
+    });
+
+    it('waits on a Pi that does not say why the session is ending', async () => {
+      let closeBatch: (results: null) => void = () => {};
+      mockClassifyBatchWithLLM.mockImplementationOnce(() => new Promise(resolve => { closeBatch = resolve; }));
+      const ctx = startSession();
+
+      let handlerDone = false;
+      const handler = Promise.resolve(
+        api._handlers['session_shutdown']({ type: 'session_shutdown' }, ctx),
+      ).then(() => { handlerDone = true; });
+      await flush();
+      expect(handlerDone).toBe(false);
+
+      closeBatch(null);
+      await handler;
+    });
+
+    it('does not hold up a session that is only being replaced', async () => {
+      // On /new, /resume or a fork the process lives on; the work finishes
+      // behind the new session instead of in front of it. Fake timers, so that
+      // "returns" cannot mean "returns once the budget has run out".
+      jest.useFakeTimers();
+      try {
+        mockClassifyBatchWithLLM.mockImplementationOnce(() => new Promise(() => {}));
+        const ctx = startSession();
+
+        let handlerDone = false;
+        void Promise.resolve(
+          api._handlers['session_shutdown']({ type: 'session_shutdown', reason: 'new' }, ctx),
+        ).then(() => { handlerDone = true; });
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(handlerDone).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('gives up waiting at its budget rather than keeping the user from leaving', async () => {
+      jest.useFakeTimers();
+      try {
+        mockClassifyBatchWithLLM.mockImplementationOnce(() => new Promise(() => {}));
+        const ctx = startSession();
+
+        let handlerDone = false;
+        void Promise.resolve(
+          api._handlers['session_shutdown']({ type: 'session_shutdown', reason: 'quit' }, ctx),
+        ).then(() => { handlerDone = true; });
+
+        await jest.advanceTimersByTimeAsync(14000);
+        expect(handlerDone).toBe(false);
+        await jest.advanceTimersByTimeAsync(2000);
+        expect(handlerDone).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 });
