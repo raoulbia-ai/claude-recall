@@ -76,6 +76,35 @@ describe('DoctorCommands.reportHooks', () => {
   });
 });
 
+describe('DoctorCommands.scanHooks', () => {
+  // What `upgrade` calls at its end: it prints a repair hint only when `bad` is non-empty.
+  it('lists an orphaned hook and counts healthy ones separately', () => {
+    const home = mkTmp();
+    try {
+      const script = mkVersionedScript(home, 'v18.0.0');
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: 'command', command: `node ${script} hook run rule-injector` }] }],
+          Stop: [{ hooks: [{ type: 'command', command: 'claude-recall hook run memory-stop' }] }],
+        },
+      }));
+      const r = DoctorCommands.scanHooks(home, home, resolverYes);
+      expect(r.files).toBe(1);
+      expect(r.bad).toHaveLength(1);
+      expect(r.bad[0]).toContain('v18.0.0');
+      expect(r.okCount).toBe(1);
+    } finally { rmTmp(home); }
+  });
+
+  it('returns nothing bad when there are no settings files', () => {
+    const home = mkTmp();
+    try {
+      expect(DoctorCommands.scanHooks(home, home, resolverYes)).toEqual({ files: 0, bad: [], okCount: 0 });
+    } finally { rmTmp(home); }
+  });
+});
+
 describe('DoctorCommands minimal-PATH launch check', () => {
   function writeExe(dir: string, name: string, body: string): string {
     const p = path.join(dir, name);

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`claude-recall upgrade` checks your hooks.** After upgrading, it runs the same hook-path check as `doctor` and, only if a Claude Code hook points at a path that no longer runs (typically after switching Node versions under nvm), says so and names the fix: `claude-recall repair --auto`. On a healthy setup it prints nothing extra.
+- **The README mentions `upgrade` in one place.** The duplicate lines in Everyday commands and Troubleshooting now point to the Upgrading section.
+
 ## [0.48.0] - 2026-11-18
 
 ### Fixed
