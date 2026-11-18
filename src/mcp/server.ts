@@ -404,6 +404,9 @@ export class MCPServer {
 
       // Prune stale rules (loaded often, never cited) from load_rules payload.
       // Gated on CLAUDE_RECALL_AUTO_DEMOTE=true. Idempotent; safe per-boot.
+      // Unreviewed failures that timed out of quarantine (MCP-only clients have no session-start hook)
+      this.memoryService.expireStalePending();
+
       const demoted = this.memoryService.autoDemoteStaleRules();
       if (demoted.length > 0) {
         this.logger.info('MCPServer', `Auto-demoted ${demoted.length} stale rules on boot`);

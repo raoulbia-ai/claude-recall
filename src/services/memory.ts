@@ -751,6 +751,23 @@ export class MemoryService {
     }
   }
 
+  /**
+   * Retire unreviewed failures older than CLAUDE_RECALL_PENDING_FAILURE_DAYS
+   * (default 14; -1 keeps them). Called where a session starts, so the queue
+   * the user is told about is already trimmed. Never throws.
+   */
+  expireStalePending(): number {
+    try {
+      if (!quarantineEnabled()) return 0;
+      const days = parseInt(process.env.CLAUDE_RECALL_PENDING_FAILURE_DAYS || '14', 10);
+      const n = this.storage.expirePendingFailures(Number.isNaN(days) ? 14 : days);
+      if (n > 0) this.logger.info('MemoryService', `Expired ${n} unreviewed failure(s) from quarantine`);
+      return n;
+    } catch {
+      return 0;
+    }
+  }
+
   /** Approve memories out of quarantine. Only the user does this, never an agent tool. */
   approveRules(ids: number[]): number {
     return this.storage.approveRules(ids);

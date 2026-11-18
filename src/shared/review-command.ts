@@ -108,6 +108,7 @@ function describe(m: Memory): string {
 }
 
 function pending(allProjects: boolean): Memory[] {
+  MemoryService.getInstance().expireStalePending();
   return MemoryService.getInstance().getPendingRules({
     projectId: allProjects ? undefined : ConfigService.getInstance().getProjectId(),
   });

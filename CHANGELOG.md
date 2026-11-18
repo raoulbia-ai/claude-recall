@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Unreviewed failures leave the review queue after 14 days.** Failures are captured from tool output and are the noisiest thing in quarantine. One nobody approved within 14 days of last occurring is retired (`superseded_by = 'pending-expired'`); it was never loaded, so the agent loses nothing. A failure that keeps recurring stays, the same failure captured again returns to review, and `rules promote <id>` brings one back. `CLAUDE_RECALL_PENDING_FAILURE_DAYS` tunes it (`-1` keeps them). On one install this cleared 48 stale failures on first start.
+
 ### Fixed
 
 - **A command that only mentions tests is no longer treated as a test run.** The failure detector counted any command containing the word "test" as a test run — a branch named `fix/test-x`, a path like `tests/foo.test.ts` in a grep or a script — and then any `FAIL` in its output, such as a grep hit on source code, as a failed test. That produced failure memories describing failures that never happened. A command now counts only if one of its parts actually starts a test runner (jest, vitest, pytest, `npm test`, `go test`, `cargo test` and others), after launchers like `npx`, `uv run` or `python -m`.

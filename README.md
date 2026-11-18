@@ -503,6 +503,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (session extraction, failure scan). `0` disables. |
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
 | `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Outcome history (`outcome_events`, `rule_injection_events`, episodes) for the `outcomes` CLI. `on` writes it; `auto` and `off` write nothing. Debugging aid only: failure memories are stored regardless. |
+| `CLAUDE_RECALL_PENDING_FAILURE_DAYS`     | `14`    | Unreviewed failures leave the review queue after this many days without recurring (`rules promote <id>` brings one back; the same failure captured again re-enters review). `-1` keeps them. |
 | `CLAUDE_RECALL_QUARANTINE`               | `on`    | Memories you didn't state (agent-stored, tool-derived, imported, or stored before origins were recorded) load only after you approve them (`claude-recall rules review`). `off` loads everything as before. |
 | `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 

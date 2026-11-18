@@ -652,6 +652,7 @@ class ClaudeRecallCLI {
   }
 
   private pendingFor(options: { type?: string; origin?: string; allProjects?: boolean }) {
+    this.memoryService.expireStalePending();
     return this.memoryService.getPendingRules({
       projectId: options.allProjects ? undefined : ConfigService.getInstance().getProjectId(),
       type: options.type,

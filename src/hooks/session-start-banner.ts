@@ -50,6 +50,7 @@ export async function handleSessionStartBanner(input: any): Promise<void> {
 
     // Quarantine: memories from untrusted sources wait for the user. The model
     // reads this line; the user sees it through the model (and the statusLine).
+    MemoryService.getInstance().expireStalePending();
     const pending = MemoryService.getInstance().countPending(projectId);
     const notice = pendingNoticeForModel(pending);
     if (notice) console.log(notice);

@@ -153,6 +153,7 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
 
     // Quarantined memories: the agent tells the user (it never approves them)
     try {
+      MemoryService.getInstance().expireStalePending();
       const notice = pendingNoticeForModel(MemoryService.getInstance().countPending(ConfigService.getInstance().getProjectId()));
       if (notice) parts.push(notice);
     } catch { /* never block agent spawn */ }
