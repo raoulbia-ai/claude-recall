@@ -127,6 +127,23 @@ describe('subagent-hooks', () => {
       );
     });
 
+    it('records no outcome event when CLAUDE_RECALL_OUTCOME_TRACKING=off', async () => {
+      const prev = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+      process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'off';
+      try {
+        await handleSubagentStop({
+          hook_event_name: 'SubagentStop',
+          agent_id: 'agent-123',
+          agent_type: 'general-purpose',
+          last_assistant_message: 'Task completed successfully',
+        });
+        expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+      } finally {
+        if (prev === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+        else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = prev;
+      }
+    });
+
     it('includes last_assistant_message in outcome', async () => {
       await handleSubagentStop({
         agent_type: 'code-reviewer',
