@@ -28,6 +28,7 @@ import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
 import { extractHindsightHint } from './llm-classifier';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import { BOILERPLATE_LESSONS } from '../services/memory-quality';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
 
@@ -159,9 +160,10 @@ export async function handleMemoryStop(input: any): Promise<void> {
     if (sessionEntries.length >= 10) {
       const conversationEntries = buildConversationEntries(sessionEntries);
 
-      // Record failed subagent outcomes
+      // Record failed subagent outcomes — unless CLAUDE_RECALL_OUTCOME_TRACKING=off
+      const recordOutcomes = shouldRecordOutcomes('cc');
       for (const entry of conversationEntries) {
-        if (entry.toolName === 'Agent' && entry.isError) {
+        if (recordOutcomes && entry.toolName === 'Agent' && entry.isError) {
           try {
             outcomeStorage.createOutcomeEvent({
               event_type: 'agent_failure',

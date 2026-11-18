@@ -15,6 +15,7 @@ import { hookLog, safeErrorMessage } from './shared';
 import { MemoryService, ActiveRules } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 
 function extractVal(value: any): string {
   if (typeof value === 'string') return value;
@@ -90,18 +91,20 @@ export async function handleSubagentStop(input: any): Promise<void> {
     const agentId = input?.agent_id ?? 'unknown';
     const lastMessage = input?.last_assistant_message ?? '';
 
-    // Record outcome event
-    try {
-      const outcomeStorage = OutcomeStorage.getInstance();
-      outcomeStorage.createOutcomeEvent({
-        event_type: 'subagent_result',
-        actor: 'tool',
-        action_summary: `Sub-agent (${agentType}) completed`,
-        next_state_summary: lastMessage.substring(0, 300) || 'No final message',
-        tags: ['agent', 'subagent', agentType],
-      });
-    } catch {
-      // Non-critical
+    // Record outcome event — unless CLAUDE_RECALL_OUTCOME_TRACKING=off
+    if (shouldRecordOutcomes('cc')) {
+      try {
+        const outcomeStorage = OutcomeStorage.getInstance();
+        outcomeStorage.createOutcomeEvent({
+          event_type: 'subagent_result',
+          actor: 'tool',
+          action_summary: `Sub-agent (${agentType}) completed`,
+          next_state_summary: lastMessage.substring(0, 300) || 'No final message',
+          tags: ['agent', 'subagent', agentType],
+        });
+      } catch {
+        // Non-critical
+      }
     }
 
     console.error(`🤖 Recall: sub-agent (${agentType}) outcome captured`);
