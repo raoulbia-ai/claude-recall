@@ -163,7 +163,7 @@ Or, from **inside the Kiro session**, just ask the agent to recall it (*"what do
 Use them! They're the right tool for **team standards you already know** — written by hand, reviewed in PRs, shipped with the repo. Claude Recall covers what they structurally can't:
 
 - **Nobody writes it down.** Steering files hold what you remembered to document. Recall captures rules *in the flow of work* — you correct the agent once, mid-session, and it's stored. The stuff that burns you repeatedly is exactly the stuff too small to feel worth documenting.
-- **They can't learn from failure.** There's no steering-file mechanism for *tool failure → lesson → rule*. "Exit code 0 doesn't mean the tests passed" enters Recall because the agent got burned — not because someone wrote a postmortem.
+- **They can't learn from failure.** There's no steering-file mechanism for *tool failure → rule*. "Exit code 0 doesn't mean the tests passed" enters Recall because the agent got burned — not because someone wrote a postmortem.
 - **One memory, every agent.** Steering is Kiro-only, CLAUDE.md is Claude-Code-only. Recall is one local DB behind Claude Code, Kiro, and Pi — correct one agent, all of them know.
 - **They rot.** Nobody prunes a rules file. Recall tracks whether rules are actually used, demotes dead ones, and a daily LLM janitor merges duplicates and cleans noise.
 - **Personal ≠ repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Recall is per-developer and never touches your repo.
@@ -179,7 +179,6 @@ In short: steering files are documentation — what your team decided. Claude Re
 - **Applied where it counts** — rules load at session start and are re-surfaced mid-session: just-in-time before each tool call (Claude Code, Pi) or as a periodic refresh every N prompts (Kiro)
 - **Project-scoped** — each project gets its own memory namespace; switch directories and the agent switches context
 - **Learns from failures** — records what broke, why, and what fixed it, so mistakes aren't repeated
-- **Outcome-aware** — tracks whether rules actually help (tool results, test cycles, re-asks) and promotes validated lessons into active rules
 - **Local-only** — one SQLite file on your machine; inspect, export, or delete everything from the CLI
 
 ---
@@ -195,12 +194,10 @@ Once installed, Claude Recall works in the background (CC = Claude Code):
 | **Before each tool call** | Relevant rules are re-surfaced next to the action (just-in-time injection) | ✓ | ✓ |  |
 | **Every 15 prompts** | Active rules are re-injected so long sessions can't silently lose them (interval configurable) |  |  | ✓ |
 | **Tool outcomes** | Failures are recorded; Bash failures are paired with their eventual fix | ✓ | ✓ | ✓ |
-| **Re-ask detection** | Frustration signals (*"still broken"*) are recorded as outcome events | ✓ | ✓ | ✓ |
 | **Before context compression** | Important context is captured before the window shrinks | ✓ | ✓ |  |
 | **After context compression** | Rules are re-injected into the fresh context | ✓ |  |  |
-| **Sub-agent spawned** | Rules are injected into the sub-agent; its outcome is captured | ✓ |  |  |
+| **Sub-agent spawned** | Rules are injected into the sub-agent | ✓ |  |  |
 | **Session exit** | An auto-checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
-| **End of session** | Failure patterns become candidate lessons; validated ones are promoted to rules | ✓ | ✓ |  |
 | **Hard-won success** | A goal that failed repeatedly then finally worked is captured as a reusable `solution` ([details](#success-capture)) | ✓ | ✓ |  |
 | **Once a day** | The memory janitor reviews stored rules with the runtime's LLM: demotes noise, merges duplicates, rewrites vague rules, checks rules against the user's own words and confirms the ones they state ([details](#memory-janitor)) | ✓ |  | ✓ |
 
@@ -228,7 +225,6 @@ claude-recall stats                      # What's in the DB for this project (--
 claude-recall list                       # List all memories, newest first (-t <type>, --all, --json, --global)
 claude-recall search "query"             # Search this project's memories (--global, --json, --project <id>)
 claude-recall failures                   # What broke and what fixed it
-claude-recall outcomes                   # Outcome-aware learning status
 
 claude-recall store "content"            # Store a memory by hand (-t correction|devops|...)
 claude-recall delete <key>               # Delete one memory (keys shown by search)
@@ -245,7 +241,7 @@ claude-recall checkpoint save --completed "API layer" --remaining "wire the UI" 
 claude-recall checkpoint load
 ```
 
-Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction runs on your **Claude subscription** (headless `claude -p`) — like capture, no API key needed and no key touched. The same applies to the other background LLM features (failure hindsight hints, end-of-session lesson extraction). Pi-only machines without the `claude` binary can opt in to an `ANTHROPIC_API_KEY` with `CLAUDE_RECALL_PREFER_API_KEY=1`. A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
+Auto-checkpoints are also saved on session exit in Claude Code and Pi (Pi has no `--resume`, so this is its main recovery path). Extraction runs on your **Claude subscription** (headless `claude -p`) — like capture, no API key needed and no key touched. The same applies to the other background LLM features (end-of-session learning extraction, batch classification). Pi-only machines without the `claude` binary can opt in to an `ANTHROPIC_API_KEY` with `CLAUDE_RECALL_PREFER_API_KEY=1`. A quality gate refuses to overwrite a manual checkpoint with a fabricated one when the task was already complete.
 
 ### Troubleshooting
 
@@ -298,7 +294,7 @@ claude-recall import backup.json         # Import memories from JSON
 claude-recall delete <key>               # Delete one memory by key (get keys from `search`)
 claude-recall clear --force              # Clear current project (--global for all; auto-backup written first)
 claude-recall failures                   # View failure memories (--limit N)
-claude-recall outcomes                   # Outcome-aware learning status (--section lessons|stats, --limit N)
+claude-recall outcomes                   # Outcome history, when CLAUDE_RECALL_OUTCOME_TRACKING=on (--section lessons|stats, --limit N)
 claude-recall monitor                    # Memory search monitoring stats
 
 # ── Rule Hygiene ─────────────────────────────────────────────────────
@@ -358,18 +354,6 @@ Six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`
 **Source links.** A memory captured by a Claude Code hook records the session, transcript file and transcript entry it came from. It also keeps a copy of the user's text, up to 2,000 chars. `search_memory` prints the source under the memory, so the agent can read the user's exact words when the one-line extract isn't enough. Claude Code deletes old transcripts (`cleanupPeriodDays`, 30 days by default); once a transcript is gone, `search_memory` quotes the saved text instead of the dead path. Memories stored through `store_memory`, the CLI, Pi or Kiro, and memories captured before 0.46.0, have no source.
 
 **Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`, plus auto-generated `.claude/skills/auto-*/` crystallized from accumulated memories), and a bundled skill file for Pi.
-
-**Outcome-aware learning.** Claude Recall tracks what happens *after* the agent acts:
-
-```
-action → outcome event → episode → candidate lesson → promotion → active rule
-                                                                      ↓
-                                                    JIT-injected before the next action
-                                                                      ↓
-                                                    outcome resolved per injected rule
-```
-
-Failures become candidate lessons (deduplicated by similarity); lessons seen 2+ times (or once, if severe) are promoted to active rules; every just-in-time injection (Claude Code, Pi) is recorded and resolved against the tool's outcome, building per-rule effectiveness data over time.
 
 ### Success capture
 
@@ -508,10 +492,10 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_RETAIN_FAILURES`          | `1000`  | Auto-captured failures kept at compaction, strongest first. `-1` keeps all. Confirmed rules and promoted lessons are never capped away, and inactive rows go first. Failures are the highest-volume automatic write, so an uncapped store grows until every turn pays to load it. |
 | `CLAUDE_RECALL_RETAIN_TELEMETRY_DAYS`    | `30`    | Age limit for outcome telemetry (`outcome_events`, `rule_injection_events`, and episodes no outcome event or candidate lesson references any more). One row per tool result, so this is usually the largest table in the file. `-1` keeps all. |
 | `CLAUDE_RECALL_ENFORCE_MODE`             | `warn`  | `block` / `warn` / `off` for the search-enforcer hook. Env wins, else `~/.claude-recall/config.json` `"enforceMode"`, else `warn`. |
-| `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification, hindsight hints). Hooks fall back to regex when it fires. |
-| `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (episodes, session extraction, promotion). `0` disables. |
+| `CLAUDE_RECALL_LLM_TIMEOUT_MS`           | `5000`  | Timeout for hook-context LLM calls (classification). Hooks fall back to regex when it fires. |
+| `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (session extraction, failure scan). `0` disables. |
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
-| `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Outcome rows (`outcome_events`, `rule_injection_events`). `auto` writes only tool failures, the input Claude Code turns into lessons, and nothing on Pi. `on` writes everything (tool results, sub-agent results, re-asks, rule injections) for the `outcomes` CLI history. `off` writes nothing, which also stops new lessons on Claude Code. |
+| `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Outcome history (`outcome_events`, `rule_injection_events`, episodes) for the `outcomes` CLI. `on` writes it; `auto` and `off` write nothing. Debugging aid only: failure memories are stored regardless. |
 | `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 
 ---

@@ -56,7 +56,7 @@ export const SEALED_CLAUDE_ARGS: readonly string[] = [
  * and return raw stdout, or null on any failure (claude not on PATH, timeout,
  * non-zero exit). Never throws. This is the generic primitive: capture
  * classification wraps it below, and llm-classifier routes its secondary
- * features (hindsight hints, session extraction, checkpoint extraction,
+ * features (session extraction, checkpoint extraction,
  * batch classification) through it so none of them require an API key either.
  */
 export function completeWithClaudeCli(

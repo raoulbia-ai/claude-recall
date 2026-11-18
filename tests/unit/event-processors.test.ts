@@ -59,14 +59,6 @@ jest.mock('../../src/services/outcome-storage', () => ({
   },
 }));
 
-jest.mock('../../src/services/promotion-engine', () => ({
-  PromotionEngine: {
-    getInstance: () => ({
-      runCycle: jest.fn().mockReturnValue({ promoted: 0, archived: 0 }),
-    }),
-  },
-}));
-
 import {
   processToolOutcome,
   processUserInput,
@@ -103,10 +95,10 @@ describe('event-processors', () => {
       );
     });
 
-    it('by default, writes no outcome event — a tool result is a detail row', () => {
+    it('by default, writes no outcome event', () => {
       delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
       try {
-        processToolOutcome('Read', { file_path: '/test.ts' }, 'file contents', false, 'sess1', 'pi');
+        processToolOutcome('Read', { file_path: '/test.ts' }, 'file contents', false, 'sess1');
         expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
       } finally {
         process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on';
@@ -257,10 +249,10 @@ describe('event-processors', () => {
       expect(mockPruneOldData).toHaveBeenCalled();
     });
 
-    it('returns stored and promoted counts', async () => {
+    it('returns the stored count', async () => {
       const result = await processSessionEnd([], 'sess1', 'proj1');
 
-      expect(result).toEqual({ stored: 0, promoted: 0 });
+      expect(result).toEqual({ stored: 0 });
     });
 
     it('handles empty user texts gracefully', async () => {

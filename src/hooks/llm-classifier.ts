@@ -21,7 +21,7 @@ const MODEL = 'claude-haiku-4-5-20251001';
 
 /**
  * Per-call cap for `claude -p` in these SECONDARY features. Unlike capture
- * (detached worker, 30s budget), hindsight hints / session extraction / batch
+ * (detached worker, 30s budget), session extraction / batch
  * classification run INLINE in the Stop hook (~40s total budget, possibly
  * several calls) — a hung CLI must not eat the whole hook.
  */
@@ -145,7 +145,7 @@ function parseJSON(text: string): any {
 }
 
 /**
- * Run one completion for the SECONDARY LLM features (hindsight hints, session
+ * Run one completion for the SECONDARY LLM features (session
  * extraction, checkpoint extraction, batch classification) and return raw
  * text, or null when no backend is available.
  *
@@ -246,36 +246,6 @@ export async function classifyWithLLM(text: string): Promise<ClassifyResult | nu
       ...(result.precision === 'vague' || result.precision === 'precise'
         ? { precision: result.precision }
         : {}),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract a failure-specific hindsight lesson from a failure description.
- * Returns null on any failure (no API key, network error, parse error) —
- * callers fall back to grounding the detector's generic remedy text.
- */
-export async function extractHindsightHint(
-  failureDescription: string,
-  context: string
-): Promise<{ hint_text: string; hint_kind: string; applies_when: string[] } | null> {
-  const text = await completeText(
-    'You extract actionable hindsight lessons from failures. Given a failure description and context, produce a JSON object with: hint_text (imperative rule to prevent recurrence), hint_kind (one of: rule, preference, anti_pattern, workflow, debug_fix, failure_preventer), applies_when (array of 1-3 situation tags). Respond with ONLY valid JSON.',
-    `Failure: ${failureDescription}\nContext: ${context}`,
-    300,
-  );
-  if (!text) return null;
-
-  try {
-    const result = parseJSON(text);
-    if (!result.hint_text || !result.hint_kind) return null;
-
-    return {
-      hint_text: result.hint_text,
-      hint_kind: result.hint_kind,
-      applies_when: Array.isArray(result.applies_when) ? result.applies_when : [],
     };
   } catch {
     return null;

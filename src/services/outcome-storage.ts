@@ -34,18 +34,6 @@ export interface OutcomeEventData {
   tags?: string[];
 }
 
-export interface CandidateLessonData {
-  project_id: string;
-  episode_id?: string;
-  lesson_text: string;
-  lesson_kind: string;
-  applies_when?: string[];
-  outcome_type: string;
-  reward_band: number;
-  confidence: number;
-  durability: string;
-}
-
 export interface CandidateLesson {
   id: string;
   project_id: string;
@@ -159,53 +147,7 @@ export class OutcomeStorage {
     return id;
   }
 
-  // --- Candidate Lessons ---
-
-  createCandidateLesson(data: CandidateLessonData): string {
-    const id = this.generateId();
-    const now = this.now();
-    this.db.prepare(`
-      INSERT INTO candidate_lessons (id, project_id, episode_id, lesson_text, lesson_kind,
-        applies_when_json, outcome_type, reward_band, confidence, durability,
-        evidence_count, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'candidate', ?, ?)
-    `).run(
-      id, data.project_id, data.episode_id || null,
-      data.lesson_text, data.lesson_kind,
-      data.applies_when ? JSON.stringify(data.applies_when) : null,
-      data.outcome_type, data.reward_band, data.confidence, data.durability,
-      now, now
-    );
-    return id;
-  }
-
-  updateLessonStatus(id: string, status: string, promotedKey?: string): void {
-    this.db.prepare(`
-      UPDATE candidate_lessons SET status = ?, promoted_memory_key = ?, updated_at = ?
-      WHERE id = ?
-    `).run(status, promotedKey || null, this.now(), id);
-  }
-
-  /**
-   * Find candidate lessons with similar text using Jaccard similarity >= threshold.
-   */
-  findSimilarLessons(text: string, projectId: string, threshold: number = 0.6): CandidateLesson[] {
-    const rows = this.db.prepare(
-      `SELECT * FROM candidate_lessons WHERE project_id = ? AND status IN ('candidate', 'promoted')`
-    ).all(projectId) as CandidateLesson[];
-
-    const textTokens = tokenize(text);
-    return rows.filter(row => {
-      const rowTokens = tokenize(row.lesson_text);
-      return jaccardSimilarity(textTokens, rowTokens) >= threshold;
-    });
-  }
-
-  incrementEvidenceCount(id: string): void {
-    this.db.prepare(
-      `UPDATE candidate_lessons SET evidence_count = evidence_count + 1, updated_at = ? WHERE id = ?`
-    ).run(this.now(), id);
-  }
+  // --- Candidate Lessons (read-only since the lesson step was retired in 0.50.0) ---
 
   getCandidateLessons(projectId: string, status?: string): CandidateLesson[] {
     let query = 'SELECT * FROM candidate_lessons WHERE project_id = ?';
@@ -215,10 +157,6 @@ export class OutcomeStorage {
       params.push(status);
     }
     return this.db.prepare(query).all(...params) as CandidateLesson[];
-  }
-
-  getCandidateLessonById(id: string): CandidateLesson | null {
-    return (this.db.prepare('SELECT * FROM candidate_lessons WHERE id = ?').get(id) as CandidateLesson) || null;
   }
 
   /**
@@ -497,23 +435,4 @@ export function pruneOutcomeData(
   }
 
   return counts;
-}
-
-// --- Helpers ---
-
-function tokenize(s: string): Set<string> {
-  return new Set(
-    s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
-  );
-}
-
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersection = 0;
-  for (const w of a) {
-    if (b.has(w)) intersection++;
-  }
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
 }

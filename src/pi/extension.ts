@@ -264,7 +264,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
           // Pi has no resolver hook, and `getInjectionStats` — this table's only
           // reader — has no callers, so by default these rows go unread.
-          if (shouldRecordOutcomes('pi', 'detail')) {
+          if (shouldRecordOutcomes()) {
             try {
               const outcomeStorage = OutcomeStorage.getInstance();
               for (const m of matches) {
@@ -298,7 +298,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
       .map(c => c.text)
       .join('\n');
 
-    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId, 'pi');
+    const result = processToolOutcome(event.toolName, event.input, output, event.isError, sessionId);
 
     // Collect for session extraction
     collectedToolResults.push({
@@ -360,9 +360,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
         try {
           if (result.stored > 0) {
             ctx.ui.notify(`📝 Recall: captured ${result.stored} memories from this session`, 'info');
-          }
-          if (result.promoted > 0) {
-            ctx.ui.notify(`⬆️ Recall: ${result.promoted} lesson(s) promoted to active rules`, 'info');
           }
         } catch { /* non-critical */ }
       }

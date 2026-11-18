@@ -120,10 +120,8 @@ function recordOutcomeEvent(
   summary: string,
   exitCode?: number,
 ): void {
-  // This hook is Claude Code's, which is where the distillation step runs, so
-  // `auto` collects here. `off` must still mean off — the setting would be a
-  // half-truth if the largest writer ignored it.
-  if (!shouldRecordOutcomes('cc', 'detail')) return;
+  // Outcome history for the `outcomes` CLI, written only when tracking is on
+  if (!shouldRecordOutcomes()) return;
   try {
     const outcomeStorage = OutcomeStorage.getInstance();
     outcomeStorage.createOutcomeEvent({
@@ -477,9 +475,8 @@ export async function handleToolFailure(input: any): Promise<void> {
 
     storeMemory(JSON.stringify(failureContent), 'failure', undefined, 0.8, { source: hookSource(input) });
 
-    // Record structured outcome event, attributed to the emitting session so
-    // memory-stop only folds THIS session's failures into its episode
-    if (shouldRecordOutcomes('cc', 'lesson-input')) {
+    // Outcome history, attributed to the emitting session — only when tracking is on
+    if (shouldRecordOutcomes()) {
       try {
         const outcomeStorage = OutcomeStorage.getInstance();
         outcomeStorage.createOutcomeEvent({

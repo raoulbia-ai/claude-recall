@@ -39,14 +39,12 @@ const mockExtractCheckpointWithLLM = jest.fn();
 const mockExtractSessionLearningsWithLLM = jest.fn().mockResolvedValue(null);
 const mockClassifyWithLLM = jest.fn().mockResolvedValue(null);
 const mockClassifyBatchWithLLM = jest.fn().mockResolvedValue(null);
-const mockExtractHindsightHint = jest.fn().mockResolvedValue(null);
 
 jest.mock('../../src/hooks/llm-classifier', () => ({
   extractCheckpointWithLLM: (...args: any[]) => mockExtractCheckpointWithLLM(...args),
   extractSessionLearningsWithLLM: (...args: any[]) => mockExtractSessionLearningsWithLLM(...args),
   classifyWithLLM: (...args: any[]) => mockClassifyWithLLM(...args),
   classifyBatchWithLLM: (...args: any[]) => mockClassifyBatchWithLLM(...args),
-  extractHindsightHint: (...args: any[]) => mockExtractHindsightHint(...args),
 }));
 
 const mockUpdateConfig = jest.fn();
@@ -83,14 +81,6 @@ jest.mock('../../src/services/outcome-storage', () => ({
       createEpisode: mockCreateEpisode,
       updateEpisode: mockUpdateEpisode,
       pruneOldData: mockPruneOldData,
-    }),
-  },
-}));
-
-jest.mock('../../src/services/promotion-engine', () => ({
-  PromotionEngine: {
-    getInstance: () => ({
-      runCycle: jest.fn().mockReturnValue({ promoted: 0, archived: 0 }),
     }),
   },
 }));
@@ -737,13 +727,12 @@ describe('Pi Extension', () => {
 
       // The session's classification is still out: the handler must be too.
       expect(handlerDone).toBe(false);
-      expect(mockUpdateEpisode).not.toHaveBeenCalled();
+      expect(mockPruneOldData).not.toHaveBeenCalled();
 
       closeBatch(null);
       await handler;
 
-      // The episode it opened is closed, which is the last thing before pruning.
-      expect(mockUpdateEpisode).toHaveBeenCalledTimes(1);
+      // Pruning is the last step of the session's end-of-session work.
       expect(mockPruneOldData).toHaveBeenCalled();
     });
 
