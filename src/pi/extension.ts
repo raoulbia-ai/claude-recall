@@ -113,6 +113,12 @@ export default function(pi: PiTypes.ExtensionAPI) {
   // and extractSessionLearnings.
   const collectedEntries: ConversationEntry[] = [];
   const MAX_COLLECTED_ENTRIES = 100;
+  /**
+   * Longest quitting may be held up by what a session owes at its end. A
+   * backstop: every piece that asks a model is capped at 10s on its own, they
+   * run side by side, and with no model to ask all of it takes milliseconds.
+   */
+  const SESSION_END_BUDGET_MS = 15000;
 
   // Route logs through Pi's UI when available
   setLogFunction((source, msg) => {
@@ -332,8 +338,11 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
   // --- Event: session end — episode + promotion + session extraction ---
 
-  pi.on('session_shutdown', (_event, ctx) => {
-    processSessionEnd(collectedUserTexts, sessionId, projectId).then(result => {
+  pi.on('session_shutdown', async (event, ctx) => {
+    /** Everything this session still owes the store. Each piece settles on its own. */
+    const work: Promise<void>[] = [];
+
+    work.push(processSessionEnd(collectedUserTexts, sessionId, projectId).then(result => {
       if (ctx.hasUI) {
         try {
           if (result.stored > 0) {
@@ -344,7 +353,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
           }
         } catch { /* non-critical */ }
       }
-    }).catch(() => {});
+    }).catch(() => {}));
 
     // Session extraction: learn from long coding sessions
     const allEntries: ConversationEntry[] = [
@@ -352,11 +361,11 @@ export default function(pi: PiTypes.ExtensionAPI) {
       ...collectedToolResults,
     ];
     if (allEntries.length >= 10) {
-      extractSessionLearnings(allEntries, sessionId, projectId, 5).then(extracted => {
+      work.push(extractSessionLearnings(allEntries, sessionId, projectId, 5).then(extracted => {
         if (extracted > 0 && ctx.hasUI) {
           try { ctx.ui.notify(`🔍 Recall: extracted ${extracted} learnings from session`, 'info'); } catch { /* non-critical */ }
         }
-      }).catch(() => {});
+      }).catch(() => {}));
     }
 
     // Auto-checkpoint: extract "where I left off" hint for next Pi session.
@@ -365,13 +374,25 @@ export default function(pi: PiTypes.ExtensionAPI) {
     // interleaved entries (collectedEntries) so the LLM sees the actual
     // most-recent task, not user texts followed by all tool results.
     if (collectedEntries.length >= 3 && projectId) {
-      extractCheckpoint(collectedEntries, projectId, 'pi').then(saved => {
+      work.push(extractCheckpoint(collectedEntries, projectId, 'pi').then(saved => {
         if (saved && ctx.hasUI) {
           try {
             ctx.ui.notify('📌 Recall: saved task checkpoint for next session', 'info');
           } catch { /* non-critical */ }
         }
-      }).catch(() => {});
+      }).catch(() => {}));
+    }
+
+    // Pi awaits this handler and then exits the process, so on quit anything
+    // still running is cut off at its next await: the episode is opened and
+    // never closed, nothing is promoted or pruned, no checkpoint is written.
+    // When the session is only being replaced the process lives on, and the
+    // work is left to finish behind the new session rather than hold it up.
+    if (event?.reason === undefined || event.reason === 'quit') {
+      let timer: NodeJS.Timeout | undefined;
+      const budget = new Promise<void>(resolve => { timer = setTimeout(resolve, SESSION_END_BUDGET_MS); });
+      await Promise.race([Promise.allSettled(work), budget]);
+      clearTimeout(timer);
     }
   });
 
