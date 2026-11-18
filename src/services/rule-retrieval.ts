@@ -171,18 +171,6 @@ function tokenOverlap(queryTokens: string[], ruleTokens: Set<string>): { score: 
 }
 
 /**
- * A "promoted lesson" is a failure-type memory that the promotion engine has
- * graduated into an actionable rule. Detected by key prefix or value.source.
- * These ARE worth surfacing in JIT injection (unlike raw failure logs which
- * are just noise from the auto-capture pipeline).
- */
-function isPromotedLesson(rule: Rule): boolean {
-  if (rule.key && rule.key.startsWith('promoted_')) return true;
-  if (rule.value && typeof rule.value === 'object' && rule.value.source === 'promotion-engine') return true;
-  return false;
-}
-
-/**
  * Rank a list of rules against a tool call. Returns the top N (default 3)
  * with score >= MIN_SCORE, sorted by descending score.
  *
@@ -193,8 +181,7 @@ function isPromotedLesson(rule: Rule): boolean {
  * generates many low-value failure entries ("Avoid: Test command reported
  * failures: npm test ...") that share tokens with common dev commands but
  * aren't useful as decision-time guidance. The actionable equivalents are
- * (a) promoted lessons (failures graduated by the promotion engine — these
- * ARE included), (b) corrections, and (c) devops rules. See
+ * corrections and devops rules. See
  * .research/rule-loading-gap.md for the full reasoning.
  */
 export function rankRulesForToolCall(
@@ -210,9 +197,9 @@ export function rankRulesForToolCall(
   for (const rule of rules) {
     if (rule.is_active === false) continue;
 
-    // Exclude raw failures from JIT injection. Promoted lessons survive
-    // because they've been graduated into actionable rules.
-    if (rule.type === 'failure' && !isPromotedLesson(rule)) continue;
+    // Exclude failures from JIT injection: they are logs of what broke, not
+    // rules to act on, and loading them on every tool call is noise.
+    if (rule.type === 'failure') continue;
 
     const ruleText = extractRuleText(rule.value);
     if (!ruleText) continue;

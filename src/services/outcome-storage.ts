@@ -34,24 +34,6 @@ export interface OutcomeEventData {
   tags?: string[];
 }
 
-export interface CandidateLesson {
-  id: string;
-  project_id: string;
-  episode_id: string | null;
-  lesson_text: string;
-  lesson_kind: string;
-  applies_when_json: string | null;
-  outcome_type: string;
-  reward_band: number;
-  confidence: number;
-  durability: string;
-  evidence_count: number;
-  status: string;
-  promoted_memory_key: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface MemoryStats {
   memory_key: string;
   times_observed: number;
@@ -145,18 +127,6 @@ export class OutcomeStorage {
       this.now()
     );
     return id;
-  }
-
-  // --- Candidate Lessons (read-only since the lesson step was retired in 0.50.0) ---
-
-  getCandidateLessons(projectId: string, status?: string): CandidateLesson[] {
-    let query = 'SELECT * FROM candidate_lessons WHERE project_id = ?';
-    const params: any[] = [projectId];
-    if (status) {
-      query += ' AND status = ?';
-      params.push(status);
-    }
-    return this.db.prepare(query).all(...params) as CandidateLesson[];
   }
 
   /**

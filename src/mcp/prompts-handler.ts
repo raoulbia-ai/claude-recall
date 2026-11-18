@@ -1,7 +1,6 @@
 import { MemoryService } from '../services/memory';
 import { MemoryStorage } from '../memory/storage';
 import { LoggingService } from '../services/logging';
-import { OutcomeStorage } from '../services/outcome-storage';
 import { ConfigService } from '../services/config';
 import { MCPRequest, MCPResponse } from './server';
 
@@ -109,17 +108,6 @@ export class PromptsHandler {
               required: false
             }
           ]
-        },
-        {
-          name: 'session-review',
-          description: 'Review current session outcomes, failures, and lessons learned',
-          arguments: [
-            {
-              name: 'session_id',
-              description: 'Session ID to review (defaults to most recent)',
-              required: false
-            }
-          ]
         }
       ];
 
@@ -177,10 +165,6 @@ export class PromptsHandler {
 
         case 'load-rules':
           promptResult = await this.getLoadRulesPrompt(args?.topic);
-          break;
-
-        case 'session-review':
-          promptResult = await this.getSessionReviewPrompt(args?.session_id);
           break;
 
         default:
@@ -548,55 +532,6 @@ Be conservative - only extract clear, explicit preferences.`),
         this.textMessage(body
           ? `# Active Rules\n\nApply these rules when working on this project.\n\n${body}`
           : 'No active rules found. This may be a new project.')
-      ]
-    };
-  }
-
-  /**
-   * Get session-review prompt — summarizes session outcomes and lessons
-   */
-  private async getSessionReviewPrompt(_sessionId?: string): Promise<GetPromptResult> {
-    const sections: string[] = [];
-
-    try {
-      const outcomeStorage = OutcomeStorage.getInstance();
-      const projectId = ConfigService.getInstance().getProjectId();
-
-      // Get recent episodes
-      const episodes = outcomeStorage.getCandidateLessons(projectId);
-      const candidates = episodes.filter(l => l.status === 'candidate');
-      const promoted = episodes.filter(l => l.status === 'promoted');
-
-      if (promoted.length > 0) {
-        sections.push('## Promoted Lessons\n' + promoted.map(l =>
-          `- ${l.lesson_text} (seen ${l.evidence_count}x)`
-        ).join('\n'));
-      }
-
-      if (candidates.length > 0) {
-        const recent = candidates.slice(0, 10);
-        sections.push('## Candidate Lessons (pending promotion)\n' + recent.map(l =>
-          `- ${l.lesson_text} (evidence: ${l.evidence_count}, confidence: ${l.confidence.toFixed(2)})`
-        ).join('\n'));
-      }
-
-      // Get memory stats summary
-      const rules = this.memoryService.loadActiveRules(projectId);
-      const totalRules = rules.preferences.length + rules.corrections.length +
-        rules.failures.length + rules.devops.length;
-
-      sections.push(`## Memory Summary\n- ${totalRules} active rules\n- ${promoted.length} promoted lessons\n- ${candidates.length} candidate lessons pending`);
-
-    } catch {
-      sections.push('_Could not load outcome data. The outcome-aware learning tables may not be initialized._');
-    }
-
-    return {
-      description: 'Session outcome review and lessons learned',
-      messages: [
-        this.textMessage(sections.length > 0
-          ? `# Session Review\n\n${sections.join('\n\n')}`
-          : '# Session Review\n\nNo outcome data available yet.')
       ]
     };
   }

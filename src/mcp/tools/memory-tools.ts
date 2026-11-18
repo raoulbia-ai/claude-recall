@@ -390,30 +390,12 @@ export class MemoryTools {
       if (keptCorrections.length > 0) {
         sections.push('## Corrections\n' + keptCorrections.map(m => {
           const val = formatRuleValue(m.value) + precisionNudge(m.value);
-          const isPromoted = m.key.startsWith('promoted_') || (m.value as any)?.source === 'promotion-engine';
-          const evidence = isPromoted && (m.value as any)?.evidence_count ? ` (learned from ${(m.value as any).evidence_count} observations)` : '';
-          return isPromoted ? `- [promoted lesson] ${val}${evidence}` : `- ${val}`;
+          return `- ${val}`;
         }).join('\n'));
       }
 
       if (keptFailures.length > 0) {
-        const promotedLessons = keptFailures.filter(m => m.key.startsWith('promoted_') || (m.value as any)?.source === 'promotion-engine');
-        const regularFailures = keptFailures.filter(m => !m.key.startsWith('promoted_') && (m.value as any)?.source !== 'promotion-engine');
-
-        if (promotedLessons.length > 0) {
-          sections.push('## Promoted Lessons (learned from repeated outcomes)\n' + promotedLessons.map(m => {
-            const val = formatRuleValue(m.value);
-            const evidence = (m.value as any)?.evidence_count ? ` (seen ${(m.value as any).evidence_count}x)` : '';
-            return `- ${val}${evidence}`;
-          }).join('\n'));
-        }
-
-        if (regularFailures.length > 0) {
-          sections.push('## Failures\n' + regularFailures.map(m => {
-            const val = formatRuleValue(m.value);
-            return `- ${val}`;
-          }).join('\n'));
-        }
+        sections.push('## Failures\n' + keptFailures.map(m => `- ${formatRuleValue(m.value)}`).join('\n'));
       }
 
       if (keptSolutions.length > 0) {
