@@ -12,6 +12,7 @@
 
 import { ClassifyResult } from './shared';
 import { completeWithClaudeCli } from './cc-classifier';
+import { completeWithPiCli, piBackendEnabled } from './pi-classifier';
 
 // Lazy singleton — avoid import cost when API key is absent
 let clientInstance: any | null | undefined; // undefined = not yet checked
@@ -152,12 +153,15 @@ function parseJSON(text: string): any {
  * `claude -p`) is the only default backend — a personally-exported
  * ANTHROPIC_API_KEY is STRICTLY OPT-IN via CLAUDE_RECALL_PREFER_API_KEY and
  * never consulted otherwise, not even as a fallback. The opt-in exists for
- * Pi-only users (no `claude` binary; their key is how they run Pi itself)
- * and anyone deliberately paying for a stronger model.
+ * anyone deliberately paying for a stronger model.
  *
- * The CLI backend is skipped inside a nested headless session
- * (CLAUDE_RECALL_NESTED): if `claude -p` fires user-scope hooks of its own,
- * those hooks must not spawn further `claude -p` calls.
+ * A Pi host has no `claude` binary; there the same role can be played by
+ * Pi's own headless mode (`pi -p`), tried after `claude -p` — opt-in as well
+ * (CLAUDE_RECALL_PI_LLM), since a Pi model is often billed per call.
+ *
+ * Both CLI backends are skipped inside a nested headless session
+ * (CLAUDE_RECALL_NESTED): if the child fires hooks or extensions of its own,
+ * they must not spawn further headless calls.
  */
 async function completeText(
   systemPrompt: string,
@@ -181,16 +185,25 @@ async function completeText(
     }
   };
 
-  // `claude -p` takes a single argument (no system-prompt channel), so
-  // instruction and payload are combined — same shape as the Kiro backend.
+  // The runtime CLIs take a single argument (no system-prompt channel), so
+  // instruction and payload are combined.
+  const prompt = `${systemPrompt}\n\n${userContent}`;
+
   const viaCli = (): Promise<string | null> =>
     process.env.CLAUDE_RECALL_NESTED
       ? Promise.resolve(null)
-      : completeWithClaudeCli(`${systemPrompt}\n\n${userContent}`, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS });
+      : completeWithClaudeCli(prompt, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS });
+
+  // A Pi host has no `claude` binary; Pi's own headless mode can stand in for
+  // it, when the user has opted in. See piBackendEnabled() for the conditions.
+  const viaPi = (): Promise<string | null> =>
+    piBackendEnabled()
+      ? completeWithPiCli(prompt, { timeoutMs: SECONDARY_CLI_TIMEOUT_MS })
+      : Promise.resolve(null);
 
   const backends = process.env.CLAUDE_RECALL_PREFER_API_KEY
-    ? [viaApi, viaCli]
-    : [viaCli];
+    ? [viaApi, viaCli, viaPi]
+    : [viaCli, viaPi];
 
   for (const backend of backends) {
     const text = await backend();

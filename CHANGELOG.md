@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pi hosts can use an LLM — through Pi itself, if you opt in.** Session learnings, checkpoint extraction and the batch classification that runs at session end and before compaction all need a model, and the backends were `claude -p`, `kiro-cli` and an opt-in Anthropic key. A Pi-only machine has none of those, so each of those features was silently inert there. Pi ships the same affordance the other runtimes do — `pi -p` answers on the model the user already configured. Set **`CLAUDE_RECALL_PI_LLM=1`** to use it. It is off by default for the reason a personal API key is: many Pi users pay per call, and this sends session text to their provider. Per-prompt capture is unchanged and stays on the regex path.
+
+  The backend only ever runs inside a Pi session. The extension says so in-process rather than through an environment variable, which everything Pi spawns would inherit — a `claude` session started from Pi's bash tool must not have its hooks answered by Pi. The nested call is sealed: `--no-tools` (the prompt carries session text, and Pi has no permission prompts — an instruction planted in tool output must not be able to run a shell command from a background call), `--no-mcp`, `--no-session` (the prompt is not left in a session file), `--no-skills --no-prompt-templates --no-context-files` (the user's own context stays out of the answer) and `--no-approve` (it runs from the shared temp directory). It also runs with `--no-extensions`, so the child cannot load claude-recall at all; a host whose models come from an extension sets `CLAUDE_RECALL_PI_EXTENSIONS=1`, and the extension then stands down in the child on `CLAUDE_RECALL_NESTED`. `CLAUDE_RECALL_PI_MODEL` picks the model.
+
 - **`src/shared/citations.ts`** — citation scanning written for Pi's narrow attribution: a margin over the runner-up, a stopword list and a token floor on top of containment. The Claude Code stop hook keeps its own matching for now — it scores citations against the whole store rather than one turn's injected rules, where near-duplicates are common and a margin test would drop credits that count today. Moving it over is a separate change, with transcript numbers behind it.
 
 - **`CLAUDE_RECALL_OUTCOME_TRACKING`** (`auto` | `on` | `off`, default `auto`). `auto` collects where the distillation step runs; `on` forces collection everywhere, which is what you want when reading the `outcomes` CLI or debugging capture; `off` disables it entirely. Failure memories are unaffected — Pi reads those back as rules. Every writer of these two tables consults the same policy — the Pi extension, Claude Code's `tool-outcome-watcher` and its `rule-injector` — so `off` is off on every runtime, not only where the default would already have stopped collecting.
@@ -38,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Under Pi a failure only becomes a lesson when there is something to say about it: the model's hindsight, or a remedy a paired fix has already made specific. A failure whose remedy is still the detector's default would otherwise be promoted as "check prerequisites (failure: …)" — a rule loaded every turn that repeats what the failure memory already says. The pass stops taking up failures 15 seconds after the session ends, so quitting is never held for long.
 
 ### Changed
+
+- **The three runtime CLI backends share one implementation** (`src/hooks/runtime-cli.ts`). `completeWithClaudeCli` and `completeWithKiroCli` were the same spawn, timeout, kill and stdout handling with different argv; adding a third copy for Pi would have made three.
 
 - **`pruneOldToolUse` and `pruneOldCorrections` collapsed into `pruneByType`** — they were the same function with a different type literal, and failures want the same policy.
 

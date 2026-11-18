@@ -27,6 +27,7 @@ import {
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
 import type { ToolInteraction as PiToolInteraction } from '../hooks/shared';
 import { CitableRule, extractCitations, matchCitations } from '../shared/citations';
+import { announcePiHost } from '../hooks/pi-classifier';
 // Shared audited directive — memories are advisory user preferences, never
 // authoritative instructions (prompt-injection hardening, 2026-04-24 audit).
 import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
@@ -101,6 +102,18 @@ function formatRules(rules: ActiveRules): string {
 }
 
 export default function(pi: PiTypes.ExtensionAPI) {
+  // A nested session spawned by our own LLM backend must stay a plain Pi run:
+  // no rules injected, nothing captured — otherwise asking the model to
+  // summarise a session would itself become a session to summarise. The
+  // backend prefers `--no-extensions`, which makes this moot, but a host whose
+  // models come from an extension has to load them.
+  if (process.env.CLAUDE_RECALL_NESTED) return;
+
+  // Tell the LLM backends this process is a Pi host, so Pi's headless mode is
+  // theirs to use if the user opted in. In-process on purpose — see
+  // announcePiHost().
+  announcePiHost();
+
   let projectId: string = '';
   const sessionId: string = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const collectedToolResults: ConversationEntry[] = [];
