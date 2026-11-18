@@ -70,6 +70,16 @@ function captureStdout(): { restore: () => string } {
 }
 
 describe('handleRuleInjector — PreToolUse hook', () => {
+  // These cases check what gets written when tracking records everything.
+  // The default (lesson input only) is covered in outcome-capture.test.ts and
+  // by the 'default' cases below.
+  const outcomeTrackingBefore = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+  beforeAll(() => { process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on'; });
+  afterAll(() => {
+    if (outcomeTrackingBefore === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = outcomeTrackingBefore;
+  });
+
   let tmpRoot = '';
   beforeEach(() => {
     jest.clearAllMocks();

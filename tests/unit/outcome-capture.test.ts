@@ -1,13 +1,12 @@
 import { shouldRecordOutcomes } from '../../src/shared/outcome-capture';
 
 /**
- * Collection follows the consumer.
+ * Write only what something reads.
  *
- * Raw outcome telemetry exists to feed `memory-stop-hook`, which distills it
- * into candidate lessons and citation counts. That hook is wired into Claude
- * Code's hook CLI only, so on Pi the rows were written and never read — one
- * host reached 246845 `outcome_events` rows with `candidate_lessons` still
- * empty.
+ * The one row kind logic reads is a tool failure, which the Claude Code Stop
+ * hook turns into candidate lessons. Everything else (tool results, sub-agent
+ * results, re-ask signals, rule injections) is shown by the `outcomes` CLI and
+ * read by nothing else, so it is written only when tracking is forced on.
  */
 describe('shouldRecordOutcomes', () => {
   const prev = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
@@ -22,42 +21,45 @@ describe('shouldRecordOutcomes', () => {
     else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = value;
   }
 
-  it('collects under Claude Code by default — the distillation step runs there', () => {
+  it('by default, records lesson input under Claude Code — the lesson step runs there', () => {
     withTracking(undefined);
-    expect(shouldRecordOutcomes('cc')).toBe(true);
+    expect(shouldRecordOutcomes('cc', 'lesson-input')).toBe(true);
   });
 
-  it('does not collect under Pi by default — nothing reads the rows back', () => {
+  it('by default, records no detail rows anywhere — nothing but the outcomes CLI reads them', () => {
     withTracking(undefined);
-    expect(shouldRecordOutcomes('pi')).toBe(false);
+    expect(shouldRecordOutcomes('cc', 'detail')).toBe(false);
+    expect(shouldRecordOutcomes('pi', 'detail')).toBe(false);
   });
 
-  it('collects on every runtime when forced on', () => {
+  it('by default, records nothing under Pi — it has no lesson step over these rows', () => {
+    withTracking(undefined);
+    expect(shouldRecordOutcomes('pi', 'lesson-input')).toBe(false);
+  });
+
+  it('records every kind on every runtime when forced on', () => {
     for (const value of ['on', 'true', '1', 'ON']) {
       withTracking(value);
-      expect(shouldRecordOutcomes('pi')).toBe(true);
-      expect(shouldRecordOutcomes('cc')).toBe(true);
+      for (const runtime of ['cc', 'pi'] as const) {
+        expect(shouldRecordOutcomes(runtime, 'lesson-input')).toBe(true);
+        expect(shouldRecordOutcomes(runtime, 'detail')).toBe(true);
+      }
     }
   });
 
-  it('collects on no runtime when forced off', () => {
+  it('records nothing when forced off — lesson input included', () => {
     for (const value of ['off', 'false', '0', 'Off']) {
       withTracking(value);
-      expect(shouldRecordOutcomes('pi')).toBe(false);
-      expect(shouldRecordOutcomes('cc')).toBe(false);
+      for (const runtime of ['cc', 'pi'] as const) {
+        expect(shouldRecordOutcomes(runtime, 'lesson-input')).toBe(false);
+        expect(shouldRecordOutcomes(runtime, 'detail')).toBe(false);
+      }
     }
   });
 
-  it('falls back to the per-runtime default on an unrecognized value', () => {
+  it('treats an unrecognized value as auto', () => {
     withTracking('maybe');
-    expect(shouldRecordOutcomes('cc')).toBe(true);
-    expect(shouldRecordOutcomes('pi')).toBe(false);
-  });
-
-  it('is read per call, so a mid-session change takes effect', () => {
-    withTracking('off');
-    expect(shouldRecordOutcomes('cc')).toBe(false);
-    withTracking('on');
-    expect(shouldRecordOutcomes('cc')).toBe(true);
+    expect(shouldRecordOutcomes('cc', 'lesson-input')).toBe(true);
+    expect(shouldRecordOutcomes('cc', 'detail')).toBe(false);
   });
 });

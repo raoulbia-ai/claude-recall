@@ -16,6 +16,7 @@ import {
   safeErrorMessage,
 } from './shared';
 import { OutcomeStorage } from '../services/outcome-storage';
+import { shouldRecordOutcomes } from '../shared/outcome-capture';
 
 const REASK_PATTERNS = [
   /still broken/i,
@@ -35,15 +36,18 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
 
   // Detect reask signals before classification
   try {
-    for (const pattern of REASK_PATTERNS) {
-      if (pattern.test(prompt)) {
-        OutcomeStorage.getInstance().createOutcomeEvent({
-          event_type: 'reask_signal',
-          actor: 'user',
-          next_state_summary: `User reask detected: ${prompt.substring(0, 100)}`,
-          tags: ['reask'],
-        });
-        break;
+    // Read by nothing but the `outcomes` CLI, so only under OUTCOME_TRACKING=on
+    if (shouldRecordOutcomes('cc', 'detail')) {
+      for (const pattern of REASK_PATTERNS) {
+        if (pattern.test(prompt)) {
+          OutcomeStorage.getInstance().createOutcomeEvent({
+            event_type: 'reask_signal',
+            actor: 'user',
+            next_state_summary: `User reask detected: ${prompt.substring(0, 100)}`,
+            tags: ['reask'],
+          });
+          break;
+        }
       }
     }
   } catch (err) {

@@ -56,6 +56,16 @@ function statePath(sessionId: string): string {
 }
 
 describe('tool-outcome-watcher', () => {
+  // These cases check what gets written when tracking records everything.
+  // The default (lesson input only) is covered in outcome-capture.test.ts and
+  // by the 'default' cases below.
+  const outcomeTrackingBefore = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+  beforeAll(() => { process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on'; });
+  afterAll(() => {
+    if (outcomeTrackingBefore === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = outcomeTrackingBefore;
+  });
+
   const SESSION = 'test-session-tow';
   let originalDbPath: string | undefined;
 
@@ -431,6 +441,33 @@ describe('tool-outcome-watcher', () => {
 
       // Should not throw
       expect(mockCreateOutcomeEvent).toHaveBeenCalled();
+    });
+  });
+
+  describe('default tracking (auto)', () => {
+    beforeEach(() => { delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING; });
+    afterEach(() => { process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on'; });
+
+    it('writes no event for a successful tool result — nothing reads it', async () => {
+      await handleToolOutcomeWatcher({
+        tool_name: 'Read',
+        tool_input: { file_path: '/some/file.ts' },
+        tool_output: 'file contents here',
+        session_id: SESSION,
+      });
+      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+    });
+
+    it('still writes the tool_failure event the Stop hook turns into lessons', async () => {
+      await handleToolFailure({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm run build' },
+        error: 'tsc: error TS2322: Type mismatch',
+        session_id: SESSION,
+      });
+      expect(mockCreateOutcomeEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_type: 'tool_failure', session_id: SESSION }),
+      );
     });
   });
 

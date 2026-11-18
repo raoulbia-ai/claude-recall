@@ -160,7 +160,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
       const conversationEntries = buildConversationEntries(sessionEntries);
 
       // Record failed subagent outcomes — unless CLAUDE_RECALL_OUTCOME_TRACKING=off
-      const recordOutcomes = shouldRecordOutcomes('cc');
+      const recordOutcomes = shouldRecordOutcomes('cc', 'detail');
       for (const entry of conversationEntries) {
         if (recordOutcomes && entry.toolName === 'Agent' && entry.isError) {
           try {

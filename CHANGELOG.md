@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Outcome tracking writes only what something reads.** Of everything written to `outcome_events` and `rule_injection_events`, logic reads exactly one kind: the tool failures the Stop hook turns into lessons. The rest (successful tool results, sub-agent results, agent failures, re-ask signals, rule injections) was shown only by the `outcomes` CLI. On one install that was 96% of the rows, written from hooks that run on every tool call. With the default `CLAUDE_RECALL_OUTCOME_TRACKING=auto`, only tool failures are written now. `on` restores the full history; `off` writes nothing. Lessons are unaffected. The two re-ask writers also ignored the setting until now.
+
 ## [0.48.1] - 2026-11-18
 
 ### Changed

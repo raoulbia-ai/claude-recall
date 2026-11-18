@@ -1,19 +1,29 @@
 /**
- * Whether raw outcome telemetry is worth collecting on this runtime.
+ * Whether an outcome row is worth writing.
  *
- * `outcome_events` and `rule_injection_events` exist to feed `memory-stop-hook`,
- * which is wired into Claude Code's hook CLI only. Elsewhere the rows are
- * written and never read — on one Pi-only host, two thirds of the database.
+ * Exactly one kind of row is read by logic: a `tool_failure` event, which the
+ * Claude Code Stop hook turns into candidate lessons. Everything else written
+ * to `outcome_events` or `rule_injection_events` (successful tool results,
+ * sub-agent results, agent failures, re-ask signals, rule injections) is read
+ * by nothing but the `outcomes` CLI. On one install that was 96% of the rows,
+ * written from hooks that run on every tool call.
  *
- * `CLAUDE_RECALL_OUTCOME_TRACKING=on` collects anyway (the `outcomes` CLI reads
- * these tables), `off` collects nowhere.
+ * - `auto` (default): lesson input only, and only where the lesson step runs.
+ * - `on`: everything, everywhere — for the `outcomes` history and debugging.
+ * - `off`: nothing. This also stops new lessons on Claude Code.
  */
 export type Runtime = 'pi' | 'cc';
 
-/** Runtimes that actually run the distillation step over raw events. */
+/**
+ * `lesson-input`: rows the lesson step reads (tool failures).
+ * `detail`: rows only the `outcomes` CLI shows.
+ */
+export type OutcomeKind = 'lesson-input' | 'detail';
+
+/** Runtimes that actually run the lesson step over raw events. */
 const RUNTIMES_WITH_CONSUMER: ReadonlySet<Runtime> = new Set<Runtime>(['cc']);
 
-export function shouldRecordOutcomes(runtime: Runtime): boolean {
+export function shouldRecordOutcomes(runtime: Runtime, kind: OutcomeKind): boolean {
   switch ((process.env.CLAUDE_RECALL_OUTCOME_TRACKING || 'auto').toLowerCase()) {
     case 'on':
     case 'true':
@@ -24,6 +34,6 @@ export function shouldRecordOutcomes(runtime: Runtime): boolean {
     case '0':
       return false;
     default:
-      return RUNTIMES_WITH_CONSUMER.has(runtime);
+      return kind === 'lesson-input' && RUNTIMES_WITH_CONSUMER.has(runtime);
   }
 }
