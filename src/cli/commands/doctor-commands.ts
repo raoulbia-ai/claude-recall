@@ -183,25 +183,16 @@ export class DoctorCommands {
   }
 
   /**
-   * Print the Hooks section — the fix for doctor's blind spot. It inspects the
-   * hook COMMANDS Claude Code actually runs (via repair's scanner), not the CLI
-   * path, so a node-version-orphaned hook is caught even when the CLI/DB looks
-   * healthy. When `fix` is set, runs `repair --auto` to rewrite them.
+   * Scan every Claude Code settings file for claude-recall hooks whose command
+   * would no longer run (orphaned by a Node version switch, or pointing at a
+   * path that is gone). Shared by `doctor` and by the end of `upgrade`.
    */
-  static async reportHooks(
+  static scanHooks(
     home: string,
     cwd: string,
-    fix: boolean,
-    log: (m: string) => void,
     resolver: () => string | null = () => resolveOnPath('claude-recall'),
-  ): Promise<number> {
-    const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
+  ): { files: number; bad: string[]; okCount: number } {
     const files = findSettingsFiles(cwd, home, 'all');
-    if (files.length === 0) {
-      line('•', 'no Claude Code settings files found — no hooks to check');
-      return 0;
-    }
-
     const badStatuses = new Set(['orphaned-node', 'broken-absolute', 'broken-path']);
     const bad: string[] = [];
     let okCount = 0;
@@ -216,10 +207,32 @@ export class DoctorCommands {
         }
       }
     }
+    return { files: files.length, bad, okCount };
+  }
+
+  /**
+   * Print the Hooks section — the fix for doctor's blind spot. It inspects the
+   * hook COMMANDS Claude Code actually runs (via repair's scanner), not the CLI
+   * path, so a node-version-orphaned hook is caught even when the CLI/DB looks
+   * healthy. When `fix` is set, runs `repair --auto` to rewrite them.
+   */
+  static async reportHooks(
+    home: string,
+    cwd: string,
+    fix: boolean,
+    log: (m: string) => void,
+    resolver: () => string | null = () => resolveOnPath('claude-recall'),
+  ): Promise<number> {
+    const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
+    const { files, bad, okCount } = DoctorCommands.scanHooks(home, cwd, resolver);
+    if (files === 0) {
+      line('•', 'no Claude Code settings files found — no hooks to check');
+      return 0;
+    }
 
     let problems = 0;
     if (bad.length === 0) {
-      line('✓', `all ${okCount} claude-recall hook(s) healthy (${files.length} settings file${files.length === 1 ? '' : 's'})`);
+      line('✓', `all ${okCount} claude-recall hook(s) healthy (${files} settings file${files === 1 ? '' : 's'})`);
     } else {
       line('⚠', `${bad.length} broken/orphaned hook entr${bad.length === 1 ? 'y' : 'ies'} — these hooks crash silently`);
       for (const d of bad) line(' ', `        - ${d}`);

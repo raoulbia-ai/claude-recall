@@ -234,8 +234,6 @@ claude-recall store "content"            # Store a memory by hand (-t correction
 claude-recall delete <key>               # Delete one memory (keys shown by search)
 claude-recall export backup.json         # Export to JSON (import to restore)
 claude-recall clear --force              # Wipe this project's memories (auto-backup first)
-
-claude-recall upgrade                    # Update the global binary for all runtimes
 ```
 
 ### Task checkpoints
@@ -263,10 +261,9 @@ claude-recall mcp cleanup --all          # Stop stale MCP servers
 
 # What did the hooks actually do?
 tail -20 ~/.claude-recall/hook-logs/hook-dispatcher.log
-
-# "error: unknown command '<x>'" → your binary predates the feature:
-claude-recall upgrade
 ```
+
+`error: unknown command '<x>'` means your binary is older than these docs: see [Upgrading](#upgrading).
 
 <details>
 <summary><b>All commands</b></summary>
@@ -416,7 +413,7 @@ One command upgrades the shared binary for **all** runtimes:
 claude-recall upgrade
 ```
 
-It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version.
+It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version. It also checks your Claude Code hooks, and tells you if any need `claude-recall repair --auto` (e.g. after switching Node versions).
 
 Per-runtime notes:
 
