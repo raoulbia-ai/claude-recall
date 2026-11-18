@@ -1,6 +1,6 @@
 # Design: memory-poisoning defense
 
-Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)).
+Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)). Done: Phase 0 (#150), Phase 1.
 
 ## The problem
 
@@ -78,7 +78,7 @@ On the maintainer's database (2026-11-18), only 16 of 156 active memories (10%) 
 Each phase is its own PR, merged only when its tests pass.
 
 - **Phase 0: auto-skills.** Off by default (`CLAUDE_RECALL_AUTO_SKILLS=1` to enable); the integration test no longer writes into the repository.
-- **Phase 1: provenance and screening.** The `origin` column, set on every write path; attack-pattern screening and secret redaction on write; the red-team suite skeleton.
+- **Phase 1: provenance and screening.** The `origin` column, set on every write path (required by the type system, so a new path can't skip it); attack-pattern screening and secret redaction on write; the red-team suite. A flagged write is refused unless its origin is `user`: the user may legitimately say "never pipe curl to sh".
 - **Phase 2: history.** An append-only change log and `claude-recall rules history <id>`.
 - **Phase 3: quarantine by default.** Unverified memories aren't loaded. The user is told about pending memories at session start (statusLine count, SessionStart notice, Pi `notify`), and can act on them with `claude-recall rules pending` / `approve` / `reject`, including in bulk. The janitor's `confirm` approves what the user's own words support.
 

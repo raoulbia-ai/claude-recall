@@ -65,6 +65,14 @@ export interface Memory {
    * content changes. Confirmed rules load first.
    */
   confirmed_at?: number | null;
+  /**
+   * Where the memory came from (v0.51.0): 'user' (the user's own words, or the
+   * user typing at the CLI), 'agent' (store_memory: the agent may have been
+   * steered), 'tool' (derived from tool output or the transcript), 'import'.
+   * Null = unknown: stored before origins were recorded. Only 'user' is
+   * trusted on its own. See docs/design-memory-poisoning-defense.md.
+   */
+  origin?: MemoryOrigin | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -75,6 +83,19 @@ export interface Memory {
   bm25Score?: number;
 }
 
+/** Where a memory came from. Only 'user' is trusted on its own. */
+export type MemoryOrigin = 'user' | 'agent' | 'tool' | 'import';
+
+/**
+ * Origin of a memory derived from several others (a janitor merge or rewrite):
+ * 'user' only when every source is, otherwise the first less-trusted origin.
+ * Unknown (null) counts as untrusted.
+ */
+export function leastTrustedOrigin(origins: Array<MemoryOrigin | null | undefined>): MemoryOrigin | null {
+  for (const o of origins) if (o !== 'user') return o ?? null;
+  return origins.length > 0 ? 'user' : null;
+}
+
 /** The provenance columns, as returned alongside rule rows. */
 export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
 
@@ -82,6 +103,7 @@ export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' 
 export type ActiveRuleRow = {
   id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number;
   confirmed_at?: number | null;
+  origin?: MemoryOrigin | null;
 } & SourceColumns;
 
 export class MemoryStorage {
@@ -228,6 +250,11 @@ export class MemoryStorage {
       // Add confirmed_at if missing (v0.47.0). Everything starts unconfirmed.
       if (!columnNames.includes('confirmed_at')) {
         this.db.exec('ALTER TABLE memories ADD COLUMN confirmed_at INTEGER');
+      }
+      // Add origin if missing (v0.51.0). No backfill: older memories are of
+      // unknown origin, which counts as unverified.
+      if (!columnNames.includes('origin')) {
+        this.db.exec('ALTER TABLE memories ADD COLUMN origin TEXT');
       }
 
       // v0.18.0: Outcome-aware learning tables
@@ -571,9 +598,12 @@ export class MemoryStorage {
     const activeMatch = hashMatches.find(m => m.is_active === 1);
     if (activeMatch) {
       // Bump the existing memory's timestamp and access_count to keep it fresh
+      // The user restating a rule upgrades it to their own; anything else
+      // leaves the existing origin as it was.
       this.db.prepare(
-        'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
-      ).run(Date.now(), activeMatch.key);
+        `UPDATE memories SET timestamp = ?, access_count = access_count + 1,
+         origin = CASE WHEN ? = 'user' THEN 'user' ELSE origin END WHERE key = ?`
+      ).run(Date.now(), memory.origin ?? null, activeMatch.key);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
     }
@@ -590,9 +620,10 @@ export class MemoryStorage {
     if (autoDemotedMatch) {
       this.db.prepare(
         `UPDATE memories SET timestamp = ?, access_count = access_count + 1,
-         is_active = 1, superseded_by = NULL, superseded_at = NULL
+         is_active = 1, superseded_by = NULL, superseded_at = NULL,
+         origin = CASE WHEN ? = 'user' THEN 'user' ELSE origin END
          WHERE key = ?`
-      ).run(Date.now(), autoDemotedMatch.key);
+      ).run(Date.now(), memory.origin ?? null, autoDemotedMatch.key);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
     }
@@ -606,8 +637,9 @@ export class MemoryStorage {
       : null;
     if (fuzzyMatch && !opts?.fuzzyNewestWins) {
       this.db.prepare(
-        'UPDATE memories SET timestamp = ?, access_count = access_count + 1 WHERE key = ?'
-      ).run(Date.now(), fuzzyMatch);
+        `UPDATE memories SET timestamp = ?, access_count = access_count + 1,
+         origin = CASE WHEN ? = 'user' THEN 'user' ELSE origin END WHERE key = ?`
+      ).run(Date.now(), memory.origin ?? null, fuzzyMatch);
       this.db.pragma('wal_checkpoint(TRUNCATE)');
       return;
     }
@@ -633,8 +665,8 @@ export class MemoryStorage {
       INSERT INTO memories
       (key, value, type, project_id, file_path, timestamp, relevance_score, access_count,
        preference_key, is_active, superseded_by, superseded_at, confidence_score, sophistication_level, scope, content_hash,
-       source_session, source_transcript, source_entry, source_excerpt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       source_session, source_transcript, source_entry, source_excerpt, origin)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET
         value = excluded.value,
         type = excluded.type,
@@ -658,7 +690,11 @@ export class MemoryStorage {
         source_excerpt = COALESCE(excluded.source_excerpt, memories.source_excerpt),
         -- a confirmation covers the content that was checked; new content starts unconfirmed
         confirmed_at = CASE WHEN excluded.content_hash IS memories.content_hash
-                            THEN memories.confirmed_at ELSE NULL END
+                            THEN memories.confirmed_at ELSE NULL END,
+        -- the user's own content stays theirs when re-saved unchanged; new
+        -- content takes the new writer's origin
+        origin = CASE WHEN excluded.content_hash IS memories.content_hash AND memories.origin = 'user'
+                      THEN 'user' ELSE excluded.origin END
     `);
 
     stmt.run(
@@ -681,7 +717,8 @@ export class MemoryStorage {
       memory.source_session || null,
       memory.source_transcript || null,
       memory.source_entry || null,
-      memory.source_excerpt || null
+      memory.source_excerpt || null,
+      memory.origin ?? null
     );
 
     // Newest-wins: retire the fuzzy-matched old row in favor of the row just
@@ -826,6 +863,7 @@ export class MemoryStorage {
       source_entry: row.source_entry || null,
       source_excerpt: row.source_excerpt || null,
       confirmed_at: row.confirmed_at || null,
+      origin: row.origin || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };
@@ -1281,7 +1319,7 @@ export class MemoryStorage {
     }
     return this.db.prepare(`
       SELECT id, key, type, value, load_count, cite_count, timestamp,
-             source_session, source_transcript, source_entry, source_excerpt, confirmed_at
+             source_session, source_transcript, source_entry, source_excerpt, confirmed_at, origin
       FROM memories
       WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
       ORDER BY timestamp ASC

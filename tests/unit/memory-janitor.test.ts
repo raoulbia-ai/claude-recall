@@ -288,7 +288,7 @@ describe('applyJanitorActions', () => {
     // fuzzyNewestWins: the replacement must supersede a similar still-active
     // source instead of being absorbed into it (then destroyed by the demote).
     expect(mockStoreMemory).toHaveBeenCalledWith(
-      'One consolidated failure lesson', 'failure', undefined, 0.9, { fuzzyNewestWins: true },
+      'One consolidated failure lesson', 'failure', undefined, 0.9, { fuzzyNewestWins: true, origin: null },
     );
   });
 
@@ -513,7 +513,7 @@ describe('source evidence', () => {
       ]),
     );
     expect(mockStoreMemory).toHaveBeenCalledWith(
-      'Use pnpm for every install', 'preference', undefined, 0.9, { fuzzyNewestWins: true, source: src },
+      'Use pnpm for every install', 'preference', undefined, 0.9, { fuzzyNewestWins: true, source: src, origin: null },
     );
   });
 });

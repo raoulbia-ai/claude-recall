@@ -33,7 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { hookLog, hookStateDir, jaccardSimilarity, safeErrorMessage, storeMemory } from './shared';
 import { MemoryService, MemorySource } from '../services/memory';
-import { ActiveRuleRow, SourceColumns } from '../memory/storage';
+import { ActiveRuleRow, SourceColumns, MemoryOrigin, leastTrustedOrigin } from '../memory/storage';
 import { ConfigService } from '../services/config';
 import { formatRuleValue } from '../mcp/tools/memory-tools';
 
@@ -335,7 +335,7 @@ export function parseJanitorActions(
  */
 export function applyJanitorActions(
   actions: JanitorAction[],
-  rulesById: Map<number, { id: number; type: string; source?: MemorySource }>,
+  rulesById: Map<number, { id: number; type: string; source?: MemorySource; origin?: MemoryOrigin | null }>,
   opts: { dryRun?: boolean } = {},
 ): Array<JanitorAction & { applied: boolean }> {
   const storage = MemoryService.getInstance().getStorage();
@@ -353,7 +353,9 @@ export function applyJanitorActions(
           // The replacement keeps the provenance of the first source rule that
           // has one, so the next review can still check it against the user's words.
           const source = action.ids.map(id => rulesById.get(id)?.source).find(Boolean);
-          storeMemory(action.replacement!, type, undefined, 0.9, { fuzzyNewestWins: true, source });
+          // A merge or rewrite is only as trusted as the least trusted rule it came from
+          const origin = leastTrustedOrigin(action.ids.map(id => rulesById.get(id)?.origin));
+          storeMemory(action.replacement!, type, undefined, 0.9, { fuzzyNewestWins: true, source, origin });
         }
         if (action.action === 'confirm') {
           applied = storage.confirmRulesByIds(action.ids) > 0;
@@ -426,7 +428,7 @@ export async function handleMemoryJanitorWorker(
     const actions = dropCosmeticRewrites(parseJanitorActions(raw, validIds, confirmableIds(reviewable)), textById);
     hookLog(HOOK_NAME, `reviewed ${reviewable.length} rules → ${actions.length} action(s)${opts.dryRun ? ' (dry-run)' : ''}`);
 
-    const rulesById = new Map(reviewable.map(r => [r.id, { id: r.id, type: r.type, source: sourceOf(r) }]));
+    const rulesById = new Map(reviewable.map(r => [r.id, { id: r.id, type: r.type, source: sourceOf(r), origin: r.origin ?? null }]));
     const results = applyJanitorActions(actions, rulesById, { dryRun: opts.dryRun });
 
     const report: JanitorReport = {

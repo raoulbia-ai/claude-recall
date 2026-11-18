@@ -53,7 +53,7 @@ describe('solution memory type (success-capture)', () => {
   });
 
   it('loadActiveRules() returns a solutions bucket with active solution rows', () => {
-    service.store({
+    service.store({ origin: 'user',
       key: 'sol_1',
       value: { content: 'To submit to Kaggle programmatically, use `kaggle competitions submit -c <slug> -f <file> -m <msg>`' },
       type: 'solution',
@@ -66,7 +66,7 @@ describe('solution memory type (success-capture)', () => {
   });
 
   it('demoting a solution (is_active=0) drops it from the bucket', () => {
-    service.store({ key: 'sol_demote', value: { content: 'demote me' }, type: 'solution' });
+    service.store({ origin: 'user', key: 'sol_demote', value: { content: 'demote me' }, type: 'solution' });
     const before = service.loadActiveRules(PROJECT).solutions.some(m => m.key === 'sol_demote');
     expect(before).toBe(true);
 
@@ -85,7 +85,7 @@ describe('solution memory type (success-capture)', () => {
   });
 
   it('a solution is a RULE type — searchable and scoped like other rules', () => {
-    service.store({
+    service.store({ origin: 'user',
       key: 'sol_scoped',
       value: { content: 'scoped solution fixture' },
       type: 'solution',

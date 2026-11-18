@@ -214,7 +214,7 @@ describe('search_memory shows the source', () => {
     fs.writeFileSync(transcript, '{}\n');
     try {
       const { MemoryService } = await import('../../src/services/memory');
-      MemoryService.getInstance().store({
+      MemoryService.getInstance().store({ origin: 'user',
         key: 'with-source',
         value: { content: 'zebrafish builds use the release profile' },
         type: 'devops',
@@ -231,7 +231,7 @@ describe('search_memory shows the source', () => {
 
   it('quotes the saved excerpt once the transcript is deleted', async () => {
     const { MemoryService } = await import('../../src/services/memory');
-    MemoryService.getInstance().store({
+    MemoryService.getInstance().store({ origin: 'user',
       key: 'gone-source',
       value: { content: 'narwhal releases are tagged by hand' },
       type: 'devops',
@@ -244,7 +244,7 @@ describe('search_memory shows the source', () => {
 
   it('prints no source line for a memory without one', async () => {
     const { MemoryService } = await import('../../src/services/memory');
-    MemoryService.getInstance().store({
+    MemoryService.getInstance().store({ origin: 'user',
       key: 'no-source',
       value: { content: 'quokka deploys go through staging first' },
       type: 'devops',

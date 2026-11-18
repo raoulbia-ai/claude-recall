@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { MemoryStorage, Memory } from '../memory/storage';
+import { MemoryStorage, Memory, MemoryOrigin } from '../memory/storage';
+import { redactSecrets, redactValue, screenForAttack } from './memory-guard';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
@@ -76,6 +77,11 @@ export interface MemoryStoreRequest {
   preferenceKey?: string;
   isOverride?: boolean;
   source?: MemorySource;
+  /**
+   * Where this memory came from. Required so every write path has to decide;
+   * null only for content of genuinely unknown origin. Only 'user' is trusted.
+   */
+  origin: MemoryOrigin | null;
 }
 
 const SOURCE_ID_SHAPE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -102,6 +108,13 @@ export function sanitizeSource(
       ? source.excerpt.slice(0, MAX_SOURCE_EXCERPT_CHARS)
       : null,
   };
+}
+
+/** What happened to a store request. */
+export interface StoreOutcome {
+  stored: boolean;
+  /** Why it was refused, when it was. */
+  reason?: string;
 }
 
 export class MemoryService {
@@ -138,7 +151,11 @@ export class MemoryService {
   /**
    * Store a memory with proper context and logging
    */
-  store(request: MemoryStoreRequest, opts?: { fuzzyNewestWins?: boolean }): void {
+  /**
+   * Store a memory. Returns whether it was stored: test-fixture text and
+   * attack-shaped text from an untrusted origin are refused, not thrown.
+   */
+  store(request: MemoryStoreRequest, opts?: { fuzzyNewestWins?: boolean }): StoreOutcome {
     try {
       // Write-time guard: silently drop values matching known test-fixture patterns
       // (Test preference 177…, Session test preference …, Memory with complex metadata,
@@ -148,7 +165,26 @@ export class MemoryService {
           key: request.key,
           type: request.type,
         });
-        return;
+        return { stored: false, reason: 'test fixture' };
+      }
+
+      // Guardrails (docs/design-memory-poisoning-defense.md). Secrets never
+      // reach the store; attack-shaped text from anyone but the user is
+      // refused. The user may legitimately state "never pipe curl to sh".
+      const value = redactValue(request.value);
+      const source = request.source?.excerpt
+        ? { ...request.source, excerpt: redactSecrets(request.source.excerpt) }
+        : request.source;
+      const attack = screenForAttack(typeof value === 'string' ? value : JSON.stringify(value));
+      if (attack.length > 0 && request.origin !== 'user') {
+        const reason = `looks like an attack (${attack.join(', ')})`;
+        this.logger.warn('MemoryService', `Refused ${request.origin ?? 'unknown'}-origin write: ${reason}`, {
+          key: request.key,
+          type: request.type,
+        });
+        // stderr: visible in hook logs and the MCP server log; never stdout (JSON-RPC)
+        console.error(`🛡️  Recall refused a memory from ${request.origin ?? 'an unknown source'}: ${reason}`);
+        return { stored: false, reason };
       }
 
       // Check memory limits and notify if approaching
@@ -167,7 +203,7 @@ export class MemoryService {
 
       const memory: Memory = {
         key: request.key,
-        value: request.value,
+        value,
         type: request.type,
         project_id: scope === 'universal' ? undefined : (request.context?.projectId || this.config.getProjectId()),
         file_path: request.context?.filePath,
@@ -176,7 +212,8 @@ export class MemoryService {
         scope: scope,
         preference_key: request.preferenceKey,
         is_active: true,
-        ...sanitizeSource(request.source),
+        ...sanitizeSource(source),
+        origin: request.origin,
       };
 
       this.storage.save(memory, opts);
@@ -187,7 +224,8 @@ export class MemoryService {
         projectId: memory.project_id,
         filePath: memory.file_path
       });
-      
+
+      return { stored: true };
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'store', error as Error, {
         key: request.key,
@@ -343,6 +381,7 @@ export class MemoryService {
     
     this.store({
       key,
+      origin: 'tool',
       value: {
         tool_name: toolName,
         tool_input: toolInput,
@@ -415,6 +454,7 @@ export class MemoryService {
     
     this.store({
       key,
+      origin: null, // no caller; origin unknown
       value: {
         ...preference,
         session_id: context.sessionId
@@ -433,6 +473,7 @@ export class MemoryService {
     
     this.store({
       key,
+      origin: null, // no caller; origin unknown
       value: knowledge,
       type: 'project-knowledge',
       context,

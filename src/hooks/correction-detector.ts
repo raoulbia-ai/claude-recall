@@ -84,6 +84,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   // stored (losing what the user said is worse) but flagged so injection
   // nudges the agent to ask for a precise restatement.
   storeMemory(result.extract, result.type, undefined, result.confidence, {
+    origin: 'user', // the user's prompt
     needsPrecision: result.precision === 'vague',
     fuzzyNewestWins: true,
     // no entry uuid: the prompt isn't written to the transcript yet

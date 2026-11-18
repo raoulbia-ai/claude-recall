@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Auto-generated skills are off by default.** Every `store_memory` used to regenerate `.claude/skills/auto-*/SKILL.md` from stored memories, and Claude Code loads those files as skills: a persistent instruction built from whatever the agent had just stored, including anything an attacker steered it into storing. The integration tests showed it by regenerating this repository's own `auto-preferences` skill with test fixtures. Set `CLAUDE_RECALL_AUTO_SKILLS=1` to keep the old behaviour; `claude-recall skills generate` still works by hand. Existing skill files are not deleted. Part of the memory-poisoning defense plan, [docs/design-memory-poisoning-defense.md](docs/design-memory-poisoning-defense.md).
 
+- **Every memory records where it came from.** A new `origin` column: `user` (your words, or you typing at the CLI), `agent` (`store_memory`; the agent may have been steered), `tool` (failure capture, session learnings: text derived from tool output), `import`. Memories stored before this have no origin and count as unverified. The user restating a rule makes it theirs; nothing else upgrades a rule's trust, and a janitor merge is only as trusted as its least trusted source.
+- **Secrets are redacted on every write.** Cloud, GitHub, GitLab, Slack, Anthropic and OpenAI-style tokens, JWTs, private key blocks and `password=…` / `api_key: …` values are replaced with `[REDACTED]` in the stored value and the source excerpt.
+- **Attack-shaped text from an untrusted origin is refused.** A download piped to a shell or interpreter, "ignore previous instructions", role or system-prompt markers, long encoded payloads and decode-and-execute pipelines are refused unless the user said them. `store_memory` and Pi's `recall_store` tell the agent the write was refused and why.
+- **A red-team suite** (`tests/redteam/`) runs with the tests: each case states the attacker's goal, entry point, target, expected safe behaviour and severity.
+
 ### Fixed
 
 - **The MCP integration test no longer writes into the repository.** Its server now gets the temp directory as its project root.
