@@ -8,7 +8,6 @@
  */
 import { MemoryService } from '../../src/services/memory';
 import { leastTrustedOrigin } from '../../src/memory/storage';
-import { autoSkillsEnabled } from '../../src/mcp/tools/memory-tools';
 
 /** A fake GitHub token, assembled at runtime so no token literal is in the source. */
 const FAKE_GH = ['gh', 'p_', 'a'.repeat(36)].join('');
@@ -144,13 +143,17 @@ describe('memory poisoning red team', () => {
   const RT07: RedTeamCase = {
     id: 'RT-07', severity: 'critical',
     attackerGoal: 'turn a stored rule into a persistent skill',
-    entryPoint: 'store_memory regenerating .claude/skills/auto-*',
+    entryPoint: 'store_memory writing .claude/skills/auto-* (removed feature)',
     targetAsset: 'skill files Claude Code loads as instructions',
-    expected: 'no skill is generated unless the user opted in',
+    expected: 'nothing in claude-recall generates skill files any more',
   };
   it(title(RT07), () => {
-    delete process.env.CLAUDE_RECALL_AUTO_SKILLS;
-    expect(autoSkillsEnabled()).toBe(false);
+    const fs = require('fs');
+    const path = require('path');
+    const src = path.join(__dirname, '../../src');
+    expect(fs.existsSync(path.join(src, 'services/skill-generator.ts'))).toBe(false);
+    const tools: string = fs.readFileSync(path.join(src, 'mcp/tools/memory-tools.ts'), 'utf8');
+    expect(tools).not.toMatch(/SKILL\.md|skills\/auto-|SkillGenerator/);
   });
 
   const RT08: RedTeamCase = {

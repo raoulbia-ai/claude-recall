@@ -4,7 +4,6 @@ import { redactSecrets, redactValue, screenForAttack } from './memory-guard';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
 import { LoggingService } from './logging';
-import { ExtractedPreference } from './preference-extractor';
 import { isTestPollution } from './test-pollution';
 import { isBoilerplateFailureValue } from './memory-quality';
 
@@ -497,55 +496,6 @@ export class MemoryService {
     });
   }
   
-  /**
-   * Store a preference with override handling
-   */
-  storePreferenceWithOverride(preference: ExtractedPreference, context: MemoryServiceContext): void {
-    try {
-      const key = `preference_${preference.key}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Handle override logic
-      if (preference.isOverride) {
-        this.markSupersededPreferences(preference.key, key, context);
-      }
-      
-      const memory: Memory = {
-        key,
-        value: {
-          ...preference,
-          session_id: context.sessionId,
-          preference_key: preference.key
-        },
-        type: 'preference',
-        project_id: context.projectId || this.config.getProjectId(),
-        file_path: context.filePath,
-        timestamp: context.timestamp || Date.now(),
-        relevance_score: preference.confidence,
-        preference_key: preference.key,
-        is_active: true,
-        confidence_score: preference.confidence
-      };
-      
-      this.storage.save(memory);
-      
-      this.logger.logMemoryOperation('STORE_PREFERENCE', {
-        key,
-        preferenceKey: preference.key,
-        value: preference.value,
-        isOverride: preference.isOverride,
-        confidence: preference.confidence,
-        projectId: memory.project_id
-      });
-      
-    } catch (error) {
-      this.logger.logServiceError('MemoryService', 'storePreferenceWithOverride', error as Error, {
-        preferenceKey: preference.key,
-        value: preference.value
-      });
-      throw error;
-    }
-  }
-
   /**
    * Mark all currently-active memories with the given preference_key as superseded by newKey.
    * Returns the list of superseded keys so callers can surface them to the agent — this
