@@ -1,6 +1,6 @@
 # Design: memory-poisoning defense
 
-Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)). Done: Phase 0 (#150), Phase 1.
+Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)). Done: Phase 0 (#150), Phase 1 (#151), Phase 2.
 
 ## The problem
 

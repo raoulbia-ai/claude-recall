@@ -632,6 +632,44 @@ class ClaudeRecallCLI {
   /**
    * Restore a previously auto-demoted rule. Refuses to touch preference-supersession rows.
    */
+  /** Print a memory's change history, or the latest changes across all memories. */
+  showHistory(idOrKey: string | undefined, limit: number): void {
+    const storage = this.memoryService.getStorage();
+    const rows = idOrKey === undefined
+      ? storage.getHistory({ limit })
+      : /^\d+$/.test(idOrKey)
+        ? storage.getHistory({ id: parseInt(idOrKey, 10) })
+        : storage.getHistory({ key: idOrKey });
+    if (rows.length === 0) {
+      console.log(idOrKey === undefined ? 'No changes recorded yet.' : `No history for ${idOrKey}.`);
+      return;
+    }
+    const text = (v: string | null) => {
+      if (!v) return '';
+      try {
+        const parsed = JSON.parse(v);
+        const s = typeof parsed === 'string' ? parsed : parsed?.content ?? parsed?.value ?? v;
+        return String(typeof s === 'string' ? s : JSON.stringify(s)).replace(/\s+/g, ' ').slice(0, 100);
+      } catch {
+        return v.slice(0, 100);
+      }
+    };
+    console.log(idOrKey === undefined ? `\nLatest ${rows.length} change(s):\n` : `\nHistory of ${idOrKey}:\n`);
+    for (const r of rows) {
+      const when = new Date(r.at).toISOString().replace('T', ' ').slice(0, 19);
+      const who = r.origin ?? 'unknown origin';
+      const head = `${when}  ${r.event.padEnd(10)} #${r.memory_id ?? '?'} ${r.type ?? ''} (${who})${r.reason ? ` — ${r.reason}` : ''}`;
+      console.log(head);
+      if (r.event === 'rewrite') {
+        console.log(`    was: ${text(r.old_value)}`);
+        console.log(`    now: ${text(r.new_value)}`);
+      } else if (r.event === 'create' || r.event === 'delete') {
+        console.log(`    ${text(r.new_value ?? r.old_value)}`);
+      }
+    }
+    console.log('');
+  }
+
   promoteRule(id: number): void {
     const ok = this.memoryService.promoteRule(id);
     if (ok) {
@@ -2357,6 +2395,16 @@ async function main() {
     .action((id) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.promoteRule(parseInt(id));
+      process.exit(0);
+    });
+
+  rulesCmd
+    .command('history [idOrKey]')
+    .description('Show how a memory was created and changed (or the latest changes across all memories)')
+    .option('--limit <n>', 'Changes to show when no memory is named', '20')
+    .action((idOrKey, options) => {
+      const cli = new ClaudeRecallCLI(program.opts());
+      cli.showHistory(idOrKey, parsePositiveInt(options.limit, 'limit', 20));
       process.exit(0);
     });
 

@@ -376,6 +376,98 @@ export class MemoryStorage {
     // FTS5-less SQLite build degrades to the LIKE path instead of aborting the
     // whole migration.
     this.setupFts();
+
+    // Change history (v0.51.0). Also separate: an audit trail that failed to
+    // set up must not take the memory store down with it.
+    this.setupHistory();
+  }
+
+  /**
+   * Append-only history of every meaningful change to a memory: created,
+   * content rewritten, deactivated (with the reason in superseded_by),
+   * reactivated, confirmed, origin changed, deleted. Recorded by triggers, so
+   * no writer, present or future, can change a memory without leaving a row
+   * here (docs/design-memory-poisoning-defense.md, Phase 2). Counter bumps
+   * (timestamp, access/load/cite counts) are not changes and are not logged.
+   */
+  private setupHistory(): void {
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS memory_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memory_id INTEGER,
+          memory_key TEXT NOT NULL,
+          event TEXT NOT NULL,
+          type TEXT,
+          origin TEXT,
+          old_value TEXT,
+          new_value TEXT,
+          reason TEXT,
+          at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_history_key ON memory_history(memory_key);
+        CREATE INDEX IF NOT EXISTS idx_memory_history_at ON memory_history(at);
+
+        CREATE TRIGGER IF NOT EXISTS memories_hist_ai AFTER INSERT ON memories BEGIN
+          INSERT INTO memory_history (memory_id, memory_key, event, type, origin, new_value, reason, at)
+          VALUES (new.id, new.key, 'create', new.type, new.origin, new.value,
+                  CASE WHEN new.is_active = 0 THEN new.superseded_by END,
+                  CAST(strftime('%s','now') AS INTEGER) * 1000);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS memories_hist_au AFTER UPDATE ON memories
+        WHEN old.value IS NOT new.value OR old.is_active IS NOT new.is_active
+          OR old.origin IS NOT new.origin OR old.confirmed_at IS NOT new.confirmed_at
+          OR old.type IS NOT new.type
+        BEGIN
+          INSERT INTO memory_history (memory_id, memory_key, event, type, origin, old_value, new_value, reason, at)
+          VALUES (new.id, new.key,
+                  CASE
+                    WHEN old.is_active = 1 AND new.is_active = 0 THEN 'deactivate'
+                    WHEN old.is_active = 0 AND new.is_active = 1 THEN 'reactivate'
+                    WHEN old.value IS NOT new.value THEN 'rewrite'
+                    WHEN old.confirmed_at IS NULL AND new.confirmed_at IS NOT NULL THEN 'confirm'
+                    WHEN old.origin IS NOT new.origin THEN 'origin'
+                    ELSE 'update'
+                  END,
+                  new.type, new.origin,
+                  CASE WHEN old.value IS NOT new.value THEN old.value END,
+                  CASE WHEN old.value IS NOT new.value THEN new.value END,
+                  CASE
+                    WHEN old.is_active = 1 AND new.is_active = 0 THEN new.superseded_by
+                    WHEN old.origin IS NOT new.origin THEN coalesce(old.origin, 'unknown') || ' -> ' || coalesce(new.origin, 'unknown')
+                  END,
+                  CAST(strftime('%s','now') AS INTEGER) * 1000);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS memories_hist_ad AFTER DELETE ON memories BEGIN
+          INSERT INTO memory_history (memory_id, memory_key, event, type, origin, old_value, at)
+          VALUES (old.id, old.key, 'delete', old.type, old.origin, old.value,
+                  CAST(strftime('%s','now') AS INTEGER) * 1000);
+        END;
+      `);
+    } catch (error) {
+      console.error('⚠️  Memory history setup failed (memories are unaffected):', error);
+    }
+  }
+
+  /** History rows for one memory (by key or numeric id), oldest first, or the most recent across all. */
+  getHistory(opts: { key?: string; id?: number; limit?: number } = {}): Array<{
+    id: number; memory_id: number | null; memory_key: string; event: string; type: string | null;
+    origin: string | null; old_value: string | null; new_value: string | null; reason: string | null; at: number;
+  }> {
+    try {
+      if (opts.key !== undefined || opts.id !== undefined) {
+        return this.db.prepare(
+          `SELECT * FROM memory_history WHERE memory_key = ? OR memory_id = ? ORDER BY id ASC`
+        ).all(opts.key ?? null, opts.id ?? null) as any[];
+      }
+      return this.db.prepare(
+        `SELECT * FROM memory_history ORDER BY id DESC LIMIT ?`
+      ).all(opts.limit ?? 20) as any[];
+    } catch {
+      return [];
+    }
   }
 
   /**

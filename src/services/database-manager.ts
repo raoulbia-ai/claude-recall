@@ -195,6 +195,9 @@ export class DatabaseManager {
         if (!dryRun) console.error(`🔄 Pruned ${prunedRows} outcome rows`);
       }
 
+      // 3b. Change history past its retention window (default a year)
+      removedCount += this.pruneHistory(db, dryRun);
+
       // 4. Run VACUUM to reclaim space (only if not dry run)
       if (!dryRun) {
         this.logger.info('DatabaseManager', 'Running VACUUM to reclaim space...');
@@ -495,6 +498,28 @@ export class DatabaseManager {
   }
 
   
+  /**
+   * Drop memory-history rows older than CLAUDE_RECALL_RETAIN_HISTORY_DAYS
+   * (default 365; -1 keeps all). The history is an audit trail: it has to
+   * outlive a planted rule long enough to find it, but not forever.
+   */
+  private pruneHistory(db: Database.Database, dryRun: boolean): number {
+    const days = parseInt(process.env.CLAUDE_RECALL_RETAIN_HISTORY_DAYS || '365', 10);
+    if (!(days >= 0)) return 0;
+    try {
+      if (!tableColumns(db, 'memory_history').size) return 0;
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      const n = dryRun
+        ? (db.prepare('SELECT COUNT(*) AS c FROM memory_history WHERE at < ?').get(cutoff) as any).c as number
+        : db.prepare('DELETE FROM memory_history WHERE at < ?').run(cutoff).changes;
+      if (n > 0) this.logger.info('DatabaseManager', `Pruned ${n} history rows older than ${days} days`);
+      return n;
+    } catch (error) {
+      this.logger.error('DatabaseManager', 'Error pruning memory history', error);
+      return 0;
+    }
+  }
+
   /**
    * Get compaction configuration
    */

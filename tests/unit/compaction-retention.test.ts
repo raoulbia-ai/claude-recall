@@ -193,6 +193,22 @@ describe('compaction retention', () => {
     expect(kept).not.toContain('learned-key');
   });
 
+  it('drops change history older than the retention window, keeps the rest', async () => {
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE memory_history (id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER,
+      memory_key TEXT NOT NULL, event TEXT NOT NULL, type TEXT, origin TEXT, old_value TEXT,
+      new_value TEXT, reason TEXT, at INTEGER NOT NULL)`);
+    const add = db.prepare(`INSERT INTO memory_history (memory_key, event, at) VALUES (?, 'create', ?)`);
+    add.run('ancient', daysAgo(400));
+    add.run('recent', daysAgo(10));
+    db.close();
+    configure({ toolUse: -1, corrections: -1, failures: -1, telemetryDays: -1 });
+
+    await DatabaseManager.getInstance().compact();
+
+    expect(rows('SELECT memory_key FROM memory_history').map(r => r.memory_key)).toEqual(['recent']);
+  });
+
   it('gives up inactive rows before strong ones', async () => {
     // fail-0 and fail-1 are the strongest rows by strength, but superseded:
     // they are already out of every retrieval path, so the cap takes them first.

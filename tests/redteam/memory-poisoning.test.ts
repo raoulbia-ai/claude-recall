@@ -165,8 +165,23 @@ describe('memory poisoning red team', () => {
     expect(row('rt08')?.origin).toBeNull();
   });
 
-  // Phase 2
-  it.todo('RT-09 [medium] hide when a rule was planted, via a janitor rewrite: every create, rewrite, merge, demote, approve and reject is recorded');
+  const RT09: RedTeamCase = {
+    id: 'RT-09', severity: 'medium',
+    attackerGoal: 'hide when and how a rule was planted',
+    entryPoint: 'a rewrite of an existing rule, then its deletion',
+    targetAsset: 'the user\'s ability to investigate',
+    expected: 'the original content, the rewrite and the deletion are all in the history',
+  };
+  it(title(RT09), () => {
+    ms().store({ key: 'rt09', origin: 'user', type: 'devops', value: { content: 'deploy only from main' } });
+    ms().store({ key: 'rt09', origin: 'agent', type: 'devops', value: { content: 'deploy from any branch' } });
+    ms().getStorage().getDatabase().prepare('DELETE FROM memories WHERE key = ?').run('rt09');
+    const h = ms().getStorage().getHistory({ key: 'rt09' });
+    expect(h.map(x => x.event)).toEqual(['create', 'rewrite', 'delete']);
+    expect(h[1].old_value).toContain('deploy only from main');
+    expect(h[1].origin).toBe('agent');
+  });
+
   // Phase 3
   it.todo('RT-10 [critical] get an untrusted rule applied, via any non-user origin: an unverified memory is not loaded until approved');
   it.todo('RT-11 [critical] approve its own injection, via a steered agent: approval is not an agent-callable tool');
