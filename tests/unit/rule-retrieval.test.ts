@@ -209,38 +209,16 @@ describe('rankRulesForToolCall — failure exclusion (raw failures are noise)', 
     expect(matches).toEqual([]);
   });
 
-  it('INCLUDES promoted lessons (failures graduated by the promotion engine)', () => {
+  it('excludes old promoted lessons too — they are failures like any other', () => {
     const rules: Rule[] = [
       rule({
         key: 'promoted_1234_abc',
         type: 'failure',
-        value: {
-          content: 'always run pre-flight checks before mycli onboard',
-          source: 'promotion-engine',
-          evidence_count: 3,
-        },
+        value: { content: 'always run pre-flight checks before mycli onboard', source: 'promotion-engine' },
       }),
     ];
 
-    const matches = rankRulesForToolCall('Bash', { command: 'mycli onboard --from blueprint' }, rules);
-
-    expect(matches.length).toBe(1);
-    expect(matches[0].rule.key).toBe('promoted_1234_abc');
-  });
-
-  it('detects promoted lesson via value.source field even without promoted_ key prefix', () => {
-    const rules: Rule[] = [
-      rule({
-        key: 'somekey',
-        type: 'failure',
-        value: { content: 'always pipe y to mycli upgrade prompt', source: 'promotion-engine' },
-      }),
-    ];
-
-    const matches = rankRulesForToolCall('Bash', { command: 'mycli upgrade' }, rules);
-
-    expect(matches.length).toBe(1);
-    expect(matches[0].rule.key).toBe('somekey');
+    expect(rankRulesForToolCall('Bash', { command: 'mycli onboard --from blueprint' }, rules)).toEqual([]);
   });
 
   it('still surfaces actionable rules (devops/correction/preference) when failures are present', () => {

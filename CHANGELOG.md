@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **The last code that treated old lessons specially.** 0.50.0 stopped making lessons; this removes the parts that still read them:
+  - the retrieval boost for promoted lessons;
+  - their exemption from the failure cap at compaction (confirmed rules stay exempt);
+  - their own section in `load_rules`;
+  - their just-in-time injection (they are failures like any other now);
+  - the lesson section of `claude-recall outcomes`;
+  - the `session-review` MCP prompt, which only reported lessons.
+
+  Old lesson rows stay in the database; the `candidate_lessons` table is still created and pruned, but nothing reads it.
+
 ## [0.50.0] - 2026-11-18
 
 ### Removed

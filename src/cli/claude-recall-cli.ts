@@ -642,7 +642,8 @@ class ClaudeRecallCLI {
   }
 
   /**
-   * Show outcome-aware learning status: episodes, outcome events, candidate lessons, memory stats
+   * Show outcome history (episodes, outcome events, memory stats), written only
+   * when CLAUDE_RECALL_OUTCOME_TRACKING=on
    */
   showOutcomes(options: { limit?: number; section?: string }): void {
     const limit = parsePositiveInt(options.limit, 'limit', 10);
@@ -651,27 +652,27 @@ class ClaudeRecallCLI {
 
     // Check if outcome tables exist
     const tables = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','candidate_lessons','memory_stats')"
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('episodes','outcome_events','memory_stats')"
     ).all() as Array<{ name: string }>;
     const tableNames = new Set(tables.map((t: any) => t.name));
 
-    if (tableNames.size < 4) {
+    if (tableNames.size < 3) {
       console.log('\n⚠️  Outcome tables not found. Upgrade to v0.18.0+ and restart the MCP server.\n');
       return;
     }
 
-    console.log('\n📊 Outcome-Aware Learning Status\n');
+    console.log('\n📊 Outcome History\n');
+    if (!/^(on|true|1)$/i.test(process.env.CLAUDE_RECALL_OUTCOME_TRACKING || '')) {
+      console.log('  (Not being recorded: set CLAUDE_RECALL_OUTCOME_TRACKING=on to record new history.)\n');
+    }
 
     // Summary counts
     const episodeCount = (db.prepare('SELECT COUNT(*) as c FROM episodes').get() as any).c;
     const eventCount = (db.prepare('SELECT COUNT(*) as c FROM outcome_events').get() as any).c;
-    const candidateCount = (db.prepare('SELECT COUNT(*) as c FROM candidate_lessons').get() as any).c;
-    const promotedCount = (db.prepare("SELECT COUNT(*) as c FROM candidate_lessons WHERE status = 'promoted'").get() as any).c;
     const statsCount = (db.prepare('SELECT COUNT(*) as c FROM memory_stats').get() as any).c;
 
     console.log(`  Episodes:          ${episodeCount}`);
     console.log(`  Outcome events:    ${eventCount}`);
-    console.log(`  Candidate lessons: ${candidateCount} (${promotedCount} promoted)`);
     console.log(`  Tracked memories:  ${statsCount}`);
     console.log('');
 
@@ -706,23 +707,6 @@ class ClaudeRecallCLI {
           const time = new Date(ev.created_at).toLocaleString();
           console.log(`  [${ev.event_type}] ${ev.actor}${exitStr}: ${ev.summary}`);
           console.log(`     ${time}`);
-        }
-        console.log('');
-      }
-    }
-
-    // Candidate lessons
-    if (!section || section === 'lessons') {
-      const lessons = db.prepare(
-        'SELECT status, evidence_count, confidence, lesson_kind, substr(lesson_text, 1, 100) as text, created_at FROM candidate_lessons ORDER BY created_at DESC LIMIT ?'
-      ).all(limit) as any[];
-
-      if (lessons.length > 0) {
-        console.log(`── Candidate Lessons (${lessons.length}) ──\n`);
-        for (const l of lessons) {
-          const icon = l.status === 'promoted' ? '⬆️' : l.status === 'rejected' ? '⬇️' : '⏳';
-          console.log(`  ${icon} [${l.status}] (${l.evidence_count}x, ${(l.confidence * 100).toFixed(0)}%) ${l.text}`);
-          console.log(`     kind: ${l.lesson_kind}  ${new Date(l.created_at).toLocaleString()}`);
         }
         console.log('');
       }
@@ -2332,9 +2316,9 @@ async function main() {
   // Outcomes command (v0.18.0)
   program
     .command('outcomes')
-    .description('Show outcome-aware learning status: episodes, events, lessons, stats')
+    .description('Show outcome history (recorded only with CLAUDE_RECALL_OUTCOME_TRACKING=on)')
     .option('--limit <number>', 'Maximum items per section', '10')
-    .option('--section <name>', 'Show only one section: episodes, events, lessons, stats')
+    .option('--section <name>', 'Show only one section: episodes, events, stats')
     .action((options) => {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.showOutcomes({

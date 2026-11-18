@@ -164,9 +164,10 @@ describe('compaction retention', () => {
     expect(rows('SELECT id FROM episodes').map(r => r.id)).toEqual(['ep-live']);
   });
 
-  it('never prunes a confirmed or promoted failure, however weak', async () => {
-    // Three rows the cap must not touch: a human-confirmed rule, a promotion
-    // written under the engine's naming, and one linked from its lesson.
+  it('never prunes a confirmed failure, however weak; old promoted lessons get no protection', async () => {
+    // The confirmed rule must survive. The two promotions (retired lesson step:
+    // one by key prefix, one linked from its lesson) are weak and old, so the
+    // cap takes them like any other failure.
     const db = new Database(dbPath);
     const add = db.prepare(
       `INSERT INTO memories (key, value, type, timestamp, access_count, cite_count, load_count, confirmed_at)
@@ -185,8 +186,11 @@ describe('compaction retention', () => {
 
     await DatabaseManager.getInstance().compact();
 
-    const kept = rows(`SELECT key FROM memories WHERE type = 'failure'`).map(r => r.key).sort();
-    expect(kept).toEqual(['fail-confirmed', 'learned-key', 'promoted_17_abc']);
+    const kept = rows(`SELECT key FROM memories WHERE type = 'failure'`).map(r => r.key);
+    expect(kept).toHaveLength(3);
+    expect(kept).toContain('fail-confirmed');
+    expect(kept).not.toContain('promoted_17_abc');
+    expect(kept).not.toContain('learned-key');
   });
 
   it('gives up inactive rows before strong ones', async () => {

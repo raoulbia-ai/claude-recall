@@ -6,7 +6,7 @@ import { LoggingService } from './logging';
 import { MemoryRetrieval } from '../core/retrieval';
 import { Memory } from '../memory/storage';
 import { pruneOutcomeData, telemetryRetentionDays } from './outcome-storage';
-import { presentTables, tableColumns } from './sqlite-tables';
+import { tableColumns } from './sqlite-tables';
 
 export interface CompactionConfig {
   autoCompact: boolean;
@@ -422,30 +422,12 @@ export class DatabaseManager {
   }
   
   /**
-   * Rows a retention cap must never take.
-   *
-   * A confirmed rule and a promoted lesson are the two things in the store a
-   * human or the promotion engine deliberately kept, and `DELETE` has no undo:
-   * a lesson earned over several sessions would otherwise be spent to make
-   * room for raw capture, which is stored under the same type.
-   *
-   * The engine names promotions `promoted_*` and records the key on the lesson
-   * they came from; both are checked, since a promotion may predate either
-   * convention on a given database.
+   * Rows a retention cap must never take: a rule the janitor confirmed against
+   * the user's own words. `DELETE` has no undo, and raw capture is stored under
+   * the same type.
    */
-  private capExemption(db: Database.Database): (row: any) => boolean {
-    let promoted = new Set<string>();
-    if (presentTables(db, ['candidate_lessons']).has('candidate_lessons')) {
-      try {
-        const rows = db.prepare(
-          'SELECT promoted_memory_key AS k FROM candidate_lessons WHERE promoted_memory_key IS NOT NULL'
-        ).all() as { k: string }[];
-        promoted = new Set(rows.map(r => r.k));
-      } catch { /* unreadable lesson table — fall back to the name convention */ }
-    }
-
-    return row => row.confirmed_at != null
-      || (typeof row.key === 'string' && (row.key.startsWith('promoted_') || promoted.has(row.key)));
+  private capExemption(): (row: any) => boolean {
+    return row => row.confirmed_at != null;
   }
 
   /**
@@ -473,7 +455,7 @@ export class DatabaseManager {
 
       if (rows.length <= keepCount) return 0;
 
-      const isExempt = this.capExemption(db);
+      const isExempt = this.capExemption();
       const removable = rows.filter(r => !isExempt(r));
       // Inactive first — superseded or demoted rows are already out of every
       // retrieval path, so they cost the cap nothing to give up.
@@ -498,7 +480,7 @@ export class DatabaseManager {
       this.logger.info(
         'DatabaseManager',
         `Pruned ${toRemove.length} weak '${type}' memories (kept ${rows.length - toRemove.length}, `
-        + `${rows.length - removable.length} protected as confirmed or promoted)`,
+        + `${rows.length - removable.length} protected as confirmed)`,
       );
       if (toRemove.length > 0 && !dryRun) {
         // stderr — this can run inside the MCP server, stdout is JSON-RPC

@@ -273,40 +273,6 @@ describe('MemoryRetrieval', () => {
   });
 
   describe('outcome-aware scoring', () => {
-    it('should boost score for memories with evidence count > 1', () => {
-      storage.save({
-        key: 'promoted_mem',
-        value: { data: 'promoted lesson' },
-        type: 'preference',
-        relevance_score: 1.0,
-      });
-
-      storage.save({
-        key: 'normal_mem',
-        value: { data: 'normal lesson' },
-        type: 'preference',
-        relevance_score: 1.0,
-      });
-
-      // Create outcome tables and a promoted candidate lesson linked to promoted_mem
-      const db = storage.getDatabase();
-      db.exec(`
-        INSERT OR IGNORE INTO candidate_lessons (id, project_id, lesson_text, lesson_kind,
-          outcome_type, reward_band, confidence, durability, evidence_count, status,
-          promoted_memory_key, created_at, updated_at)
-        VALUES ('cl1', 'test', 'test', 'rule', 'negative', -1, 0.8, 'project', 3, 'promoted',
-          'promoted_mem', datetime('now'), datetime('now'))
-      `);
-
-      const results = retrieval.findRelevant({ includeAllProjects: true });
-      const promoted = results.find(m => m.key === 'promoted_mem');
-      const normal = results.find(m => m.key === 'normal_mem');
-
-      expect(promoted).toBeDefined();
-      expect(normal).toBeDefined();
-      expect(promoted!.score).toBeGreaterThan(normal!.score);
-    });
-
     it('should apply helpfulness prior from memory_stats', () => {
       storage.save({
         key: 'helpful_mem',

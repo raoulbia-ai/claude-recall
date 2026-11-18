@@ -95,17 +95,16 @@ export class MemoryRetrieval {
     }
 
     // Default: relevance sorting
-    // Batch-fetch usage stats and evidence counts for ALL candidates up
-    // front — the previous per-memory lookups ran 2 extra queries per
-    // candidate over an unbounded set before slicing to the top 5.
+    // Batch-fetch usage stats for ALL candidates up front — per-memory
+    // lookups ran an extra query per candidate over an unbounded set before
+    // slicing to the top 5.
     const statsMap = this.getMemoryStatsBatch(candidates.map(c => c.key));
-    const evidenceMap = this.getEvidenceCountBatch(candidates.map(c => c.key));
 
     // Score and prioritize by memory type
     const scored = candidates
       .map(memory => ({
         ...memory,
-        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null, evidenceMap.get(memory.key) ?? 0)
+        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null)
       }))
       .sort((a, b) => {
         // First priority: memory type. Every RULE type must outrank
@@ -151,7 +150,6 @@ export class MemoryRetrieval {
     memory: Memory,
     context: Context,
     stats: { times_retrieved: number; times_helpful: number; last_confirmed_at: string | null } | null,
-    evidenceCount: number,
   ): number {
     let score = memory.relevance_score || 1.0;
 
@@ -162,7 +160,7 @@ export class MemoryRetrieval {
     //   (b) LIKE path — no bm25Score; fall back to keyword-overlap counting.
     if (memory.bm25Score !== undefined) {
       // Fuse BM25 multiplicatively, preserving the LIKE path's dynamic range
-      // (~1x..4x) so decay/strength/evidence boosts behave identically.
+      // (~1x..4x) so decay/strength boosts behave identically.
       score *= 1 + MemoryRetrieval.W_LEXICAL * memory.bm25Score;
     } else if (context.keywords && context.keywords.length > 0) {
       const memoryStr = JSON.stringify(memory.value).toLowerCase();
@@ -208,11 +206,6 @@ export class MemoryRetrieval {
     // Strength-based boost (replaces ad-hoc access_count and last_accessed boosts)
     const strength = MemoryRetrieval.computeStrength(memory);
     score *= 1 + strength * 2.0;  // Up to 3x boost for max-strength memories
-
-    // Evidence boost: promoted lessons seen multiple times
-    if (evidenceCount > 1) {
-      score *= 1 + Math.min(evidenceCount, 5) * 0.15;  // up to 1.75x
-    }
 
     // Helpfulness prior: retrieved + confirmed helpful
     if (stats && stats.times_retrieved > 0) {
@@ -313,37 +306,15 @@ export class MemoryRetrieval {
     return map;
   }
 
-  /** Batch lookup — one query per 500 keys instead of one per memory. */
-  private getEvidenceCountBatch(keys: string[]): Map<string, number> {
-    const map = new Map<string, number>();
-    if (keys.length === 0) return map;
-    try {
-      for (let i = 0; i < keys.length; i += 500) {
-        const chunk = keys.slice(i, i + 500);
-        const placeholders = chunk.map(() => '?').join(',');
-        const rows = this.storage.getDatabase().prepare(
-          `SELECT promoted_memory_key, evidence_count FROM candidate_lessons WHERE promoted_memory_key IN (${placeholders}) AND status = 'promoted'`
-        ).all(...chunk) as any[];
-        for (const row of rows) {
-          map.set(row.promoted_memory_key, row.evidence_count || 0);
-        }
-      }
-    } catch {
-      // Outcome tables may not exist yet — evidence is an optional boost
-    }
-    return map;
-  }
-
   searchByKeyword(keyword: string): ScoredMemory[] {
     const results = this.storage.search(keyword);
     const context: Context = { timestamp: Date.now() };
     const statsMap = this.getMemoryStatsBatch(results.map(r => r.key));
-    const evidenceMap = this.getEvidenceCountBatch(results.map(r => r.key));
 
     return results
       .map(memory => ({
         ...memory,
-        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null, evidenceMap.get(memory.key) ?? 0)
+        score: this.calculateRelevance(memory, context, statsMap.get(memory.key) ?? null)
       }))
       .sort((a, b) => b.score - a.score);
   }

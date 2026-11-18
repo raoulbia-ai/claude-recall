@@ -294,7 +294,7 @@ claude-recall import backup.json         # Import memories from JSON
 claude-recall delete <key>               # Delete one memory by key (get keys from `search`)
 claude-recall clear --force              # Clear current project (--global for all; auto-backup written first)
 claude-recall failures                   # View failure memories (--limit N)
-claude-recall outcomes                   # Outcome history, when CLAUDE_RECALL_OUTCOME_TRACKING=on (--section lessons|stats, --limit N)
+claude-recall outcomes                   # Outcome history, when CLAUDE_RECALL_OUTCOME_TRACKING=on (--section episodes|events|stats, --limit N)
 claude-recall monitor                    # Memory search monitoring stats
 
 # ── Rule Hygiene ─────────────────────────────────────────────────────

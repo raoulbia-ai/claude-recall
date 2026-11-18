@@ -72,12 +72,12 @@ describe('PromptsHandler', () => {
   });
 
   describe('prompts/list', () => {
-    it('returns 7 prompts', async () => {
+    it('returns 6 prompts', async () => {
       const response = await handler.handlePromptsList({
         jsonrpc: '2.0', id: 1, method: 'prompts/list',
       });
 
-      expect(response.result.prompts).toHaveLength(7);
+      expect(response.result.prompts).toHaveLength(6);
     });
 
     it('includes load-rules prompt', async () => {
@@ -87,7 +87,7 @@ describe('PromptsHandler', () => {
 
       const names = response.result.prompts.map((p: any) => p.name);
       expect(names).toContain('load-rules');
-      expect(names).toContain('session-review');
+      expect(names).not.toContain('session-review');
     });
 
     it('all prompts have name and description', async () => {
@@ -165,73 +165,6 @@ describe('PromptsHandler', () => {
       const content = response.result.messages[0].content.text;
       expect(content).toContain('TypeScript');
       expect(content).not.toContain('tabs');
-    });
-  });
-
-  describe('session-review prompt', () => {
-    it('returns outcome summary with promoted lessons', async () => {
-      mockGetCandidateLessons.mockReturnValue([
-        {
-          id: '1', project_id: 'test', lesson_text: 'Always check file exists before edit',
-          status: 'promoted', evidence_count: 3, confidence: 0.9,
-          lesson_kind: 'failure_preventer', outcome_type: 'negative',
-        },
-      ]);
-
-      const response = await handler.handlePromptsGet(makeRequest('session-review'));
-
-      const content = response.result.messages[0].content.text;
-      expect(content).toContain('# Session Review');
-      expect(content).toContain('Promoted Lessons');
-      expect(content).toContain('Always check file exists before edit');
-      expect(content).toContain('seen 3x');
-    });
-
-    it('returns candidate lessons', async () => {
-      mockGetCandidateLessons.mockReturnValue([
-        {
-          id: '1', project_id: 'test', lesson_text: 'Run tests after refactoring',
-          status: 'candidate', evidence_count: 1, confidence: 0.75,
-          lesson_kind: 'rule', outcome_type: 'negative',
-        },
-      ]);
-
-      const response = await handler.handlePromptsGet(makeRequest('session-review'));
-
-      const content = response.result.messages[0].content.text;
-      expect(content).toContain('Candidate Lessons');
-      expect(content).toContain('Run tests after refactoring');
-    });
-
-    it('returns memory summary', async () => {
-      mockLoadActiveRules.mockReturnValue({
-        preferences: [{ key: 'p1', value: 'x' }],
-        corrections: [],
-        failures: [],
-        devops: [],
-        summary: '',
-      });
-
-      const response = await handler.handlePromptsGet(makeRequest('session-review'));
-
-      const content = response.result.messages[0].content.text;
-      expect(content).toContain('Memory Summary');
-      expect(content).toContain('1 active rules');
-    });
-
-    it('handles empty outcome data gracefully', async () => {
-      const response = await handler.handlePromptsGet(makeRequest('session-review'));
-
-      const content = response.result.messages[0].content.text;
-      expect(content).toContain('# Session Review');
-      expect(content).toContain('Memory Summary');
-    });
-
-    it('returns spec-conformant user role message', async () => {
-      const response = await handler.handlePromptsGet(makeRequest('session-review'));
-
-      expect(response.result.messages[0].role).toBe('user');
-      expect(response.result.messages[0].content.type).toBe('text');
     });
   });
 
