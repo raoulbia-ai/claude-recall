@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **The lesson step is retired.** At the end of a session, a model used to turn failures into "candidate lessons" and promote any seen twice into rules loaded every session. On every install we could measure (one Claude Code machine, three Pi hosts), what got promoted was a generic restatement of a failure ("check command syntax, file paths, and prerequisites"): none was ever cited, and on the Claude Code machine all of them were later demoted by auto-demote or the janitor. The specific failure memories, captured the moment something breaks, are the part that works, and they are unchanged. Removed: the promotion engine, the hindsight model call (one fewer model call per failure at session end), candidate-lesson creation in the Claude Code Stop hook and at Pi session end. Existing lessons and promoted rules are left in the database untouched.
+
+### Changed
+
+- **Outcome history is now opt-in.** With lessons gone, nothing but the `outcomes` CLI reads `outcome_events`, `rule_injection_events` or episodes, so they are written only with `CLAUDE_RECALL_OUTCOME_TRACKING=on`. The default writes none of them. Failure memories are stored regardless.
+
 ## [0.49.0] - 2026-11-18
 
 ### Changed

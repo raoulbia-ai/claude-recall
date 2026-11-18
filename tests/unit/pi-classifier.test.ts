@@ -203,18 +203,18 @@ describe('Pi LLM backend', () => {
 });
 
 describe('backend selection', () => {
-  const HINT = JSON.stringify({ hint_text: 'check the path first', hint_kind: 'failure_preventer', applies_when: ['fs'] });
+  const ANSWER = JSON.stringify([{ type: 'preference', confidence: 0.9, extract: 'Use tabs' }]);
 
   /** `claude` is absent (exits non-zero); `pi` answers. */
   const claudeMissingPiAnswers = (command: string) =>
-    command === 'pi' ? fakeChild({ stdout: HINT }) : fakeChild({ code: 127 });
+    command === 'pi' ? fakeChild({ stdout: ANSWER }) : fakeChild({ code: 127 });
 
   const spawned = (): string[] => mockSpawn.mock.calls.map(([command]: [string]) => command);
 
   /** Ask for a completion, as a process that is — or is not — a Pi host. */
-  function askForHint(opts: { piHost: boolean }) {
+  function askForCompletion(opts: { piHost: boolean }) {
     if (opts.piHost) require('../../src/hooks/pi-classifier').announcePiHost();
-    return require('../../src/hooks/llm-classifier').extractHindsightHint('failed', 'context');
+    return require('../../src/hooks/llm-classifier').classifyBatchWithLLM(['we use tabs here']);
   }
 
   beforeEach(() => {
@@ -228,7 +228,7 @@ describe('backend selection', () => {
   it('falls through to Pi on a Pi host that opted in', async () => {
     process.env.CLAUDE_RECALL_PI_LLM = '1';
 
-    await expect(askForHint({ piHost: true })).resolves.toMatchObject({ hint_text: 'check the path first' });
+    await expect(askForCompletion({ piHost: true })).resolves.toEqual([{ type: 'preference', confidence: 0.9, extract: 'Use tabs' }]);
 
     // Claude Code's own CLI keeps its place at the front; Pi is the fallback.
     expect(spawned()).toEqual(['claude', 'pi']);
@@ -236,7 +236,7 @@ describe('backend selection', () => {
 
   it('stays off on a Pi host that did not opt in', async () => {
     // Paid calls and session text to the user's provider are theirs to switch on.
-    await expect(askForHint({ piHost: true })).resolves.toBeNull();
+    await expect(askForCompletion({ piHost: true })).resolves.toBeNull();
 
     expect(spawned()).toEqual(['claude']);
   });
@@ -247,7 +247,7 @@ describe('backend selection', () => {
     process.env.CLAUDE_RECALL_PI_LLM = '1';
     process.env.CLAUDE_RECALL_RUNTIME = 'pi';
 
-    await expect(askForHint({ piHost: false })).resolves.toBeNull();
+    await expect(askForCompletion({ piHost: false })).resolves.toBeNull();
 
     expect(spawned()).toEqual(['claude']);
   });
@@ -256,7 +256,7 @@ describe('backend selection', () => {
     process.env.CLAUDE_RECALL_PI_LLM = '1';
     process.env.CLAUDE_RECALL_NESTED = '1';
 
-    await expect(askForHint({ piHost: true })).resolves.toBeNull();
+    await expect(askForCompletion({ piHost: true })).resolves.toBeNull();
 
     expect(mockSpawn).not.toHaveBeenCalled();
   });

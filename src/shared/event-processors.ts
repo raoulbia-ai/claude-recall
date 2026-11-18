@@ -19,7 +19,7 @@ import { extractSessionLearningsWithLLM, extractCheckpointWithLLM } from '../hoo
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { FailureMemoryContent } from '../services/failure-extractor';
-import { Runtime, shouldRecordOutcomes } from './outcome-capture';
+import { shouldRecordOutcomes } from './outcome-capture';
 
 // --- Logging ---
 
@@ -127,8 +127,6 @@ export function processToolOutcome(
   toolOutput: string,
   isError: boolean,
   sessionId: string,
-  /** Reporting runtime; 'cc' keeps the historical behaviour for existing callers. */
-  runtime: Runtime = 'cc',
 ): ToolOutcomeResult {
   const result: ToolOutcomeResult = { captured: false, fixPaired: false };
 
@@ -147,8 +145,8 @@ export function processToolOutcome(
       result.fixPaired = tryPairFix(toolName, toolInput, toolOutput);
     }
 
-    // Raw event for the distillation step — only where that step exists
-    if (shouldRecordOutcomes(runtime, 'detail')) {
+    // Outcome history for the `outcomes` CLI — only when tracking is on
+    if (shouldRecordOutcomes()) {
       recordOutcomeEvent(toolName, toolInput, toolOutput);
     }
   } catch (err) {
@@ -262,7 +260,7 @@ export async function processUserInput(text: string, _sessionId: string): Promis
   // Detect reask signals — read by nothing but the `outcomes` CLI, so only
   // under OUTCOME_TRACKING=on. Pi is this function's only caller.
   try {
-    if (shouldRecordOutcomes('pi', 'detail')) {
+    if (shouldRecordOutcomes()) {
       for (const pattern of REASK_PATTERNS) {
         if (pattern.test(text)) {
           OutcomeStorage.getInstance().createOutcomeEvent({
@@ -301,8 +299,7 @@ export async function processUserInput(text: string, _sessionId: string): Promis
 // --- Session End Processing ---
 
 /**
- * Process end-of-session: batch classify user texts, store memories,
- * run promotion cycle.
+ * Process end-of-session: batch classify user texts and store memories.
  *
  * @param userTexts Array of user message texts from the session
  * @param sessionId Current session ID
@@ -314,18 +311,15 @@ export async function processSessionEnd(
   sessionId: string,
   projectId: string,
   maxStore: number = 3,
-): Promise<{ stored: number; promoted: number }> {
+): Promise<{ stored: number }> {
   let stored = 0;
-  let promoted = 0;
 
   try {
-    // Create episode
+    // Episode rows are history for the `outcomes` CLI only
     const outcomeStorage = OutcomeStorage.getInstance();
-    const episodeId = outcomeStorage.createEpisode({
-      project_id: projectId,
-      session_id: sessionId,
-      source: 'session-end',
-    });
+    const episodeId = shouldRecordOutcomes()
+      ? outcomeStorage.createEpisode({ project_id: projectId, session_id: sessionId, source: 'session-end' })
+      : null;
 
     // Filter to classifiable texts
     const classifiable = userTexts
@@ -350,20 +344,12 @@ export async function processSessionEnd(
       }
     }
 
-    // Update episode
-    outcomeStorage.updateEpisode(episodeId, {
-      outcome_type: stored > 0 ? 'success' : 'unclear',
-      severity: 'low',
-      outcome_summary: `Session end: ${stored} memories captured`,
-    });
-
-    // Run promotion cycle
-    try {
-      const { PromotionEngine } = await import('../services/promotion-engine');
-      const result = PromotionEngine.getInstance().runCycle(projectId);
-      promoted = result.promoted;
-    } catch {
-      // Non-critical
+    if (episodeId) {
+      outcomeStorage.updateEpisode(episodeId, {
+        outcome_type: stored > 0 ? 'success' : 'unclear',
+        severity: 'low',
+        outcome_summary: `Session end: ${stored} memories captured`,
+      });
     }
 
     // Prune old data
@@ -376,7 +362,7 @@ export async function processSessionEnd(
     logFn('event-processor', `processSessionEnd error: ${safeErrorMessage(err)}`);
   }
 
-  return { stored, promoted };
+  return { stored };
 }
 
 // --- Pre-Compact Processing ---

@@ -428,88 +428,6 @@ describe('llm-classifier', () => {
     });
   });
 
-  describe('extractHindsightHint', () => {
-    // These four features route through completeText(), where the API-key
-    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
-    // the SDK path.
-    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
-
-    it('returns null when ANTHROPIC_API_KEY is unset', async () => {
-      const classifier = loadClassifier();
-
-      const result = await classifier.extractHindsightHint('build failed', 'npm run build');
-
-      expect(result).toBeNull();
-      expect(mockCreate).not.toHaveBeenCalled();
-    });
-
-    it('returns the parsed hint on the happy path', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-      mockCreate.mockResolvedValue(
-        textResponse(JSON.stringify({
-          hint_text: 'Run npm install after changing package.json',
-          hint_kind: 'failure_preventer',
-          applies_when: ['dependency-change', 'build'],
-        }))
-      );
-
-      const result = await classifier.extractHindsightHint(
-        'build failed after dependency change',
-        'npm run build exited 1'
-      );
-
-      expect(result).toEqual({
-        hint_text: 'Run npm install after changing package.json',
-        hint_kind: 'failure_preventer',
-        applies_when: ['dependency-change', 'build'],
-      });
-
-      // The failure + context are both embedded in the user message
-      const userMessage = mockCreate.mock.calls[0][0].messages[0].content;
-      expect(userMessage).toContain('build failed after dependency change');
-      expect(userMessage).toContain('npm run build exited 1');
-    });
-
-    it('returns null when hint_text is missing', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-      mockCreate.mockResolvedValue(
-        textResponse(JSON.stringify({ hint_kind: 'rule', applies_when: [] }))
-      );
-
-      expect(await classifier.extractHindsightHint('failure', 'context')).toBeNull();
-    });
-
-    it('defaults applies_when to [] when absent or not an array', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-      mockCreate.mockResolvedValue(
-        textResponse(JSON.stringify({
-          hint_text: 'Pin the Node version in CI',
-          hint_kind: 'rule',
-          applies_when: 'ci',
-        }))
-      );
-
-      const result = await classifier.extractHindsightHint('CI failed', 'node mismatch');
-
-      expect(result).toEqual({
-        hint_text: 'Pin the Node version in CI',
-        hint_kind: 'rule',
-        applies_when: [],
-      });
-    });
-
-    it('returns null when the SDK throws', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-      mockCreate.mockRejectedValue(new Error('boom'));
-
-      expect(await classifier.extractHindsightHint('failure', 'context')).toBeNull();
-    });
-  });
-
   describe('subscription CLI backend for secondary features', () => {
     it('extractCheckpointWithLLM works with NO API key via claude -p', async () => {
       const classifier = loadClassifier(); // no ANTHROPIC_API_KEY set
@@ -523,16 +441,6 @@ describe('llm-classifier', () => {
 
       expect(result).toEqual({ completed: 'API layer', remaining: 'wire the UI', blockers: 'none' });
       expect(mockCreate).not.toHaveBeenCalled(); // SDK never touched
-    });
-
-    it('extractHindsightHint works with NO API key via claude -p (fenced output)', async () => {
-      const classifier = loadClassifier();
-      mockCompleteCli.mockResolvedValue(
-        '```json\n{"hint_text":"Pin the Node version in CI","hint_kind":"rule","applies_when":["ci"]}\n```'
-      );
-
-      const result = await classifier.extractHindsightHint('CI failed', 'node mismatch');
-      expect(result?.hint_text).toBe('Pin the Node version in CI');
     });
 
     it('classifyBatchWithLLM works with NO API key via claude -p', async () => {

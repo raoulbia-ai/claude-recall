@@ -458,16 +458,16 @@ describe('tool-outcome-watcher', () => {
       expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
     });
 
-    it('still writes the tool_failure event the Stop hook turns into lessons', async () => {
+    it('writes no tool_failure event, but still stores the failure memory', async () => {
       await handleToolFailure({
         tool_name: 'Bash',
         tool_input: { command: 'npm run build' },
         error: 'tsc: error TS2322: Type mismatch',
         session_id: SESSION,
       });
-      expect(mockCreateOutcomeEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ event_type: 'tool_failure', session_id: SESSION }),
-      );
+      expect(mockCreateOutcomeEvent).not.toHaveBeenCalled();
+      expect(mockStore).toHaveBeenCalledTimes(1);
+      expect(mockStore.mock.calls[0][0].type).toBe('failure');
     });
   });
 

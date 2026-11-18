@@ -37,7 +37,7 @@ export async function handleCorrectionDetector(input: any): Promise<void> {
   // Detect reask signals before classification
   try {
     // Read by nothing but the `outcomes` CLI, so only under OUTCOME_TRACKING=on
-    if (shouldRecordOutcomes('cc', 'detail')) {
+    if (shouldRecordOutcomes()) {
       for (const pattern of REASK_PATTERNS) {
         if (pattern.test(prompt)) {
           OutcomeStorage.getInstance().createOutcomeEvent({

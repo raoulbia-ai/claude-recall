@@ -26,7 +26,6 @@ import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
 import { DetectedFailure } from './failure-detectors';
-import { extractHindsightHint } from './llm-classifier';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import { extractSessionLearnings, ConversationEntry, setLogFunction } from '../shared/event-processors';
@@ -36,7 +35,7 @@ const MAX_STORE = 3;
 /**
  * Debounce state for the heavy pipeline. Claude Code fires Stop after EVERY
  * assistant turn, not at session end — without a debounce the full pipeline
- * (episode insert, up to two Haiku calls, failure scan, promotion cycle,
+ * (episode insert, up to two Haiku calls, failure scan,
  * prune) runs per turn. Citations are still scanned every turn (cheap, and
  * they keep cite_count — the anti-demotion signal — fresh).
  */
@@ -113,11 +112,10 @@ export async function handleMemoryStop(input: any): Promise<void> {
   // Create an episode for this session — AFTER the early returns so the
   // frequent no-classifiable-text path doesn't leave permanently
   // outcome-less episode rows.
-  const episodeId = outcomeStorage.createEpisode({
-    project_id: projectId,
-    session_id: input?.session_id,
-    source: 'memory-stop',
-  });
+  // Episode rows are history for the `outcomes` CLI only
+  const episodeId = shouldRecordOutcomes()
+    ? outcomeStorage.createEpisode({ project_id: projectId, session_id: input?.session_id, source: 'memory-stop' })
+    : null;
 
   const results = await classifyBatch(textsWithIndex.map((t) => t.text));
   let stored = 0;
@@ -160,7 +158,7 @@ export async function handleMemoryStop(input: any): Promise<void> {
       const conversationEntries = buildConversationEntries(sessionEntries);
 
       // Record failed subagent outcomes — unless CLAUDE_RECALL_OUTCOME_TRACKING=off
-      const recordOutcomes = shouldRecordOutcomes('cc', 'detail');
+      const recordOutcomes = shouldRecordOutcomes();
       for (const entry of conversationEntries) {
         if (recordOutcomes && entry.toolName === 'Agent' && entry.isError) {
           try {
@@ -189,36 +187,16 @@ export async function handleMemoryStop(input: any): Promise<void> {
   // Scan for citations in assistant messages to track compliance
   scanForCitations(transcriptPath);
 
-  // Scan transcript for failure signals (non-zero exits, test cycles, backtracking, etc.)
-  const failures = detectAndStoreFailures(transcriptPath, episodeId);
+  // Scan transcript for failure signals (non-zero exits, test cycles,
+  // backtracking, etc.) and store them as failure memories
+  const failures = detectAndStoreFailures(transcriptPath);
 
-  // Incorporate structured tool_failure events captured by PostToolUseFailure
-  // hook — scoped to THIS session so concurrent sessions (or another
-  // project's session within the hour) don't contaminate this episode
-  const toolFailures = getToolFailureEvents(outcomeStorage, input?.session_id);
-  const allFailures = [...failures, ...toolFailures];
-
-  outcomeStorage.updateEpisode(episodeId, {
-    outcome_type: allFailures.length > 0 ? 'failure' : 'success',
-    severity: allFailures.length > 0 ? 'medium' : 'low',
-    outcome_summary: `${stored} memories, ${allFailures.length} failures (${toolFailures.length} from tool events)`,
-  });
-
-  // Generate candidate lessons from high-confidence failures
-  await generateCandidateLessons(allFailures, episodeId, projectId);
-
-  // Run promotion cycle
-  try {
-    const { PromotionEngine } = await import('../services/promotion-engine');
-    const result = PromotionEngine.getInstance().runCycle(projectId);
-    if (result.promoted > 0 || result.archived > 0) {
-      if (result.promoted > 0) {
-        console.log(`⬆️ Recall: ${result.promoted} lesson(s) promoted to active rules`);
-      }
-      hookLog('memory-stop', `Promotion: ${result.promoted} promoted, ${result.archived} archived`);
-    }
-  } catch (err) {
-    hookLog('memory-stop', `Promotion error: ${safeErrorMessage(err)}`);
+  if (episodeId) {
+    outcomeStorage.updateEpisode(episodeId, {
+      outcome_type: failures.length > 0 ? 'failure' : 'success',
+      severity: failures.length > 0 ? 'medium' : 'low',
+      outcome_summary: `${stored} memories, ${failures.length} failures`,
+    });
   }
 
   // Prune old outcome data to prevent unbounded table growth
@@ -357,7 +335,7 @@ function extractRuleContent(value: any): string {
 /**
  * Scan the last 200 transcript entries for failure signals and store up to 3.
  */
-function detectAndStoreFailures(transcriptPath: string, _episodeId?: string): DetectedFailure[] {
+function detectAndStoreFailures(transcriptPath: string): DetectedFailure[] {
   try {
     const entries = readTranscriptTail(transcriptPath, 200);
     if (entries.length === 0) {
@@ -413,116 +391,6 @@ function detectAndStoreFailures(transcriptPath: string, _episodeId?: string): De
     hookLog('memory-stop', `[FailureDetector] Error: ${error}`);
     return [];
   }
-}
-
-/**
- * Convert structured tool_failure outcome events into DetectedFailure format
- * so they feed into the candidate lessons pipeline.
- */
-function getToolFailureEvents(outcomeStorage: OutcomeStorage, sessionId?: string): DetectedFailure[] {
-  try {
-    // Session-scoped when the Stop payload carries a session_id (it always
-    // does in practice); an undefined id falls back to the raw time window.
-    const events = outcomeStorage.getEventsByType('tool_failure', 1, sessionId); // last 1 hour
-    return events.slice(0, 5).map(e => ({
-      signal: 'tool_failure' as const,
-      confidence: 0.8,
-      content: {
-        what_failed: e.action_summary || 'Tool failure',
-        why_failed: e.next_state_summary,
-        what_should_do: 'Check inputs and prerequisites before retrying',
-        context: `Captured by PostToolUseFailure hook`,
-        preventative_checks: ['Verify tool inputs are correct'],
-      },
-    }));
-  } catch (err) {
-    hookLog('memory-stop', `Tool failure events error: ${safeErrorMessage(err)}`);
-    return [];
-  }
-}
-
-/** lesson_kind values extractHindsightHint may legitimately return. */
-const VALID_LESSON_KINDS = new Set([
-  'rule', 'preference', 'anti_pattern', 'workflow', 'debug_fix', 'failure_preventer',
-]);
-
-/**
- * Generate candidate lessons from high-confidence failures.
- * Deduplicates against existing lessons and increments evidence count for similar ones.
- *
- * The lesson text must be failure-specific. Detectors emit a constant
- * what_should_do ("Check command syntax..."), so using it verbatim made every
- * unrelated failure "similar" to every other — evidence counts inflated across
- * unrelated failures and the promotion engine could only ever promote generic
- * boilerplate. Prefer an LLM hindsight hint; without one, ground the generic
- * remedy in what actually failed so similarity matching compares failures,
- * not the shared remedy string.
- */
-async function generateCandidateLessons(
-  failures: DetectedFailure[],
-  episodeId: string,
-  projectId: string,
-): Promise<void> {
-  try {
-    const outcomeStorage = OutcomeStorage.getInstance();
-    // Each hint is an LLM call (via the subscription CLI it can take seconds),
-    // and this loop runs INLINE in the Stop hook's ~40s budget — cap the LLM
-    // calls per run; failures past the cap keep the grounded generic lesson.
-    let hintBudget = 5;
-    for (const f of failures) {
-      if (f.confidence < 0.7) continue;
-
-      let lessonText = `${f.content.what_should_do} (failure: ${f.content.what_failed})`;
-      let lessonKind = 'failure_preventer';
-      let appliesWhen = extractTagsFromContext(f.content.context);
-
-      const hint = hintBudget-- > 0 ? await extractHindsightHint(
-        `${f.content.what_failed}${f.content.why_failed ? ` — ${f.content.why_failed}` : ''}`,
-        f.content.context || '',
-      ) : null;
-      if (hint) {
-        lessonText = hint.hint_text;
-        if (VALID_LESSON_KINDS.has(hint.hint_kind)) {
-          lessonKind = hint.hint_kind;
-        }
-        if (hint.applies_when.length > 0) {
-          appliesWhen = hint.applies_when;
-        }
-      }
-
-      const similar = outcomeStorage.findSimilarLessons(lessonText, projectId);
-      if (similar.length > 0) {
-        outcomeStorage.incrementEvidenceCount(similar[0].id);
-      } else {
-        outcomeStorage.createCandidateLesson({
-          project_id: projectId,
-          episode_id: episodeId,
-          lesson_text: lessonText,
-          lesson_kind: lessonKind,
-          applies_when: appliesWhen,
-          outcome_type: 'negative',
-          reward_band: -1,
-          confidence: f.confidence,
-          durability: 'project',
-        });
-      }
-    }
-  } catch (err) {
-    hookLog('memory-stop', `Candidate lesson generation error: ${safeErrorMessage(err)}`);
-  }
-}
-
-function extractTagsFromContext(context: string): string[] {
-  const tags: string[] = [];
-  const words = context.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
-  // Take up to 5 significant words as tags
-  for (const w of words) {
-    if (tags.length >= 5) break;
-    if (!['that', 'this', 'with', 'from', 'were', 'been'].includes(w)) {
-      tags.push(w);
-    }
-  }
-  return tags;
 }
 
 /**
