@@ -14,9 +14,9 @@
  * because a cold `kiro-cli` boot can take ~15s.
  */
 
-import { spawn } from 'child_process';
 import type { ClassifyResult } from './shared';
-import { hookLog, safeErrorMessage } from './shared';
+import { completeWithRuntimeCli } from './runtime-cli';
+import { hookLog } from './shared';
 
 /** Bare Kiro agent used for classification — no MCP, no hooks, no tools. */
 export const CLASSIFIER_AGENT = 'claude-recall-classifier';
@@ -134,60 +134,11 @@ export function completeWithKiroCli(
   const timeout = opts.timeoutMs
     ?? (Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : DEFAULT_TIMEOUT_MS);
 
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (result: string | null) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-
-    let child;
-    try {
-      // args array (no shell) — the prompt is passed as a single argv
-      // entry, so no shell escaping or injection is possible.
-      child = spawn(
-        'kiro-cli',
-        [
-          'chat',
-          '--no-interactive',
-          '--agent', CLASSIFIER_AGENT,
-          '--model', model,
-          prompt,
-        ],
-        { stdio: ['ignore', 'pipe', 'ignore'] },
-      );
-    } catch (err) {
-      hookLog('kiro-classifier', `spawn threw: ${safeErrorMessage(err)}`);
-      return done(null);
-    }
-
-    const timer = setTimeout(() => {
-      hookLog('kiro-classifier', `timeout after ${timeout}ms — killing kiro-cli`);
-      try { child.kill('SIGKILL'); } catch { /* already gone */ }
-      done(null);
-    }, timeout);
-
-    let stdout = '';
-    child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
-
-    child.on('error', (err: any) => {
-      clearTimeout(timer);
-      // ENOENT = kiro-cli not on PATH; anything else = spawn failure
-      hookLog('kiro-classifier', `kiro-cli error: ${err?.code ?? ''} ${err?.message ?? err}`);
-      done(null);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (settled) return;
-      if (code !== 0) {
-        hookLog('kiro-classifier', `kiro-cli exited ${code}`);
-        return done(null);
-      }
-      done(stdout);
-    });
-  });
+  return completeWithRuntimeCli(
+    'kiro-cli',
+    ['chat', '--no-interactive', '--agent', CLASSIFIER_AGENT, '--model', model, prompt],
+    { tag: 'kiro-classifier', timeoutMs: timeout },
+  );
 }
 
 /**

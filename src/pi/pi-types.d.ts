@@ -59,7 +59,11 @@ declare namespace PiTypes {
   // --- Events ---
 
   interface SessionStartEvent { type: 'session_start'; }
-  interface SessionShutdownEvent { type: 'session_shutdown'; }
+  interface SessionShutdownEvent {
+    type: 'session_shutdown';
+    /** Why the session is ending. Only `quit` ends the process. */
+    reason?: 'quit' | 'reload' | 'new' | 'resume' | 'fork';
+  }
 
   interface BeforeAgentStartEvent {
     type: 'before_agent_start';
