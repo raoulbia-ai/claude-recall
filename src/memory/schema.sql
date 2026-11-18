@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS memories (
   source_entry TEXT,
   source_excerpt TEXT,
   confirmed_at INTEGER,
-  origin TEXT
+  origin TEXT,
+  approved_at INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_id);

@@ -15,6 +15,16 @@ import { MemoryTools } from '../../src/mcp/tools/memory-tools';
 import { MCPContext } from '../../src/mcp/server';
 
 describe('load_rules token budget', () => {
+  // These cases test grouping, caps, budget and sync, not trust: rules are
+  // seeded without an origin, which quarantine (tested in
+  // tests/unit/quarantine.test.ts and tests/redteam) would hold back.
+  const quarantineBefore = process.env.CLAUDE_RECALL_QUARANTINE;
+  beforeAll(() => { process.env.CLAUDE_RECALL_QUARANTINE = 'off'; });
+  afterAll(() => {
+    if (quarantineBefore === undefined) delete process.env.CLAUDE_RECALL_QUARANTINE;
+    else process.env.CLAUDE_RECALL_QUARANTINE = quarantineBefore;
+  });
+
   let storage: MemoryStorage;
   let previousBudget: string | undefined;
 

@@ -73,6 +73,8 @@ export interface Memory {
    * trusted on its own. See docs/design-memory-poisoning-defense.md.
    */
   origin?: MemoryOrigin | null;
+  /** When the user approved this memory out of quarantine (v0.51.0). */
+  approved_at?: number | null;
   load_count?: number;
   cite_count?: number;
   /**
@@ -96,6 +98,26 @@ export function leastTrustedOrigin(origins: Array<MemoryOrigin | null | undefine
   return origins.length > 0 ? 'user' : null;
 }
 
+/**
+ * Is this memory allowed to act as a rule? Only the user's own words, a rule
+ * the janitor confirmed against them, or one the user approved. Everything
+ * else waits in quarantine (docs/design-memory-poisoning-defense.md).
+ */
+export function isTrustedMemory(m: { origin?: string | null; confirmed_at?: number | null; approved_at?: number | null }): boolean {
+  return m.origin === 'user' || !!m.confirmed_at || !!m.approved_at;
+}
+
+/** Quarantine is on unless CLAUDE_RECALL_QUARANTINE=off. */
+export function quarantineEnabled(): boolean {
+  return !/^(off|false|0)$/i.test(process.env.CLAUDE_RECALL_QUARANTINE || '');
+}
+
+/** Rule types quarantine applies to: what load_rules injects as instructions. */
+export const QUARANTINED_TYPES = ['preference', 'correction', 'failure', 'devops', 'solution', 'project-knowledge'];
+
+/** superseded_by sentinel for a rule the user rejected. Not revivable. */
+export const USER_REJECTED = 'user-rejected';
+
 /** The provenance columns, as returned alongside rule rows. */
 export type SourceColumns = Pick<Memory, 'source_session' | 'source_transcript' | 'source_entry' | 'source_excerpt'>;
 
@@ -104,6 +126,7 @@ export type ActiveRuleRow = {
   id: number; key: string; type: string; value: string; load_count: number; cite_count: number; timestamp: number;
   confirmed_at?: number | null;
   origin?: MemoryOrigin | null;
+  approved_at?: number | null;
 } & SourceColumns;
 
 export class MemoryStorage {
@@ -255,6 +278,9 @@ export class MemoryStorage {
       // unknown origin, which counts as unverified.
       if (!columnNames.includes('origin')) {
         this.db.exec('ALTER TABLE memories ADD COLUMN origin TEXT');
+      }
+      if (!columnNames.includes('approved_at')) {
+        this.db.exec('ALTER TABLE memories ADD COLUMN approved_at INTEGER');
       }
 
       // v0.18.0: Outcome-aware learning tables
@@ -408,24 +434,31 @@ export class MemoryStorage {
         CREATE INDEX IF NOT EXISTS idx_memory_history_key ON memory_history(memory_key);
         CREATE INDEX IF NOT EXISTS idx_memory_history_at ON memory_history(at);
 
-        CREATE TRIGGER IF NOT EXISTS memories_hist_ai AFTER INSERT ON memories BEGIN
+        -- Recreated on every start so an older definition never lingers
+        DROP TRIGGER IF EXISTS memories_hist_ai;
+        DROP TRIGGER IF EXISTS memories_hist_au;
+        DROP TRIGGER IF EXISTS memories_hist_ad;
+
+        CREATE TRIGGER memories_hist_ai AFTER INSERT ON memories BEGIN
           INSERT INTO memory_history (memory_id, memory_key, event, type, origin, new_value, reason, at)
           VALUES (new.id, new.key, 'create', new.type, new.origin, new.value,
                   CASE WHEN new.is_active = 0 THEN new.superseded_by END,
                   CAST(strftime('%s','now') AS INTEGER) * 1000);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS memories_hist_au AFTER UPDATE ON memories
+        CREATE TRIGGER memories_hist_au AFTER UPDATE ON memories
         WHEN old.value IS NOT new.value OR old.is_active IS NOT new.is_active
           OR old.origin IS NOT new.origin OR old.confirmed_at IS NOT new.confirmed_at
-          OR old.type IS NOT new.type
+          OR old.approved_at IS NOT new.approved_at OR old.type IS NOT new.type
         BEGIN
           INSERT INTO memory_history (memory_id, memory_key, event, type, origin, old_value, new_value, reason, at)
           VALUES (new.id, new.key,
                   CASE
+                    WHEN old.is_active = 1 AND new.is_active = 0 AND new.superseded_by = 'user-rejected' THEN 'reject'
                     WHEN old.is_active = 1 AND new.is_active = 0 THEN 'deactivate'
                     WHEN old.is_active = 0 AND new.is_active = 1 THEN 'reactivate'
                     WHEN old.value IS NOT new.value THEN 'rewrite'
+                    WHEN old.approved_at IS NULL AND new.approved_at IS NOT NULL THEN 'approve'
                     WHEN old.confirmed_at IS NULL AND new.confirmed_at IS NOT NULL THEN 'confirm'
                     WHEN old.origin IS NOT new.origin THEN 'origin'
                     ELSE 'update'
@@ -440,7 +473,7 @@ export class MemoryStorage {
                   CAST(strftime('%s','now') AS INTEGER) * 1000);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS memories_hist_ad AFTER DELETE ON memories BEGIN
+        CREATE TRIGGER memories_hist_ad AFTER DELETE ON memories BEGIN
           INSERT INTO memory_history (memory_id, memory_key, event, type, origin, old_value, at)
           VALUES (old.id, old.key, 'delete', old.type, old.origin, old.value,
                   CAST(strftime('%s','now') AS INTEGER) * 1000);
@@ -449,6 +482,68 @@ export class MemoryStorage {
     } catch (error) {
       console.error('⚠️  Memory history setup failed (memories are unaffected):', error);
     }
+  }
+
+  /** SQL predicate for "untrusted" (see isTrustedMemory). */
+  private static readonly UNTRUSTED_SQL =
+    `(origin IS NULL OR origin != 'user') AND confirmed_at IS NULL AND approved_at IS NULL`;
+
+  /** Active memories of rule types waiting for the user's review. */
+  getPendingRules(opts: { projectId?: string; type?: string; origin?: string } = {}): Memory[] {
+    const where: string[] = ['is_active = 1', MemoryStorage.UNTRUSTED_SQL,
+      `type IN (${QUARANTINED_TYPES.map(() => '?').join(',')})`];
+    const params: any[] = [...QUARANTINED_TYPES];
+    if (opts.projectId) {
+      where.push(`(project_id = ? OR project_id IS NULL OR project_id = '' OR scope = 'universal')`);
+      params.push(opts.projectId);
+    }
+    if (opts.type) { where.push('type = ?'); params.push(opts.type); }
+    if (opts.origin) {
+      if (opts.origin === 'unknown') where.push('origin IS NULL');
+      else { where.push('origin = ?'); params.push(opts.origin); }
+    }
+    return (this.db.prepare(
+      `SELECT * FROM memories WHERE ${where.join(' AND ')} ORDER BY timestamp DESC`
+    ).all(...params) as any[]).map(r => this.rowToMemory(r));
+  }
+
+  countPending(projectId?: string): number {
+    return this.getPendingRules({ projectId }).length;
+  }
+
+  /** The user approves memories out of quarantine. Returns how many changed. */
+  approveRules(ids: number[]): number {
+    if (ids.length === 0) return 0;
+    const ph = ids.map(() => '?').join(',');
+    const n = this.db.prepare(
+      `UPDATE memories SET approved_at = ? WHERE id IN (${ph}) AND is_active = 1 AND approved_at IS NULL`
+    ).run(Date.now(), ...ids).changes;
+    if (n > 0) this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return n;
+  }
+
+  /** The user rejects memories: deactivated for good (not revivable by re-storing). */
+  rejectRules(ids: number[]): number {
+    if (ids.length === 0) return 0;
+    const ph = ids.map(() => '?').join(',');
+    const n = this.db.prepare(
+      `UPDATE memories SET is_active = 0, superseded_by = ?, superseded_at = ? WHERE id IN (${ph}) AND is_active = 1`
+    ).run(USER_REJECTED, Date.now(), ...ids).changes;
+    if (n > 0) this.db.pragma('wal_checkpoint(TRUNCATE)');
+    return n;
+  }
+
+  /** Did the user already reject this exact content (same type, same project scope)? */
+  wasRejected(value: any, type: string, projectId?: string): boolean {
+    const hash = this.computeContentHash(value, type);
+    const scope = projectId
+      ? `AND (project_id = ? OR project_id IS NULL OR project_id = '' OR scope = 'universal')`
+      : '';
+    const params: any[] = [hash, USER_REJECTED];
+    if (projectId) params.push(projectId);
+    return !!this.db.prepare(
+      `SELECT 1 FROM memories WHERE content_hash = ? AND superseded_by = ? ${scope} LIMIT 1`
+    ).get(...params);
   }
 
   /** History rows for one memory (by key or numeric id), oldest first, or the most recent across all. */
@@ -786,7 +881,10 @@ export class MemoryStorage {
         -- the user's own content stays theirs when re-saved unchanged; new
         -- content takes the new writer's origin
         origin = CASE WHEN excluded.content_hash IS memories.content_hash AND memories.origin = 'user'
-                      THEN 'user' ELSE excluded.origin END
+                      THEN 'user' ELSE excluded.origin END,
+        -- an approval covers the content the user saw
+        approved_at = CASE WHEN excluded.content_hash IS memories.content_hash
+                           THEN memories.approved_at ELSE NULL END
     `);
 
     stmt.run(
@@ -956,6 +1054,7 @@ export class MemoryStorage {
       source_excerpt: row.source_excerpt || null,
       confirmed_at: row.confirmed_at || null,
       origin: row.origin || null,
+      approved_at: row.approved_at || null,
       load_count: row.load_count || 0,
       cite_count: row.cite_count || 0,
     };
@@ -1411,7 +1510,7 @@ export class MemoryStorage {
     }
     return this.db.prepare(`
       SELECT id, key, type, value, load_count, cite_count, timestamp,
-             source_session, source_transcript, source_entry, source_excerpt, confirmed_at, origin
+             source_session, source_transcript, source_entry, source_excerpt, confirmed_at, origin, approved_at
       FROM memories
       WHERE is_active = 1 AND type IN (${typePlaceholders}) ${scopeClause}
       ORDER BY timestamp ASC

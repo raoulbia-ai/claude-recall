@@ -1,6 +1,6 @@
 # Design: memory-poisoning defense
 
-Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)). Done: Phase 0 (#150), Phase 1 (#151), Phase 2.
+Status: approved 2026-11-18, being implemented in phases (see [Phases](#phases)). Done: Phase 0 (#150), Phase 1 (#151), Phase 2 (#152), Phase 3.
 
 ## The problem
 
@@ -83,3 +83,11 @@ Each phase is its own PR, merged only when its tests pass.
 - **Phase 3: quarantine by default.** Unverified memories aren't loaded. The user is told about pending memories at session start (statusLine count, SessionStart notice, Pi `notify`), and can act on them with `claude-recall rules pending` / `approve` / `reject`, including in bulk. The janitor's `confirm` approves what the user's own words support.
 
 **Upgrade impact of Phase 3:** with decision 2, most existing memories start as unverified and stop loading until reviewed. Bulk review (`approve --all`, by type, by project) and the janitor's confirm pass keep that to one sitting, and the release notes must say so.
+
+## Follow-ups
+
+- **Failures are quarantined too.** They're derived from tool output, so by decision 1 they wait for review like any other untrusted memory. That's the noisiest category; if reviewing them proves a burden, options are to let the janitor's confirm pass cover them, or to load failures (which are never JIT-injected) as labelled evidence instead of rules.
+- **Task checkpoints are another injection channel.** `save_checkpoint` text (agent-written) is shown at session start; it isn't a rule type, so quarantine doesn't cover it. Consider the same origin tag and an "unverified" label.
+- **`MemoryService.storePreferenceWithOverride` bypasses the guardrails** (it calls `storage.save` directly). Nothing in `src` calls it today; route it through `store()` or remove it.
+- **Auto-skills:** remove the feature after one release with it off (decision 5).
+

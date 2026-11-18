@@ -303,6 +303,9 @@ claude-recall rules demote [--dry-run]   # Demote rules loaded >=N times but nev
 claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
 claude-recall rules promote <id>         # Restore an auto-demoted or auto-deduped rule
 claude-recall rules history [id]         # How a memory was created and changed (latest changes with no id)
+claude-recall rules review               # Step through memories waiting for your review: approve / reject / skip
+claude-recall rules pending              # List them (--type, --origin, --all-projects)
+claude-recall rules approve <id...>      # Approve (or --all [--type t] [--origin o]); reject works the same
 claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)
 
 # ── Task Checkpoints ────────────────────────────────────────────────
@@ -399,6 +402,8 @@ claude-recall upgrade
 ```
 
 It checks the registry, refreshes the global binary, and clears any running MCP servers — they respawn on the next tool call with the new version. It also checks your Claude Code hooks, and tells you if any need `claude-recall repair --auto` (e.g. after switching Node versions).
+
+**Upgrading to the first release with quarantine: review your memories once.** Memories stored before it have no recorded origin, so they wait for your review and don't load until you approve them. Run `claude-recall rules review`, or approve whole groups at once (`claude-recall rules approve --all --type devops`). Rules you state from now on load straight away.
 
 Per-runtime notes:
 
@@ -499,6 +504,7 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
 | `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Outcome history (`outcome_events`, `rule_injection_events`, episodes) for the `outcomes` CLI. `on` writes it; `auto` and `off` write nothing. Debugging aid only: failure memories are stored regardless. |
 | `CLAUDE_RECALL_AUTO_SKILLS`              | _(unset)_ | Set to `1` to regenerate `.claude/skills/auto-*/` skill files from memories on every `store_memory`. Off by default: a skill is a persistent instruction. |
+| `CLAUDE_RECALL_QUARANTINE`               | `on`    | Memories you didn't state (agent-stored, tool-derived, imported, or stored before origins were recorded) load only after you approve them (`claude-recall rules review`). `off` loads everything as before. |
 | `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 
 ---
@@ -510,6 +516,7 @@ Defaults work out of the box; tune via environment variables as needed.
 - **Captured memories keep a copy of your words.** Since 0.46.0, a hook capture stores the message it came from (up to 2,000 chars, including anything pasted into it) and the path of the Claude Code transcript. That text stays in the local database and in `export` files. The daily janitor sends it, shortened to 400 chars per rule, to the same LLM as capture
 - Full transparency via CLI (`stats`, `search`, `export`)
 - **Secrets are redacted before storing.** Tokens, keys and `password=…`-style values in captured text are replaced with `[REDACTED]` on every write path
+- **Memories you didn't state wait for your review.** A rule only loads if it's in your own words, the janitor confirmed it against them, or you approved it. Anything stored by the agent (`store_memory`), derived from tool output, imported, or stored before origins were recorded waits in quarantine: the statusLine shows `⏳ N to review`, the agent mentions it at session start, and `claude-recall rules review` steps through them. No agent tool can approve a memory. Turn off with `CLAUDE_RECALL_QUARANTINE=off`
 - **Every memory records where it came from** (your words, the agent, tool output, an import). Text that looks like an attack (`curl … | sh`, "ignore previous instructions", encoded payloads) is refused unless it's your own words. See [docs/design-memory-poisoning-defense.md](docs/design-memory-poisoning-defense.md)
 
 Details in [docs/security.md](docs/security.md).

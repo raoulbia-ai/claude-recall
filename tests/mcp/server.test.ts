@@ -179,7 +179,7 @@ describe('MCPServer', () => {
   });
 
   describe('tools/call', () => {
-    it('store_memory then load_rules succeed with the enhanced response shape and a stable sessionId', async () => {
+    it('store_memory then load_rules succeed with the enhanced response shape and a stable sessionId (quarantine: the agent\'s rule waits for review)', async () => {
       const storeResponse = await callTool('store_memory', {
         content: 'test rule alpha: run the linter before committing',
       });
@@ -193,13 +193,18 @@ describe('MCPServer', () => {
       const stored = JSON.parse(storeResponse.result.content[0].text);
       expect(stored.success).toBe(true);
       expect(stored.id).toEqual(expect.any(String));
+      // store_memory is the agent's choice, so the rule waits for the user
+      expect(stored.pending).toBe(true);
+      expect(stored._directive).toMatch(/NOT active/);
 
       const loadResponse = await callTool('load_rules', {});
 
       expect(loadResponse.error).toBeUndefined();
       expect(loadResponse.result.isError).toBe(false);
       expect(loadResponse.result.content[0].type).toBe('text');
-      expect(loadResponse.result.content[0].text).toContain('test rule alpha');
+      const loaded = loadResponse.result.content[0].text;
+      expect(loaded).not.toContain('test rule alpha');
+      expect(loaded).toMatch(/waiting for the user's review/);
 
       // The per-process session id is IDENTICAL across calls — one stdio
       // server serves exactly one client.
