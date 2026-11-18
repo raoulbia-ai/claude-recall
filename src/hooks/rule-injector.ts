@@ -207,7 +207,7 @@ export async function computeInjection(
   // Record each injection so PostToolUse can resolve it with the outcome.
   // Same policy as the outcome events these rows are joined against: this is
   // Claude Code's hook, so `auto` records, and `off` means off here too.
-  if (shouldRecordOutcomes('cc')) {
+  if (shouldRecordOutcomes('cc', 'detail')) {
     try {
       const outcomeStorage = OutcomeStorage.getInstance();
       for (const m of freshMatches) {

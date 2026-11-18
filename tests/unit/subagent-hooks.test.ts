@@ -37,6 +37,16 @@ jest.mock('../../src/services/outcome-storage', () => ({
 import { handleSubagentStart, handleSubagentStop } from '../../src/hooks/subagent-hooks';
 
 describe('subagent-hooks', () => {
+  // These cases check what gets written when tracking records everything.
+  // The default (lesson input only) is covered in outcome-capture.test.ts and
+  // by the 'default' cases below.
+  const outcomeTrackingBefore = process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+  beforeAll(() => { process.env.CLAUDE_RECALL_OUTCOME_TRACKING = 'on'; });
+  afterAll(() => {
+    if (outcomeTrackingBefore === undefined) delete process.env.CLAUDE_RECALL_OUTCOME_TRACKING;
+    else process.env.CLAUDE_RECALL_OUTCOME_TRACKING = outcomeTrackingBefore;
+  });
+
   let stdoutSpy: jest.SpyInstance;
   let stderrSpy: jest.SpyInstance;
 
