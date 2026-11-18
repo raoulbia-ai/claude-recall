@@ -4,8 +4,12 @@
  */
 
 const mockLoadActiveRules = jest.fn();
+const mockCountPending = jest.fn().mockReturnValue(0);
 jest.mock('../../src/services/memory', () => ({
-  MemoryService: { getInstance: () => ({ loadActiveRules: (...a: any[]) => mockLoadActiveRules(...a) }) },
+  MemoryService: { getInstance: () => ({
+    loadActiveRules: (...a: any[]) => mockLoadActiveRules(...a),
+    countPending: (...a: any[]) => mockCountPending(...a),
+  }) },
 }));
 
 import { StatuslineCommands } from '../../src/cli/commands/statusline-command';
@@ -66,6 +70,15 @@ describe('StatuslineCommands.run', () => {
     const s = out.restore();
     expect(s.trim()).toBe('🧠 Recall · 3 rules · cool-app');
     expect(mockLoadActiveRules).toHaveBeenCalledWith('cool-app');
+  });
+
+  it('shows how many memories wait for review, so quarantine is visible every turn', () => {
+    mockLoadActiveRules.mockReturnValue(rules({ preferences: [{}] }));
+    mockCountPending.mockReturnValueOnce(4);
+    const out = captureStdout();
+    StatuslineCommands.run();
+    expect(out.restore().trim()).toBe('🧠 Recall · 1 rule · ⏳ 4 to review · cool-app');
+    expect(mockCountPending).toHaveBeenCalledWith('cool-app');
   });
 
   it('falls back to a minimal indicator when the DB is unreachable (never errors)', () => {

@@ -19,9 +19,12 @@ import type { Command } from 'commander';
  */
 export class StatuslineCommands {
   /** Pure, testable formatter for the status line text. */
-  static format(projectId: string, ruleCount: number, failureCount = 0): string {
+  static format(projectId: string, ruleCount: number, failureCount = 0, pendingCount = 0): string {
     const parts = [`${ruleCount} rule${ruleCount === 1 ? '' : 's'}`];
     if (failureCount > 0) parts.push(`${failureCount} failure${failureCount === 1 ? '' : 's'}`);
+    // The one place the user sees quarantine without asking: it updates every
+    // turn, so a memory waiting for review shows up as soon as it's stored.
+    if (pendingCount > 0) parts.push(`⏳ ${pendingCount} to review`);
     return `🧠 Recall · ${parts.join(' · ')} · ${projectId}`;
   }
 
@@ -71,7 +74,8 @@ export class StatuslineCommands {
       // separately: counting them as "rules" overstates what the user stated.
       const taught =
         r.preferences.length + r.corrections.length + r.devops.length + (r.solutions ?? []).length;
-      process.stdout.write(StatuslineCommands.format(projectId, taught, r.failures.length) + '\n');
+      const pending = MemoryService.getInstance().countPending(projectId);
+      process.stdout.write(StatuslineCommands.format(projectId, taught, r.failures.length, pending) + '\n');
     } catch {
       // Never emit an error into the status bar.
       process.stdout.write('🧠 Recall\n');

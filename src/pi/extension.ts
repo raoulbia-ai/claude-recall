@@ -12,6 +12,7 @@ import { ConfigService } from '../services/config';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { LoggingService } from '../services/logging';
 import { DatabaseManager } from '../services/database-manager';
+import { pendingNoticeForUser } from '../shared/quarantine-notice';
 import { shouldRecordOutcomes } from '../shared/outcome-capture';
 import {
   processToolOutcome,
@@ -158,6 +159,12 @@ export default function(pi: PiTypes.ExtensionAPI) {
     // Until now only the MCP server's boot path compacted, so a Pi-only host
     // never did. Fire-and-forget: compactIfDue throttles and swallows failures.
     void DatabaseManager.getInstance().compactIfDue();
+
+    // Quarantine: tell the user directly; Pi's notify is user-visible.
+    try {
+      const notice = pendingNoticeForUser(MemoryService.getInstance().countPending(projectId));
+      if (notice && ctx.hasUI) ctx.ui.notify(notice, 'info');
+    } catch { /* non-critical */ }
   });
 
   // --- Event: credit rules the model says it applied ---
@@ -516,6 +523,18 @@ export default function(pi: PiTypes.ExtensionAPI) {
             scope: params.scope || null,
           },
         });
+
+        if (outcome.pending) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({
+              id: key,
+              success: true,
+              pending: true,
+              type: detectedType,
+              _directive: "Stored for the user's review: it is NOT active yet. Rules from store_memory wait in quarantine until the user approves them (claude-recall rules review). Do not apply it as a rule in this session unless the user confirms it here; tell the user it is waiting for their review.",
+            }) }],
+          };
+        }
 
         if (!outcome.stored) {
           return {

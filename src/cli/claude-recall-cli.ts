@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { MemoryService } from '../services/memory';
+import type { Memory } from '../memory/storage';
 import { ConfigService } from '../services/config';
 import { LoggingService } from '../services/logging';
 import { Command } from 'commander';
@@ -632,6 +633,112 @@ class ClaudeRecallCLI {
   /**
    * Restore a previously auto-demoted rule. Refuses to touch preference-supersession rows.
    */
+  /** One line of memory text for review listings. */
+  private reviewText(value: any): string {
+    const parse = (x: any) => {
+      if (typeof x === 'string' && /^\s*[{[]/.test(x)) { try { return JSON.parse(x); } catch { /* plain text */ } }
+      return x;
+    };
+    let v = parse(value);
+    // Failure memories nest their structured content, as an object or a JSON string
+    if (v && typeof v === 'object' && v.content !== undefined) {
+      const inner = parse(v.content);
+      if (inner && typeof inner === 'object') v = inner;
+    }
+    const failure = v && typeof v === 'object' && v.what_failed
+      ? `${v.what_failed}${v.why_failed ? ` — ${v.why_failed}` : ''}`
+      : undefined;
+    const s = typeof v === 'string' ? v : failure ?? v?.content ?? v?.value ?? JSON.stringify(v);
+    return String(typeof s === 'string' ? s : JSON.stringify(s)).replace(/\s+/g, ' ').slice(0, 160);
+  }
+
+  private pendingFor(options: { type?: string; origin?: string; allProjects?: boolean }) {
+    return this.memoryService.getPendingRules({
+      projectId: options.allProjects ? undefined : ConfigService.getInstance().getProjectId(),
+      type: options.type,
+      origin: options.origin,
+    });
+  }
+
+  private printPending(m: Memory, index?: string): void {
+    const age = Math.max(0, Math.round((Date.now() - (m.timestamp || Date.now())) / 86400000));
+    console.log(`${index ?? ''}#${m.id}  ${m.type}  from ${m.origin ?? 'unknown (stored before origins were recorded)'}  ${age}d ago`);
+    console.log(`    ${this.reviewText(m.value)}`);
+    if (m.source_excerpt) console.log(`    your words: "${m.source_excerpt.replace(/\s+/g, ' ').slice(0, 160)}"`);
+  }
+
+  /** List memories waiting in quarantine. */
+  showPending(options: { type?: string; origin?: string; allProjects?: boolean }): void {
+    const pending = this.pendingFor(options);
+    if (pending.length === 0) {
+      console.log('✓ Nothing waiting for review.');
+      return;
+    }
+    console.log(`\n${pending.length} memor${pending.length === 1 ? 'y' : 'ies'} waiting for your review (not loaded as rules until approved):\n`);
+    for (const m of pending) this.printPending(m);
+    console.log('\nReview one by one:  claude-recall rules review');
+    console.log('Or by id:           claude-recall rules approve <id...>   |   claude-recall rules reject <id...>');
+    console.log('Or in bulk:         claude-recall rules approve --all [--type <t>] [--origin <o>]\n');
+  }
+
+  /** Approve or reject pending memories by id, or all matching a filter. */
+  decidePending(decision: 'approve' | 'reject', ids: string[], options: { all?: boolean; type?: string; origin?: string; allProjects?: boolean }): void {
+    let targets: number[];
+    if (options.all) {
+      targets = this.pendingFor(options).map(m => m.id!).filter(Boolean);
+    } else {
+      targets = ids.map(i => parseInt(i, 10)).filter(n => Number.isInteger(n) && n > 0);
+      if (targets.length === 0) {
+        console.error(`Give one or more ids (from \`claude-recall rules pending\`), or --all.`);
+        process.exitCode = 1;
+        return;
+      }
+    }
+    const n = decision === 'approve' ? this.memoryService.approveRules(targets) : this.memoryService.rejectRules(targets);
+    console.log(decision === 'approve'
+      ? `✓ Approved ${n} memor${n === 1 ? 'y' : 'ies'}; they load as rules from the next session.`
+      : `✓ Rejected ${n} memor${n === 1 ? 'y' : 'ies'}; the same text won't be accepted again from an untrusted source.`);
+    const left = this.pendingFor({ allProjects: options.allProjects }).length;
+    if (left > 0) console.log(`  ${left} still waiting: claude-recall rules review`);
+  }
+
+  /** Step through pending memories interactively. */
+  async reviewPending(options: { type?: string; origin?: string; allProjects?: boolean }): Promise<void> {
+    const pending = this.pendingFor(options);
+    if (pending.length === 0) {
+      console.log('✓ Nothing waiting for review.');
+      return;
+    }
+    if (!process.stdin.isTTY) {
+      console.error('`rules review` needs an interactive terminal. Use `claude-recall rules pending`, then `rules approve` / `rules reject`.');
+      process.exitCode = 1;
+      return;
+    }
+    const readline = await import('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q: string) => new Promise<string>(resolve => rl.question(q, a => resolve(a.trim().toLowerCase())));
+    console.log(`\n${pending.length} memor${pending.length === 1 ? 'y' : 'ies'} to review. Approved memories load as rules; rejected ones are deactivated.\n`);
+    let approved = 0, rejected = 0;
+    try {
+      for (let i = 0; i < pending.length; i++) {
+        const m = pending[i];
+        this.printPending(m, `[${i + 1}/${pending.length}] `);
+        const a = await ask('  (a)pprove  (r)eject  (s)kip  (A)pprove all remaining  (q)uit > ');
+        if (a === 'q') break;
+        if (a === 'a' || a === 'y') { approved += this.memoryService.approveRules([m.id!]); }
+        else if (a === 'r' || a === 'n') { rejected += this.memoryService.rejectRules([m.id!]); }
+        else if (a === 'approve all' || a === 'aa' || a === 'all') {
+          approved += this.memoryService.approveRules(pending.slice(i).map(p => p.id!));
+          break;
+        }
+        console.log('');
+      }
+    } finally {
+      rl.close();
+    }
+    console.log(`\n✓ ${approved} approved, ${rejected} rejected.`);
+  }
+
   /** Print a memory's change history, or the latest changes across all memories. */
   showHistory(idOrKey: string | undefined, limit: number): void {
     const storage = this.memoryService.getStorage();
@@ -2396,6 +2503,45 @@ async function main() {
       const cli = new ClaudeRecallCLI(program.opts());
       cli.promoteRule(parseInt(id));
       process.exit(0);
+    });
+
+  const reviewFilters = (cmd: any) => cmd
+    .option('--type <type>', 'Only this memory type')
+    .option('--origin <origin>', 'Only this origin: agent, tool, import, or unknown')
+    .option('--all-projects', 'Include every project, not just this one', false);
+
+  reviewFilters(rulesCmd
+    .command('pending')
+    .description('List memories waiting for your review (quarantined: not loaded as rules until approved)'))
+    .action((options: any) => {
+      new ClaudeRecallCLI(program.opts()).showPending(options);
+      process.exit(0);
+    });
+
+  reviewFilters(rulesCmd
+    .command('review')
+    .description('Step through quarantined memories: approve, reject or skip each one'))
+    .action(async (options: any) => {
+      await new ClaudeRecallCLI(program.opts()).reviewPending(options);
+      process.exit(process.exitCode ?? 0);
+    });
+
+  reviewFilters(rulesCmd
+    .command('approve [ids...]')
+    .description('Approve quarantined memories so they load as rules')
+    .option('--all', 'Approve every pending memory matching the filters', false))
+    .action((ids: string[], options: any) => {
+      new ClaudeRecallCLI(program.opts()).decidePending('approve', ids, options);
+      process.exit(process.exitCode ?? 0);
+    });
+
+  reviewFilters(rulesCmd
+    .command('reject [ids...]')
+    .description('Reject quarantined memories; the same text is refused if stored again')
+    .option('--all', 'Reject every pending memory matching the filters', false))
+    .action((ids: string[], options: any) => {
+      new ClaudeRecallCLI(program.opts()).decidePending('reject', ids, options);
+      process.exit(process.exitCode ?? 0);
     });
 
   rulesCmd

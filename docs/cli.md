@@ -125,6 +125,35 @@ These keep the active rule set small and accurate. None of them deletes a
 memory: a demoted rule is excluded from `load_rules` and injection, and
 `rules promote <id>` brings it back. Re-teaching a demoted rule also revives it.
 
+### rules review / pending / approve / reject
+
+Memories you didn't state yourself wait in quarantine until you approve them:
+anything stored by the agent (`store_memory`), derived from tool output
+(failures, session learnings), imported, or stored before origins were
+recorded. They aren't loaded as rules, and `search_memory` marks them
+`[unverified]`.
+
+```bash
+npx claude-recall rules review                    # step through: (a)pprove (r)eject (s)kip (A)pprove all, (q)uit
+npx claude-recall rules pending                   # list them
+npx claude-recall rules approve 5421 5422         # by id
+npx claude-recall rules approve --all --type devops
+npx claude-recall rules reject --all --origin agent
+```
+
+| Flag | Description |
+|---|---|
+| `--type <type>` | Only this memory type |
+| `--origin <origin>` | Only `agent`, `tool`, `import`, or `unknown` |
+| `--all-projects` | Every project, not just this one |
+| `--all` | (`approve` / `reject`) every pending memory matching the filters |
+
+A rejected memory is deactivated, and the same text is refused if an untrusted
+source stores it again (you can still state it yourself). Approval and
+rejection are CLI-only: no agent tool can do either. The statusLine shows
+`⏳ N to review`, and the agent is told at session start. Turn quarantine off
+with `CLAUDE_RECALL_QUARANTINE=off`.
+
 ### rules history
 
 Show how a memory was created and changed: every create, rewrite (with the old

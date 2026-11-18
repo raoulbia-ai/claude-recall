@@ -21,6 +21,7 @@
 import { hookLog } from './shared';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
+import { pendingNoticeForModel } from '../shared/quarantine-notice';
 
 export async function handleSessionStartBanner(input: any): Promise<void> {
   try {
@@ -47,7 +48,13 @@ export async function handleSessionStartBanner(input: any): Promise<void> {
       );
     }
 
-    hookLog('session-start-banner', `shown (${total} rules, source=${input?.source ?? 'unknown'})`);
+    // Quarantine: memories from untrusted sources wait for the user. The model
+    // reads this line; the user sees it through the model (and the statusLine).
+    const pending = MemoryService.getInstance().countPending(projectId);
+    const notice = pendingNoticeForModel(pending);
+    if (notice) console.log(notice);
+
+    hookLog('session-start-banner', `shown (${total} rules, ${pending} pending, source=${input?.source ?? 'unknown'})`);
   } catch (err) {
     // Never block session start; a broken DB just means no banner (doctor flags it).
     hookLog('session-start-banner', `Error: ${(err as Error).message}`);

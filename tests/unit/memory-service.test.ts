@@ -25,6 +25,16 @@ const ENV_KEYS = [
 ] as const;
 
 describe('MemoryService', () => {
+  // These cases test grouping, caps, budget and sync, not trust: rules are
+  // seeded without an origin, which quarantine (tested in
+  // tests/unit/quarantine.test.ts and tests/redteam) would hold back.
+  const quarantineBefore = process.env.CLAUDE_RECALL_QUARANTINE;
+  beforeAll(() => { process.env.CLAUDE_RECALL_QUARANTINE = 'off'; });
+  afterAll(() => {
+    if (quarantineBefore === undefined) delete process.env.CLAUDE_RECALL_QUARANTINE;
+    else process.env.CLAUDE_RECALL_QUARANTINE = quarantineBefore;
+  });
+
   let testDir: string;
   let savedEnv: Record<string, string | undefined>;
   let service: MemoryService;

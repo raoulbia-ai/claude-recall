@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { MemoryStorage, Memory, MemoryOrigin } from '../memory/storage';
+import { MemoryStorage, Memory, MemoryOrigin, isTrustedMemory, quarantineEnabled, QUARANTINED_TYPES } from '../memory/storage';
 import { redactSecrets, redactValue, screenForAttack } from './memory-guard';
 import { MemoryRetrieval, Context, ScoredMemory } from '../core/retrieval';
 import { ConfigService } from './config';
@@ -115,6 +115,11 @@ export interface StoreOutcome {
   stored: boolean;
   /** Why it was refused, when it was. */
   reason?: string;
+  /**
+   * Stored, but in quarantine: it won't be loaded as a rule until the user
+   * approves it (an untrusted origin while quarantine is on).
+   */
+  pending?: boolean;
 }
 
 export class MemoryService {
@@ -187,6 +192,14 @@ export class MemoryService {
         return { stored: false, reason };
       }
 
+      // Content the user already rejected stays rejected, however often an
+      // untrusted path tries to store it again.
+      const pending = quarantineEnabled() && request.origin !== 'user' && QUARANTINED_TYPES.includes(request.type);
+      if (pending && this.storage.wasRejected(value, request.type, request.context?.projectId || this.config.getProjectId())) {
+        this.logger.info('MemoryService', 'Refused write of content the user rejected', { key: request.key, type: request.type });
+        return { stored: false, reason: 'the user already rejected this memory' };
+      }
+
       // Check memory limits and notify if approaching
       const stats = this.getStats();
       const config = this.config.getConfig();
@@ -225,7 +238,10 @@ export class MemoryService {
         filePath: memory.file_path
       });
 
-      return { stored: true };
+      // Absorbed into an existing trusted rule by dedup? Then it isn't pending.
+      const row = pending ? this.storage.retrieve(request.key) : null;
+      const stillPending = pending && (row ? !isTrustedMemory(row) : true);
+      return stillPending ? { stored: true, pending: true } : { stored: true };
     } catch (error) {
       this.logger.logServiceError('MemoryService', 'store', error as Error, {
         key: request.key,
@@ -637,8 +653,11 @@ export class MemoryService {
       const pid = projectId || this.config.getProjectId();
       const searchContext = { project_id: pid };
 
-      // All categories filter is_active so auto-demoted rules are excluded uniformly.
-      const isActive = (m: Memory) => m.is_active !== false;
+      // All categories filter is_active so auto-demoted rules are excluded
+      // uniformly — and, with quarantine on (the default), memories the user
+      // hasn't vouched for: they wait in `rules pending` until approved.
+      const quarantine = quarantineEnabled();
+      const isActive = (m: Memory) => m.is_active !== false && (!quarantine || isTrustedMemory(m));
       // Capped categories keep confirmed rules first, so the cap cuts
       // unconfirmed ones before rules checked against the user's words.
       const confirmedThenNewest = (a: Memory, b: Memory) =>
@@ -767,6 +786,29 @@ export class MemoryService {
    */
   dedupSimilarRules(options?: { threshold?: number; dryRun?: boolean }): Array<{winnerId: number; winnerKey: string; loserId: number; loserKey: string; similarity: number}> {
     return this.storage.dedupSimilar(options ?? {});
+  }
+
+  /** Memories waiting for the user's review (quarantine). */
+  getPendingRules(opts: { projectId?: string; type?: string; origin?: string } = {}): Memory[] {
+    return this.storage.getPendingRules(opts);
+  }
+
+  countPending(projectId?: string): number {
+    try {
+      return quarantineEnabled() ? this.storage.countPending(projectId || this.config.getProjectId()) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Approve memories out of quarantine. Only the user does this, never an agent tool. */
+  approveRules(ids: number[]): number {
+    return this.storage.approveRules(ids);
+  }
+
+  /** Reject memories: deactivated, and the same content is refused if stored again. */
+  rejectRules(ids: number[]): number {
+    return this.storage.rejectRules(ids);
   }
 
   /**

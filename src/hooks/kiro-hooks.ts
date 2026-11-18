@@ -37,6 +37,7 @@ import { hookLog, safeErrorMessage, hookStateDir } from './shared';
 import { LOAD_RULES_DIRECTIVE } from '../shared/directives';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
+import { pendingNoticeForModel } from '../shared/quarantine-notice';
 import { handleToolOutcomeWatcher } from './tool-outcome-watcher';
 import { handleCorrectionDetector } from './correction-detector';
 import { formatRuleValue, precisionNudge } from '../mcp/tools/memory-tools';
@@ -149,6 +150,12 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
     } catch (err) {
       hookLog(HOOK_NAME, `agentSpawn rule load failed (directive still emitted): ${safeErrorMessage(err)}`);
     }
+
+    // Quarantined memories: the agent tells the user (it never approves them)
+    try {
+      const notice = pendingNoticeForModel(MemoryService.getInstance().countPending(ConfigService.getInstance().getProjectId()));
+      if (notice) parts.push(notice);
+    } catch { /* never block agent spawn */ }
 
     // Surface a pending task checkpoint the same way load_rules hints at one
     try {

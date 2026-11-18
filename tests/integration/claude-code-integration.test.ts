@@ -77,17 +77,19 @@ describe('Claude Code MCP Integration', () => {
 
       const storeResult = JSON.parse(storeResponse.result.content[0].text);
       expect(storeResult.success).toBe(true);
-      expect(storeResult.activeRule).toContain(fixture);
       expect(storeResult.type).toBe('preference');
+      // Quarantine (default): the agent's memory is stored for the user's review
+      expect(storeResult.pending).toBe(true);
 
-      // Retrieve it via load_rules
+      // load_rules doesn't apply it, but counts it as waiting for review
       const rulesResponse = await client.request('tools/call', {
         name: 'load_rules',
         arguments: {}
       });
 
       const rules = JSON.parse(rulesResponse.result.content[0].text);
-      expect(rules.counts.total).toBeGreaterThan(0);
+      expect(rules.rules).not.toContain(fixture);
+      expect(rules.counts.pending).toBeGreaterThan(0);
     });
 
     it('should handle metadata correctly', async () => {
@@ -139,7 +141,9 @@ describe('Claude Code MCP Integration', () => {
       });
 
       const rules = JSON.parse(rulesResponse.result.content[0].text);
-      expect(rules.counts.preferences).toBeGreaterThanOrEqual(3);
+      // all three wait for review (quarantine), none is applied yet
+      expect(rules.counts.pending).toBeGreaterThanOrEqual(3);
+      for (const c of contents) expect(rules.rules).not.toContain(c);
     });
 
     it('does not write auto-skill files by default — not here, not in the repository', async () => {
@@ -158,7 +162,7 @@ describe('Claude Code MCP Integration', () => {
         arguments: {}
       });
 
-      const initialTotal = JSON.parse(rules1.result.content[0].text).counts.total;
+      const initialPending = JSON.parse(rules1.result.content[0].text).counts.pending;
 
       // Store a unique memory — "integration-fixture" prefix avoids the write-time guard.
       const uniqueContent = `integration-fixture session ${Date.now()}`;
@@ -179,8 +183,9 @@ describe('Claude Code MCP Integration', () => {
         arguments: {}
       });
 
-      const newTotal = JSON.parse(rules2.result.content[0].text).counts.total;
-      expect(newTotal).toBeGreaterThan(initialTotal);
+      // The pending memory survived the restart
+      const newPending = JSON.parse(rules2.result.content[0].text).counts.pending;
+      expect(newPending).toBeGreaterThan(initialPending);
     });
   });
 
