@@ -285,7 +285,7 @@ export class MemoryTools {
           success: true,
           pending: true,
           type: detectedType,
-          _directive: "Stored for the user's review: it is NOT active yet. Rules from store_memory wait in quarantine until the user approves them (claude-recall rules review). Do not apply it as a rule in this session unless the user confirms it here; tell the user it is waiting for their review.",
+          _directive: "Stored for the user's review: it is NOT active yet. Rules from store_memory wait in quarantine until the user approves them: they type `recall review` in the chat (or run `claude-recall rules review`). Never run approval commands yourself. Do not apply it as a rule in this session unless the user confirms it here; tell the user it is waiting for their review.",
         };
       }
 

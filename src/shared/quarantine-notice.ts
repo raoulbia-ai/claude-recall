@@ -8,12 +8,12 @@ export function pendingNoticeForModel(count: number): string | null {
   if (count <= 0) return null;
   return `⏳ Recall: ${count} memor${count === 1 ? 'y is' : 'ies are'} waiting for the user's review and NOT loaded as rules ` +
     `(stored by the agent, derived from tool output, or from before origins were recorded). ` +
-    'Tell the user once, briefly, at a natural point: run `claude-recall rules review` to approve or reject them. ' +
-    'Never approve them yourself.';
+    'Tell the user once, briefly, at a natural point: they can type `recall review` here in the chat to go through them ' +
+    '(or run `claude-recall rules review` in a terminal). Only the user can approve: never run approval commands yourself.';
 }
 
 /** For the user directly (Pi notifications, CLI). */
 export function pendingNoticeForUser(count: number): string | null {
   if (count <= 0) return null;
-  return `⏳ Recall: ${count} memor${count === 1 ? 'y' : 'ies'} waiting for your review — run \`claude-recall rules review\``;
+  return `⏳ Recall: ${count} memor${count === 1 ? 'y' : 'ies'} waiting for your review — type "recall review"`;
 }

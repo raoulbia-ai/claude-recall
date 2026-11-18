@@ -373,6 +373,45 @@ export class DoctorCommands {
     return failing;
   }
 
+  /**
+   * User-scope ~/.claude/settings.json must deny the agent the Bash commands
+   * that approve quarantined memories. Missing rules are one problem; --fix
+   * adds them (backup first).
+   */
+  static reportQuarantineDenyRules(home: string, fix: boolean, log: (m: string) => void): number {
+    const { missingQuarantineDenyRules, addQuarantineDenyRules } = require('./quarantine-permissions');
+    const file = path.join(home, '.claude', 'settings.json');
+    const line = (marker: string, text: string) => log(`  ${marker} ${text}`);
+    let settings: any = {};
+    try {
+      if (fs.existsSync(file)) settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      line('⚠', `${file} is not valid JSON — skipped`);
+      return 1;
+    }
+    const missing: string[] = missingQuarantineDenyRules(settings);
+    if (missing.length === 0) {
+      line('✓', 'the agent cannot run `rules approve` or switch quarantine off via Bash');
+      return 0;
+    }
+    if (!fix) {
+      line('⚠', `missing ${missing.length} deny rule(s): the agent could approve quarantined memories via Bash`);
+      line(' ', '        fix: claude-recall doctor --fix');
+      return 1;
+    }
+    try {
+      if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak-${Date.now()}`);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      addQuarantineDenyRules(settings);
+      fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+      line('✓', `added ${missing.length} deny rule(s) to ${file} — takes effect in new sessions`);
+      return 0;
+    } catch (err) {
+      line('⚠', `could not update ${file}: ${(err as Error).message}`);
+      return 1;
+    }
+  }
+
   static async runDoctor(options: { fix?: boolean; home?: string } = {}): Promise<void> {
     const home = options.home ?? os.homedir();
     const log = (m: string) => console.log(m);
@@ -410,6 +449,10 @@ export class DoctorCommands {
     // --- Hooks (the path Claude Code actually runs — catches node-version orphans) ---
     log('\nHooks (Claude Code settings.json)');
     problems += await DoctorCommands.reportHooks(home, process.cwd(), !!options.fix, log);
+
+    // --- Quarantine: the agent must not be able to approve via Bash ---
+    log('\nQuarantine approval (Claude Code permissions)');
+    problems += DoctorCommands.reportQuarantineDenyRules(home, !!options.fix, log);
 
     // --- Launch outside a terminal (desktop app / IDE PATH) ---
     let launchWarnings = 0;
