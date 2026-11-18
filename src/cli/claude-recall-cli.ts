@@ -1871,6 +1871,10 @@ async function main() {
         input,
         encoding: 'utf8',
         timeout: 5000,
+        // This checks the gate's mechanism, so it runs in `block` whatever the
+        // user configured: in the default `warn` the hook exits 0 by design,
+        // which read as a failure here.
+        env: { ...process.env, CLAUDE_RECALL_ENFORCE_MODE: 'block' },
       });
       if (r.error) throw r.error;
       if (r.status !== 0) throw Object.assign(new Error(`exit ${r.status}`), { status: r.status, stderr: r.stderr });
@@ -1905,12 +1909,24 @@ async function main() {
       return;
     }
 
+    // Same resolution as search_enforcer.py: env var, then config.json, then 'warn'.
+    const configuredMode = ((): string => {
+      const env = process.env.CLAUDE_RECALL_ENFORCE_MODE;
+      if (env && env.trim()) return env.trim().toLowerCase();
+      try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude-recall', 'config.json'), 'utf8'));
+        if (cfg?.enforceMode) return String(cfg.enforceMode).trim().toLowerCase();
+      } catch { /* no config file, or unreadable */ }
+      return 'warn';
+    })();
+
     console.log(`📍 Enforcer: ${enforcerPath}`);
-    console.log(`📍 State file: ${stateFile}\n`);
+    console.log(`📍 State file: ${stateFile}`);
+    console.log(`📍 Your enforce mode: ${configuredMode} (the tests below run in block mode)\n`);
 
     // Test 1: No state file - should block
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 1: Write without search (should BLOCK)');
+    console.log('TEST 1: Write without search (should BLOCK in block mode)');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     // Remove any existing state file
@@ -1981,8 +1997,15 @@ async function main() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     if (test1Passed && test2Passed) {
-      console.log('✅ All tests passed! Enforcement is working correctly.\n');
-      console.log('Claude will be blocked from Write/Edit until memory search is performed.\n');
+      console.log('✅ All tests passed! The enforcement hook works.\n');
+      if (configuredMode === 'block') {
+        console.log('Your mode is block: Claude is blocked from Write/Edit until it loads rules.\n');
+      } else if (configuredMode === 'off') {
+        console.log('Your mode is off: the hook does nothing in your sessions.\n');
+      } else {
+        console.log(`Your mode is ${configuredMode}: Claude is reminded to load rules, but not blocked.`);
+        console.log('To block instead, set "enforceMode": "block" in ~/.claude-recall/config.json.\n');
+      }
     } else {
       console.log('❌ Some tests failed. Check hook configuration.\n');
       console.log('Run: claude-recall repair\n');
