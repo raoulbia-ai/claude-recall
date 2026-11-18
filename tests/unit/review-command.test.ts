@@ -63,6 +63,25 @@ describe('in-session review (handleReviewInput)', () => {
     expect(msg).toMatch(/past mistake to avoid\. Reject it if nothing really went wrong/);
   });
 
+  it('takes several answers at once, in order', () => {
+    say('recall review');
+    // newest first: m3 rejected (n), m2 approved (y), m1 skipped (s)
+    expect(say('nys')).toBeDefined();
+    expect(pendingKeys()).toEqual(['m1']);
+    expect(ms().loadActiveRules().preferences.map(m => m.key)).toEqual(['m2']);
+  });
+
+  it('accepts spaced or comma-separated batches, and ignores answers past the end', () => {
+    say('recall review');
+    expect(say('y, y')).toMatch(/\[3\/3\]/);
+    expect(say('y n n')).toMatch(/2 extra answers ignored[\s\S]*Review done: 3 approved/);
+  });
+
+  it('does not treat an ordinary word as a batch', () => {
+    say('recall review');
+    expect(say('yes please refactor')).toBeNull();
+  });
+
   it('approves everything left with "all"', () => {
     say('recall review');
     say('n');
