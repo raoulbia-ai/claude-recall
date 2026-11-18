@@ -50,7 +50,17 @@ describe('in-session review (handleReviewInput)', () => {
   it('shows the stored text itself', () => {
     const msg = say('recall review')!;
     expect(msg).toContain('use conventional commits');
-    expect(msg).toMatch(/from agent/);
+    expect(msg).toMatch(/stored by the agent/);
+    // and what approving it would do
+    expect(msg).toMatch(/approve → the agent follows this as your preference/);
+  });
+
+  it('says what approving a failure means, and that a non-failure should be rejected', () => {
+    ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
+    ms().store({ key: 'f1', origin: 'tool', type: 'failure', value: { content: 'Command failed: cargo build' } });
+    const msg = say('recall review')!;
+    expect(msg).toMatch(/captured from tool output/);
+    expect(msg).toMatch(/past mistake to avoid\. Reject it if nothing really went wrong/);
   });
 
   it('approves everything left with "all"', () => {

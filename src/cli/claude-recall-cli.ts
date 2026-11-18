@@ -661,9 +661,11 @@ class ClaudeRecallCLI {
 
   private printPending(m: Memory, index?: string): void {
     const age = Math.max(0, Math.round((Date.now() - (m.timestamp || Date.now())) / 86400000));
-    console.log(`${index ?? ''}#${m.id}  ${m.type}  from ${m.origin ?? 'unknown (stored before origins were recorded)'}  ${age}d ago`);
+    const { approveMeans, originLabel } = require('../shared/review-command');
+    console.log(`${index ?? ''}#${m.id}  ${m.type}  (${originLabel(m.origin)})  ${age}d ago`);
     console.log(`    ${this.reviewText(m.value)}`);
     if (m.source_excerpt) console.log(`    your words: "${m.source_excerpt.replace(/\s+/g, ' ').slice(0, 160)}"`);
+    console.log(`    ${approveMeans(m.type)}`);
   }
 
   /** List memories waiting in quarantine. */

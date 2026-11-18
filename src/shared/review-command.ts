@@ -73,10 +73,37 @@ export function memoryText(value: any): string {
   return String(typeof s === 'string' ? s : JSON.stringify(s)).replace(/\s+/g, ' ').slice(0, 300);
 }
 
+/**
+ * What approving a memory of this type does, in plain words — so the user
+ * knows what they're agreeing to, not just what the text says.
+ */
+export const APPROVE_MEANS: Record<string, string> = {
+  preference: 'approve → the agent follows this as your preference',
+  correction: 'approve → the agent treats this as a correction you made',
+  devops: 'approve → the agent follows this as a workflow rule',
+  failure: 'approve → shown to the agent as a past mistake to avoid. Reject it if nothing really went wrong',
+  solution: 'approve → offered to the agent as a proven fix to reuse',
+  'project-knowledge': 'approve → given to the agent as a fact about this project',
+};
+
+export function approveMeans(type: string): string {
+  return APPROVE_MEANS[type] ?? 'approve → loaded into the agent\'s context as a rule';
+}
+
+/** Where a memory came from, said so a person can judge it. */
+export function originLabel(origin: string | null | undefined): string {
+  switch (origin) {
+    case 'agent': return 'stored by the agent';
+    case 'tool': return 'captured from tool output';
+    case 'import': return 'imported from a file';
+    case 'user': return 'your own words';
+    default: return 'stored before origins were recorded';
+  }
+}
+
 function describe(m: Memory): string {
-  const from = m.origin ?? 'unknown origin (stored before origins were recorded)';
   const words = m.source_excerpt ? `\n    your words: "${m.source_excerpt.replace(/\s+/g, ' ').slice(0, 200)}"` : '';
-  return `#${m.id} ${m.type}, from ${from}\n    ${memoryText(m.value)}${words}`;
+  return `#${m.id} ${m.type} (${originLabel(m.origin)})\n    ${memoryText(m.value)}${words}\n    ${approveMeans(m.type)}`;
 }
 
 function pending(allProjects: boolean): Memory[] {
