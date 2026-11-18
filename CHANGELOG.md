@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Under Pi a failure only becomes a lesson when there is something to say about it: the model's hindsight, or a remedy a paired fix has already made specific. A failure whose remedy is still the detector's default would otherwise be promoted as "check prerequisites (failure: …)" — a rule loaded every turn that repeats what the failure memory already says. The pass stops taking up failures 15 seconds after the session ends, and the longest quitting can be held — 15 seconds in 0.48.0 — becomes 30, which leaves a model call already in flight and the promotion after it room to finish.
 
+## [0.49.0] - 2026-11-18
+
+### Changed
+
+- **Outcome tracking writes only what something reads.** Of everything written to `outcome_events` and `rule_injection_events`, logic reads exactly one kind: the tool failures the Stop hook turns into lessons. The rest (successful tool results, sub-agent results, agent failures, re-ask signals, rule injections) was shown only by the `outcomes` CLI. On one install that was 96% of the rows, written from hooks that run on every tool call. With the default `CLAUDE_RECALL_OUTCOME_TRACKING=auto`, only tool failures are written now. `on` restores the full history; `off` writes nothing. Lessons are unaffected. The two re-ask writers also ignored the setting until now.
+
 ## [0.48.1] - 2026-11-18
 
 ### Changed

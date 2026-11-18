@@ -279,7 +279,7 @@ export default function(pi: PiTypes.ExtensionAPI) {
 
           // Pi has no resolver hook, and `getInjectionStats` — this table's only
           // reader — has no callers, so by default these rows go unread.
-          if (shouldRecordOutcomes('pi')) {
+          if (shouldRecordOutcomes('pi', 'detail')) {
             try {
               const outcomeStorage = OutcomeStorage.getInstance();
               for (const m of matches) {

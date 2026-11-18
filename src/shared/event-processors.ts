@@ -149,7 +149,7 @@ export function processToolOutcome(
     }
 
     // Raw event for the distillation step — only where that step exists
-    if (shouldRecordOutcomes(runtime)) {
+    if (shouldRecordOutcomes(runtime, 'detail')) {
       recordOutcomeEvent(toolName, toolInput, toolOutput);
     }
   } catch (err) {
@@ -260,17 +260,20 @@ export async function processUserInput(text: string, _sessionId: string): Promis
   if (text.length < 20 || text.length > 2000) return null;
   if (text.startsWith('```') || text.startsWith('{')) return null;
 
-  // Detect reask signals
+  // Detect reask signals — read by nothing but the `outcomes` CLI, so only
+  // under OUTCOME_TRACKING=on. Pi is this function's only caller.
   try {
-    for (const pattern of REASK_PATTERNS) {
-      if (pattern.test(text)) {
-        OutcomeStorage.getInstance().createOutcomeEvent({
-          event_type: 'reask_signal',
-          actor: 'user',
-          next_state_summary: `User reask detected: ${text.substring(0, 100)}`,
-          tags: ['reask'],
-        });
-        break;
+    if (shouldRecordOutcomes('pi', 'detail')) {
+      for (const pattern of REASK_PATTERNS) {
+        if (pattern.test(text)) {
+          OutcomeStorage.getInstance().createOutcomeEvent({
+            event_type: 'reask_signal',
+            actor: 'user',
+            next_state_summary: `User reask detected: ${text.substring(0, 100)}`,
+            tags: ['reask'],
+          });
+          break;
+        }
       }
     }
   } catch {
