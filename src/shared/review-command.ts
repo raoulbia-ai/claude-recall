@@ -11,6 +11,7 @@
  *
  *   recall review [all]           step through pending memories (all = every project)
  *     y / n / s / all / q         approve / reject / skip / approve the rest / quit
+ *     nyy (or "n y y")             several answers at once, applied in order
  *   recall pending [all]          list them
  *   recall approve <ids|all>      approve by id, or everything pending
  *   recall reject <ids|all>       reject by id, or everything pending
@@ -112,7 +113,7 @@ function pending(allProjects: boolean): Memory[] {
   });
 }
 
-const PROMPT_LINE = 'Reply: y = approve · n = reject · s = skip · all = approve the rest · q = stop';
+const PROMPT_LINE = 'Reply: y = approve · n = reject · s = skip · all = approve the rest · q = stop · several at once: nyy';
 
 function showCurrent(s: ReviewState, prefix = ''): string {
   const ms = MemoryService.getInstance();
@@ -144,6 +145,25 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
   // A reply during an active review: only these exact words are captured, so
   // an ordinary prompt still reaches the agent (and ends the review).
   const state = readState(file);
+  // Several answers at once, applied in order: "nyy", "n y y", "y,n,s"
+  const batch = state && state.position < state.queue.length && /^[yns](?:[\s,]*[yns])+$/.test(lower)
+    ? lower.replace(/[\s,]/g, '')
+    : null;
+  if (state && batch) {
+    let applied = 0;
+    for (const answer of batch) {
+      if (state.position >= state.queue.length) break;
+      const current = state.queue[state.position];
+      if (answer === 'y') state.approved += ms.approveRules([current]);
+      else if (answer === 'n') state.rejected += ms.rejectRules([current]);
+      state.position++;
+      applied++;
+    }
+    const extra = batch.length - applied;
+    const msg = showCurrent(state, extra > 0 ? `(${extra} extra answer${extra === 1 ? '' : 's'} ignored: the review ran out of items)\n` : '');
+    writeState(file, state.position < state.queue.length ? state : null);
+    return msg;
+  }
   if (state && state.position < state.queue.length) {
     const id = state.queue[state.position];
     switch (lower) {

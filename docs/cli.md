@@ -150,7 +150,7 @@ npx claude-recall rules reject --all --origin agent
 
 **In the chat (Claude Code and Pi):** type `recall review` to step through
 pending memories (`y` approve, `n` reject, `s` skip, `all` approve the rest,
-`q` stop), `recall pending` to list them, or `recall approve <ids|all>` /
+`q` stop; several at once like `nyy`), `recall pending` to list them, or `recall approve <ids|all>` /
 `recall reject <ids|all>`. The prompt hook (Claude Code) or the input handler
 (Pi, interactive input only) handles these before the agent sees them, and
 shows you the result directly, so the agent can neither start a review nor
