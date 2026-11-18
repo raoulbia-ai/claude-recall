@@ -513,6 +513,20 @@ class ClaudeRecallCLI {
     // command even when no version change is pending.
     this.warnOrCleanStaleLocals(latest, opts.cleanLocals === true);
 
+    // Hooks run whatever path settings.json names. A routine upgrade keeps that
+    // path valid; a Node version switch under nvm (or a moved install) does
+    // not, and the hooks then fail silently. Say so only when it has happened.
+    try {
+      const { bad } = DoctorCommands.scanHooks(os.homedir(), process.cwd());
+      if (bad.length > 0) {
+        console.log(`\n⚠️  ${bad.length} claude-recall hook${bad.length === 1 ? '' : 's'} point${bad.length === 1 ? 's' : ''} at a path that no longer runs:`);
+        for (const d of bad) console.log(`   - ${d}`);
+        console.log('   Fix: claude-recall repair --auto   (then restart Claude Code)');
+      }
+    } catch {
+      // Diagnostic only — never fail an upgrade over it
+    }
+
     if (needsInstall) {
       console.log(`\n✓ Upgraded to ${latest}. No need to re-run \`claude mcp add\` — existing`);
       console.log('  registrations point at the `claude-recall` command and pick up the new');

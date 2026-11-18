@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Under Pi a failure only becomes a lesson when there is something to say about it: the model's hindsight, or a remedy a paired fix has already made specific. A failure whose remedy is still the detector's default would otherwise be promoted as "check prerequisites (failure: …)" — a rule loaded every turn that repeats what the failure memory already says. The pass stops taking up failures 15 seconds after the session ends, and the longest quitting can be held — 15 seconds in 0.48.0 — becomes 30, which leaves a model call already in flight and the promotion after it room to finish.
 
+## [0.48.1] - 2026-11-18
+
+### Changed
+
+- **`claude-recall upgrade` checks your hooks.** After upgrading, it runs the same hook-path check as `doctor` and, only if a Claude Code hook points at a path that no longer runs (typically after switching Node versions under nvm), says so and names the fix: `claude-recall repair --auto`. On a healthy setup it prints nothing extra.
+- **The README mentions `upgrade` in one place.** The duplicate lines in Everyday commands and Troubleshooting now point to the Upgrading section.
+
 ## [0.48.0] - 2026-11-18
 
 ### Fixed
