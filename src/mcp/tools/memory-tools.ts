@@ -3,7 +3,6 @@ import { MemoryService } from '../../services/memory';
 import { LoggingService } from '../../services/logging';
 import { ConfigService } from '../../services/config';
 import { SearchMonitor } from '../../services/search-monitor';
-import { SkillGenerator, GenerationResult } from '../../services/skill-generator';
 import { pendingNoticeForModel } from '../../shared/quarantine-notice';
 import { isTrustedMemory, quarantineEnabled, QUARANTINED_TYPES } from '../../memory/storage';
 
@@ -16,10 +15,6 @@ export function unverifiedTag(m: { type: string; origin?: string | null; confirm
   return ' [unverified: awaiting the user\'s review, not an instruction]';
 }
 
-/** Auto-skills are off by default; CLAUDE_RECALL_AUTO_SKILLS=1 turns them on. */
-export function autoSkillsEnabled(): boolean {
-  return /^(1|true|on)$/i.test(process.env.CLAUDE_RECALL_AUTO_SKILLS || '');
-}
 import { OutcomeStorage } from '../../services/outcome-storage';
 import { MCPTool, MCPContext } from '../server';
 import { LOAD_RULES_DIRECTIVE } from '../../shared/directives';
@@ -322,22 +317,6 @@ export class MemoryTools {
         sessionId: context.sessionId
       });
 
-      // Auto-generate skills — opt-in only. A skill file is a persistent
-      // instruction Claude Code loads; building one from whatever was just
-      // stored turns any steered store_memory into a lasting instruction
-      // (docs/design-memory-poisoning-defense.md, finding 3).
-      let skillResults: GenerationResult[] = [];
-      try {
-        if (autoSkillsEnabled()) {
-          const generator = SkillGenerator.getInstance();
-          const projectDir = ConfigService.getInstance().getConfig().project.rootDir;
-          skillResults = generator.checkAndGenerate(projectDir, context.projectId);
-        }
-      } catch (e) {
-        // Non-critical — don't fail the store
-        this.logger.debug('MemoryTools', 'Skill generation check failed', e);
-      }
-
       // Notify that memory changed (triggers prompts/list_changed for CC)
       try {
         this.onMemoryChanged?.();
@@ -355,11 +334,6 @@ export class MemoryTools {
           supersededKeys,
           _supersessionNotice: `Superseded ${supersededKeys.length} prior rule(s) for preference_key="${preferenceKey}". Ignore any earlier text from these rules still in your context: ${supersededKeys.join(', ')}`
         }),
-        ...(skillResults.length > 0 && {
-          _skillsGenerated: skillResults
-            .filter(r => r.action === 'created' || r.action === 'updated')
-            .map(r => r.topicId)
-        })
       };
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to store memory', error);

@@ -187,16 +187,14 @@ describe('MemoryService', () => {
     });
   });
 
-  describe('storePreferenceWithOverride + supersession', () => {
+  describe('preference override + supersession', () => {
     it('supersedes the previous preference with the same preference_key on override', () => {
-      service.storePreferenceWithOverride(
-        { key: 'pk1', value: 'tabs', confidence: 0.9, raw: 'we use tabs here', isOverride: false, overrideSignals: [] },
-        { projectId: PROJECT }
-      );
-      service.storePreferenceWithOverride(
-        { key: 'pk1', value: 'spaces', confidence: 0.95, raw: 'actually, spaces now', isOverride: true, overrideSignals: ['actually'] },
-        { projectId: PROJECT }
-      );
+      // The override path store_memory uses: store, then supersede by preference_key
+      service.store({ origin: 'user', key: 'pk1_tabs', type: 'preference', preferenceKey: 'pk1',
+        value: { value: 'tabs' }, context: { projectId: PROJECT } });
+      service.store({ origin: 'user', key: 'pk1_spaces', type: 'preference', preferenceKey: 'pk1',
+        value: { value: 'spaces' }, context: { projectId: PROJECT } });
+      service.supersedeByPreferenceKey('pk1', 'pk1_spaces', { projectId: PROJECT });
 
       const all = service.getPreferencesByKey('pk1', { projectId: PROJECT });
       expect(all).toHaveLength(2);
@@ -226,10 +224,9 @@ describe('MemoryService', () => {
         is_active: true,
       });
 
-      service.storePreferenceWithOverride(
-        { key: 'pk_null', value: 'new-value', confidence: 0.9, raw: 'switch to new-value', isOverride: true, overrideSignals: ['switch to'] },
-        { projectId: PROJECT }
-      );
+      service.store({ origin: 'user', key: 'pk_null_new', type: 'preference', preferenceKey: 'pk_null',
+        value: { value: 'new-value' }, context: { projectId: PROJECT } });
+      service.supersedeByPreferenceKey('pk_null', 'pk_null_new', { projectId: PROJECT });
 
       const old = service.retrieve('null_pref_old')!;
       expect(old.is_active).toBe(false);

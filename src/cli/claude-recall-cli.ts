@@ -11,7 +11,6 @@ import * as os from 'os';
 import { PatternService } from '../services/pattern-service';
 import { MCPServer } from '../mcp/server';
 import { SearchMonitor } from '../services/search-monitor';
-import { SkillGenerator } from '../services/skill-generator';
 import { MCPCommands } from './commands/mcp-commands';
 import { ProjectCommands } from './commands/project-commands';
 import { HookCommands } from './commands/hook-commands';
@@ -2178,123 +2177,35 @@ async function main() {
       process.exit(0);
     });
 
-  // Skills command group
+  // Skills: only cleanup remains. Generating skills from memories was removed
+  // (a skill is a persistent instruction); files older releases wrote are
+  // still loaded by Claude Code until deleted.
   const skillsCmd = program
     .command('skills')
-    .description('Auto-generated skill management (subcommands: generate, list, clean)');
-
-  skillsCmd
-    .command('generate')
-    .description('Generate skills from accumulated memories')
-    .option('--topic <id>', 'Generate a specific topic only')
-    .option('--dry-run', 'Preview what would be generated without writing')
-    .option('--force', 'Regenerate even if content is unchanged')
-    .action((options) => {
-      const generator = SkillGenerator.getInstance();
-      const projectDir = process.cwd();
-      const configService = ConfigService.getInstance();
-      const projectId = configService.getProjectId();
-
-      if (options.dryRun) {
-        console.log('\n📋 Skills Generation Preview (dry run)\n');
-        const ready = generator.getReadyTopics(projectId);
-        if (ready.length === 0) {
-          console.log('No topics have enough memories to generate skills yet.\n');
-          const topics = SkillGenerator.getTopics();
-          console.log('Topic thresholds:');
-          for (const topic of topics) {
-            console.log(`  ${topic.id}: needs ${topic.threshold}+ memories`);
-          }
-        } else {
-          for (const { topic, count } of ready) {
-            console.log(`  ✅ ${topic.id}: ${count} memories (threshold: ${topic.threshold}) → .claude/skills/${topic.skillDir}/`);
-          }
-        }
-        console.log('');
-        process.exit(0);
-      }
-
-      if (options.topic) {
-        console.log(`\n📦 Generating skill: ${options.topic}\n`);
-        const result = generator.generateTopic(options.topic, projectDir, options.force || false, projectId);
-        if (result.action === 'skipped') {
-          console.log(`⏭️  Skipped: not enough memories (${result.memoryCount} found)`);
-        } else if (result.action === 'unchanged') {
-          console.log(`✅ Unchanged: skill is up to date (${result.memoryCount} memories)`);
-        } else {
-          console.log(`✅ ${result.action === 'created' ? 'Created' : 'Updated'}: ${result.skillPath}`);
-          console.log(`   ${result.memoryCount} memories`);
-        }
-      } else {
-        console.log('\n📦 Generating all qualifying skills\n');
-        const results = generator.generateAll(projectDir, options.force || false, projectId);
-        let generated = 0;
-        for (const result of results) {
-          if (result.action === 'created' || result.action === 'updated') {
-            console.log(`  ✅ ${result.action}: ${result.skillPath} (${result.memoryCount} memories)`);
-            generated++;
-          } else if (result.action === 'unchanged') {
-            console.log(`  ✔️  ${result.topicId}: unchanged`);
-          }
-          // Don't print skipped topics to reduce noise
-        }
-        if (generated === 0) {
-          console.log('  No new skills generated.');
-        }
-      }
-      console.log('');
-      process.exit(0);
-    });
-
-  skillsCmd
-    .command('list')
-    .description('List all auto-generated skills')
-    .action(() => {
-      const generator = SkillGenerator.getInstance();
-      const projectDir = process.cwd();
-      const skills = generator.listGeneratedSkills(projectDir);
-
-      console.log('\n📋 Auto-Generated Skills\n');
-
-      if (skills.length === 0) {
-        console.log('No auto-generated skills found.\n');
-        console.log('Run `claude-recall skills generate` to create skills from memories.\n');
-      } else {
-        for (const skill of skills) {
-          console.log(`  ${skill.skillDir}/`);
-          console.log(`    Topic: ${skill.topicId}`);
-          console.log(`    Memories: ${skill.manifest.memoryCount}`);
-          console.log(`    Generated: ${skill.manifest.generatedAt}`);
-          console.log('');
-        }
-      }
-      process.exit(0);
-    });
+    .description('Remove skill files older claude-recall releases generated from memories');
 
   skillsCmd
     .command('clean')
-    .description('Remove all auto-generated skills')
-    .option('--force', 'Confirm deletion')
+    .description('Delete .claude/skills/auto-*/ folders claude-recall generated in this project')
+    .option('--force', 'Delete without asking (otherwise just lists them)')
     .action((options) => {
-      if (!options.force) {
-        console.log('⚠️  This will remove all auto-generated skill files.');
-        console.log('Use --force to confirm.\n');
+      const { findGeneratedSkills, cleanGeneratedSkills } = require('../services/auto-skill-cleanup');
+      const projectDir = process.cwd();
+      const found: string[] = findGeneratedSkills(projectDir);
+      if (found.length === 0) {
+        console.log('\nNo claude-recall-generated skills here.\n');
         process.exit(0);
       }
-
-      const generator = SkillGenerator.getInstance();
-      const projectDir = process.cwd();
-      const removed = generator.cleanGeneratedSkills(projectDir);
-
-      if (removed.length === 0) {
-        console.log('\nNo auto-generated skills found to remove.\n');
-      } else {
-        console.log(`\n🧹 Removed ${removed.length} auto-generated skill(s):\n`);
-        for (const dir of removed) {
-          console.log(`  - .claude/skills/${dir}/`);
-        }
+      if (!options.force) {
+        console.log(`\nFound ${found.length} generated skill folder(s); re-run with --force to delete:\n`);
+        for (const d of found) console.log(`  - .claude/skills/${d}/`);
         console.log('');
+        process.exit(0);
       }
+      const removed: string[] = cleanGeneratedSkills(projectDir);
+      console.log(`\n🧹 Removed ${removed.length} generated skill folder(s):\n`);
+      for (const d of removed) console.log(`  - .claude/skills/${d}/`);
+      console.log('');
       process.exit(0);
     });
 

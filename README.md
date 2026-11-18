@@ -314,7 +314,7 @@ claude-recall checkpoint load [--json]
 claude-recall checkpoint clear
 
 # ── Skills ───────────────────────────────────────────────────────────
-claude-recall skills generate            # Generate skills from memories (--dry-run, --force)
+claude-recall skills clean               # Delete skill files older releases generated from memories (--force)
 claude-recall skills list                # List generated skills
 claude-recall skills clean --force       # Remove all auto-generated skills
 
@@ -357,7 +357,7 @@ Six memory tools (`load_rules`, `store_memory`, `search_memory`, `delete_memory`
 
 **Source links.** A memory captured by a Claude Code hook records the session, transcript file and transcript entry it came from. It also keeps a copy of the user's text, up to 2,000 chars. `search_memory` prints the source under the memory, so the agent can read the user's exact words when the one-line extract isn't enough. Claude Code deletes old transcripts (`cleanupPeriodDays`, 30 days by default); once a transcript is gone, `search_memory` quotes the saved text instead of the dead path. Memories stored through `store_memory`, the CLI, Pi or Kiro, and memories captured before 0.46.0, have no source.
 
-**Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`), and a bundled skill file for Pi. Skills generated from your memories (`.claude/skills/auto-*/`) are **off by default**: a skill is a persistent instruction, and building one automatically from whatever was just stored lets a steered agent plant one. Opt in with `CLAUDE_RECALL_AUTO_SKILLS=1`, or run `claude-recall skills generate` by hand.
+**Skills.** Claude Recall teaches agents *when* to use memory via skill files — Anthropic's [Agent Skills](https://agentskills.io/) standard for Claude Code (`.claude/skills/memory-management/`), and a bundled skill file for Pi. Earlier releases also generated skills from your memories (`.claude/skills/auto-*/`). That feature is gone: a skill is a persistent instruction, and building one from stored memories let a steered agent plant one. Files it left behind are still loaded by Claude Code; delete them with `claude-recall skills clean --force` in each project.
 
 ### Success capture
 
@@ -503,7 +503,6 @@ Defaults work out of the box; tune via environment variables as needed.
 | `CLAUDE_RECALL_STOP_DEBOUNCE_MS`         | `300000` | Debounce for the heavy Stop-hook pipeline (session extraction, failure scan). `0` disables. |
 | `CLAUDE_RECALL_PROJECT_ID`               | *(cwd)*  | Pin the project scope to a fixed id, overriding working-directory detection. |
 | `CLAUDE_RECALL_OUTCOME_TRACKING`         | `auto`  | Outcome history (`outcome_events`, `rule_injection_events`, episodes) for the `outcomes` CLI. `on` writes it; `auto` and `off` write nothing. Debugging aid only: failure memories are stored regardless. |
-| `CLAUDE_RECALL_AUTO_SKILLS`              | _(unset)_ | Set to `1` to regenerate `.claude/skills/auto-*/` skill files from memories on every `store_memory`. Off by default: a skill is a persistent instruction. |
 | `CLAUDE_RECALL_QUARANTINE`               | `on`    | Memories you didn't state (agent-stored, tool-derived, imported, or stored before origins were recorded) load only after you approve them (`claude-recall rules review`). `off` loads everything as before. |
 | `CLAUDE_RECALL_RETRIEVAL`                | `like`  | Lexical retrieval engine: `fts` uses SQLite FTS5 / BM25 ranking for better paraphrase recall; `like` (default) uses the legacy substring filter. Opt-in; falls back to `like` automatically if the SQLite build lacks FTS5. See [docs/design-hybrid-retrieval-fts5.md](docs/design-hybrid-retrieval-fts5.md). |
 

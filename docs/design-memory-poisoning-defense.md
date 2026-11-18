@@ -77,7 +77,7 @@ On the maintainer's database (2026-11-18), only 16 of 156 active memories (10%) 
 
 Each phase is its own PR, merged only when its tests pass.
 
-- **Phase 0: auto-skills.** Off by default (`CLAUDE_RECALL_AUTO_SKILLS=1` to enable); the integration test no longer writes into the repository.
+- **Phase 0: auto-skills.** Off by default (#150), then removed entirely; `skills clean` deletes files earlier releases generated. The integration test no longer writes into the repository.
 - **Phase 1: provenance and screening.** The `origin` column, set on every write path (required by the type system, so a new path can't skip it); attack-pattern screening and secret redaction on write; the red-team suite. A flagged write is refused unless its origin is `user`: the user may legitimately say "never pipe curl to sh".
 - **Phase 2: history.** An append-only change log and `claude-recall rules history <id>`.
 - **Phase 3: quarantine by default.** Unverified memories aren't loaded. The user is told about pending memories at session start (statusLine count, SessionStart notice, Pi `notify`), and can act on them with `claude-recall rules pending` / `approve` / `reject`, including in bulk. The janitor's `confirm` approves what the user's own words support.
@@ -88,6 +88,6 @@ Each phase is its own PR, merged only when its tests pass.
 
 - **Failures are quarantined too.** They're derived from tool output, so by decision 1 they wait for review like any other untrusted memory. That's the noisiest category; if reviewing them proves a burden, options are to let the janitor's confirm pass cover them, or to load failures (which are never JIT-injected) as labelled evidence instead of rules.
 - **Task checkpoints are another injection channel.** `save_checkpoint` text (agent-written) is shown at session start; it isn't a rule type, so quarantine doesn't cover it. Consider the same origin tag and an "unverified" label.
-- **`MemoryService.storePreferenceWithOverride` bypasses the guardrails** (it calls `storage.save` directly). Nothing in `src` calls it today; route it through `store()` or remove it.
-- **Auto-skills:** remove the feature after one release with it off (decision 5).
+- ~~`MemoryService.storePreferenceWithOverride` bypasses the guardrails~~ — removed.
+- ~~Auto-skills: remove the feature~~ — removed.
 
