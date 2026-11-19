@@ -379,7 +379,7 @@ claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rul
 
 ## Under the hood
 
-Everything lives in one local SQLite database (`~/.claude-recall/claude-recall.db`, in WAL mode, with content-hash deduplication and automatic compaction). The agent reaches it through six memory tools: `load_rules`, `store_memory`, `search_memory`, `delete_memory`, `save_checkpoint` and `load_checkpoint`. Each agent connects in its own way:
+Everything lives in one local SQLite database (`~/.claude-recall/claude-recall.db`, in WAL mode, with content-hash deduplication and automatic compaction). The agent reaches it through four memory tools: `load_rules`, `store_memory`, `search_memory` and `delete_memory`. Each agent connects in its own way:
 
 - **Claude Code**: an MCP server (`mcp__claude-recall__*` tools) plus hooks that do the automatic capture
 - **Pi**: a native extension (`recall_*` tools) plus event handlers
