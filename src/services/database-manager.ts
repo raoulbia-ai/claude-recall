@@ -367,7 +367,7 @@ export class DatabaseManager {
       let totalRemoved = 0;
 
       // Content-hash dedup, scoped per project: two projects may legitimately
-      // hold identical content (e.g. task checkpoints), so grouping must never
+      // hold identical content, so grouping must never
       // collapse across project_id. Winner selection prefers ACTIVE rows —
       // keeping min(id) unconditionally could delete the active row and leave
       // a superseded one, silently dropping the rule from loadActiveRules.

@@ -120,16 +120,12 @@ export class HookCommands {
         await handleBashFailureWatcher(input);
         break;
       }
-      case 'session-end-checkpoint': {
-        const { handleSessionEndCheckpoint } = await import('../../hooks/session-end-checkpoint');
-        await handleSessionEndCheckpoint(input);
+      case 'session-end-checkpoint':
+      case 'session-end-checkpoint-worker':
+        // Task checkpoints were retired in 0.52.0. Older settings.json files
+        // still register this SessionEnd hook until setup rewrites them, so
+        // the id stays known and does nothing.
         break;
-      }
-      case 'session-end-checkpoint-worker': {
-        const { handleSessionEndCheckpointWorker } = await import('../../hooks/session-end-checkpoint-worker');
-        await handleSessionEndCheckpointWorker(input);
-        break;
-      }
       case 'rule-injector': {
         const { handleRuleInjector } = await import('../../hooks/rule-injector');
         await handleRuleInjector(input);

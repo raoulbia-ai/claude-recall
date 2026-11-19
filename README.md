@@ -181,7 +181,6 @@ The full list, by agent (CC = Claude Code):
 | **Before the conversation is compressed** | Important context is captured first | ✓ | ✓ |  |
 | **After it's compressed** | Rules are re-loaded into the fresh context | ✓ |  |  |
 | **A sub-agent starts** | It's given your rules too | ✓ |  |  |
-| **Session ends** | A checkpoint (`{completed, remaining, blockers}`) is saved for next time | ✓ | ✓ |  |
 | **A hard-won success** | A goal that failed repeatedly before it worked is kept as a reusable `solution` ([details](#success-capture)) | ✓ | ✓ |  |
 | **Once a day** | The [janitor](#memory-janitor) cleans up: drops noise, merges duplicates, sharpens vague rules, confirms rules you stated, tidies the review queue | ✓ |  | ✓ |
 
@@ -279,17 +278,6 @@ claude-recall export backup.json         # Export to JSON (import to restore)
 claude-recall clear --force              # Wipe this project's memories (backup written first)
 ```
 
-### Task checkpoints
-
-A checkpoint is a "where I left off" note: one per project, replaced each time you save.
-
-```bash
-claude-recall checkpoint save --completed "API layer" --remaining "wire the UI" --blockers "none"
-claude-recall checkpoint load
-```
-
-Claude Code and Pi also save one automatically when a session ends (Pi has no `--resume`, so this is how it picks up again). Like capture, it's written by your agent's own AI on your subscription, with no API key involved; the same goes for the other background features (session learnings, batch classification). Pi-only machines without the `claude` program can opt in to an `ANTHROPIC_API_KEY` with `CLAUDE_RECALL_PREFER_API_KEY=1`. A safeguard stops an automatic checkpoint from overwriting your own when the task was already done.
-
 ### When something seems wrong
 
 ```bash
@@ -355,11 +343,6 @@ claude-recall rules demote --min-loads 20 --min-age-days 7   # Tune thresholds
 claude-recall rules promote <id>         # Restore an auto-demoted, auto-deduped or janitor-demoted rule
 claude-recall rules dedup [--dry-run]    # Collapse near-duplicate rules (--threshold 0.8 for stricter)
 claude-recall janitor [--dry-run|--status]  # Run the daily memory janitor now
-
-# ── Task Checkpoints ────────────────────────────────────────────────
-claude-recall checkpoint save --completed <text> --remaining <text> [--blockers <text>] [--notes <text>]
-claude-recall checkpoint load [--json]
-claude-recall checkpoint clear
 
 # ── Skills ───────────────────────────────────────────────────────────
 claude-recall skills clean               # Delete skill files older releases generated from memories (--force)
@@ -498,11 +481,11 @@ The defaults work out of the box. If you want to tune something, these environme
 | Variable                                 | Default | Effect                                                                                                   |
 | ---------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | `CLAUDE_RECALL_DB_PATH`                  | `~/.claude-recall/` | Database directory.                                                                          |
-| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based AI features. **Never required, never provided by Claude Code, and never touched unless you opt in** with `CLAUDE_RECALL_PREFER_API_KEY=1`; capture, checkpoint extraction, session learnings and the janitor all run on each agent's own AI (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`), with pattern matching as the fallback. |
+| `ANTHROPIC_API_KEY`                      | _(unset)_ | Optional personal API key for Haiku-based AI features. **Never required, never provided by Claude Code, and never touched unless you opt in** with `CLAUDE_RECALL_PREFER_API_KEY=1`; capture, session learnings and the janitor all run on each agent's own AI (Claude subscription via `claude -p`; Kiro credits via `kiro-cli`), with pattern matching as the fallback. |
 | `CLAUDE_RECALL_CC_MODEL`                 | `haiku` | Model used for capture under Claude Code (passed to `claude -p --model`), separate from your session's model. |
 | `CLAUDE_RECALL_CC_LLM_TIMEOUT_MS`        | `30000` | Time limit for the headless `claude -p` classify call before the capture worker gives up. |
 | `CLAUDE_RECALL_KIRO_MODEL`               | `claude-haiku-4.5` | Model used for capture under Kiro, **separate from your Kiro chat model**. Raise to `claude-sonnet-4.6` for steadier judgement at more credits. See [docs/kiro-llm-capture.md](docs/kiro-llm-capture.md). |
-| `CLAUDE_RECALL_PI_LLM`                   | _(unset)_ | Set to `1` to let a Pi host use Pi's own headless mode (`pi -p`) for session learnings, checkpoint extraction and batch classification. **Off by default**: these are extra model calls on your Pi provider (paid, if you run Pi on an API key), and they send session text to it. The nested call can only answer: it runs with no tools, no MCP, no session file and none of your skills, prompt templates or context files. **Needs Pi 1.0.4 or later** (the first release with `--no-mcp`); an older Pi rejects the flag, so every call fails: nothing is learned, nothing breaks, and the log says why (`pi exited 1: Error: Unknown option: --no-mcp`). Has no effect outside a Pi session. |
+| `CLAUDE_RECALL_PI_LLM`                   | _(unset)_ | Set to `1` to let a Pi host use Pi's own headless mode (`pi -p`) for session learnings and batch classification. **Off by default**: these are extra model calls on your Pi provider (paid, if you run Pi on an API key), and they send session text to it. The nested call can only answer: it runs with no tools, no MCP, no session file and none of your skills, prompt templates or context files. **Needs Pi 1.0.4 or later** (the first release with `--no-mcp`); an older Pi rejects the flag, so every call fails: nothing is learned, nothing breaks, and the log says why (`pi exited 1: Error: Unknown option: --no-mcp`). Has no effect outside a Pi session. |
 | `CLAUDE_RECALL_PI_MODEL`                 | _(Pi's default)_ | Model for Pi's headless mode (`pi -p`), when `CLAUDE_RECALL_PI_LLM` is on. The nested call runs with `--no-extensions`, so this must name a model from Pi's own configuration; models added by an extension aren't visible to it. |
 | `CLAUDE_RECALL_PI_EXTENSIONS`            | _(unset)_ | Set to `1` when Pi's models come from an extension (the headless child runs with `--no-extensions` by default and wouldn't see them). Recursion is then stopped by `CLAUDE_RECALL_NESTED`, which the extension honours by doing nothing. |
 | `CLAUDE_RECALL_PREFER_API_KEY`           | _(unset)_ | **The only switch that turns on the `ANTHROPIC_API_KEY` backend** (and prefers it). For Pi-only machines without the `claude` program, or a stronger model you deliberately pay for. Applies to all AI features, under Claude Code, Kiro and Pi. |

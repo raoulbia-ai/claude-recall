@@ -158,18 +158,6 @@ export async function handleKiroAgentSpawn(_input: any): Promise<void> {
       if (notice) parts.push(notice);
     } catch { /* never block agent spawn */ }
 
-    // Surface a pending task checkpoint the same way load_rules hints at one
-    try {
-      const projectId = ConfigService.getInstance().getProjectId();
-      const checkpoint = MemoryService.getInstance().loadCheckpoint(projectId);
-      if (checkpoint) {
-        parts.push(
-          `📌 A task checkpoint exists for this project (updated ${new Date(checkpoint.updated_at).toLocaleString()}). ` +
-          `Remaining: ${checkpoint.remaining.substring(0, 200)}`
-        );
-      }
-    } catch { /* checkpoint hint is best-effort */ }
-
     process.stdout.write(parts.join('\n\n') + '\n');
     hookLog(HOOK_NAME, `agentSpawn: injected memory directive + ${total} rule(s) into Kiro context`);
 
@@ -302,7 +290,7 @@ function emitRuleRefresh(input: any): void {
  * (kiro-capture-worker) that survives this process, pipes the prompt payload to
  * it over stdin, and returns in milliseconds. The worker performs the slow Kiro
  * classify call and stores the memory in the background. Same pattern as
- * session-end-checkpoint. See docs/kiro-llm-capture.md.
+ * cc-capture. See docs/kiro-llm-capture.md.
  *
  * It also owns the mid-session rule refresh (emitRuleRefresh above): the
  * refresh must count EVERY prompt, so it runs before the capture pre-checks.

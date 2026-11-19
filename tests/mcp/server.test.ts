@@ -76,8 +76,6 @@ const EXPECTED_TOOLS = [
   'store_memory',
   'search_memory',
   'delete_memory',
-  'save_checkpoint',
-  'load_checkpoint',
 ];
 
 describe('MCPServer', () => {
@@ -157,12 +155,12 @@ describe('MCPServer', () => {
   });
 
   describe('tools/list', () => {
-    it('lists at least 6 tools, each with name, description, and inputSchema', async () => {
+    it('lists at least 4 tools, each with name, description, and inputSchema', async () => {
       const response = await send('tools/list');
 
       expect(response.error).toBeUndefined();
       const tools = response.result.tools;
-      expect(tools.length).toBeGreaterThanOrEqual(6);
+      expect(tools.length).toBeGreaterThanOrEqual(4);
 
       const names = tools.map((t: any) => t.name);
       for (const expected of EXPECTED_TOOLS) {

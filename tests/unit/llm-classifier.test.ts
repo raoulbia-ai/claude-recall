@@ -373,73 +373,18 @@ describe('llm-classifier', () => {
     });
   });
 
-  describe('extractCheckpointWithLLM', () => {
-    // These four features route through completeText(), where the API-key
-    // backend is OPT-IN (0.33.0): enable it so these tests keep exercising
-    // the SDK path.
-    beforeEach(() => { process.env.CLAUDE_RECALL_PREFER_API_KEY = '1'; });
-
-    const LONG_SUMMARY = 'User asked to add a checkpoint feature; the agent implemented saveCheckpoint in storage.';
-
-    it('returns null when ANTHROPIC_API_KEY is unset', async () => {
-      const classifier = loadClassifier();
-
-      expect(await classifier.extractCheckpointWithLLM(LONG_SUMMARY)).toBeNull();
-      expect(mockCreate).not.toHaveBeenCalled();
-    });
-
-    it('returns null for a too-short summary without calling the SDK', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-
-      expect(await classifier.extractCheckpointWithLLM('short')).toBeNull();
-      expect(mockCreate).not.toHaveBeenCalled();
-    });
-
-    it('returns the parsed checkpoint, coercing non-string fields to empty strings', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-      mockCreate.mockResolvedValue(
-        textResponse(JSON.stringify({
-          completed: 'Added saveCheckpoint() to storage',
-          remaining: 'Wire the CLI checkpoint command',
-          blockers: 42, // non-string -> ''
-        }))
-      );
-
-      const result = await classifier.extractCheckpointWithLLM(LONG_SUMMARY);
-
-      expect(result).toEqual({
-        completed: 'Added saveCheckpoint() to storage',
-        remaining: 'Wire the CLI checkpoint command',
-        blockers: '',
-      });
-    });
-
-    it('returns null on a non-object response or SDK throw', async () => {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
-      const classifier = loadClassifier();
-
-      mockCreate.mockResolvedValueOnce(textResponse('null'));
-      expect(await classifier.extractCheckpointWithLLM(LONG_SUMMARY)).toBeNull();
-
-      mockCreate.mockRejectedValueOnce(new Error('boom'));
-      expect(await classifier.extractCheckpointWithLLM(LONG_SUMMARY)).toBeNull();
-    });
-  });
-
   describe('subscription CLI backend for secondary features', () => {
-    it('extractCheckpointWithLLM works with NO API key via claude -p', async () => {
+    it('extractSessionLearningsWithLLM works with NO API key via claude -p', async () => {
       const classifier = loadClassifier(); // no ANTHROPIC_API_KEY set
       mockCompleteCli.mockResolvedValue(
-        '{"completed":"API layer","remaining":"wire the UI","blockers":"none"}'
+        '[{"type":"devops","content":"Run the UI build before e2e tests","confidence":0.8}]'
       );
 
-      const result = await classifier.extractCheckpointWithLLM(
-        'A long enough conversation summary about wiring the UI layer.'
+      const result = await classifier.extractSessionLearningsWithLLM(
+        'A long enough conversation summary about wiring the UI layer.', []
       );
 
-      expect(result).toEqual({ completed: 'API layer', remaining: 'wire the UI', blockers: 'none' });
+      expect(result).toEqual([{ type: 'devops', content: 'Run the UI build before e2e tests', confidence: 0.8 }]);
       expect(mockCreate).not.toHaveBeenCalled(); // SDK never touched
     });
 
@@ -459,9 +404,9 @@ describe('llm-classifier', () => {
     it('prefers the subscription CLI over a set API key by default', async () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       const classifier = loadClassifier();
-      mockCompleteCli.mockResolvedValue('{"completed":"x","remaining":"","blockers":"none"}');
+      mockCompleteCli.mockResolvedValue('[]');
 
-      await classifier.extractCheckpointWithLLM('A long enough conversation summary for extraction.');
+      await classifier.extractSessionLearningsWithLLM('A long enough conversation summary for extraction.', []);
 
       expect(mockCompleteCli).toHaveBeenCalled();
       expect(mockCreate).not.toHaveBeenCalled();
@@ -471,9 +416,9 @@ describe('llm-classifier', () => {
       process.env.ANTHROPIC_API_KEY = 'test-key';
       process.env.CLAUDE_RECALL_PREFER_API_KEY = '1';
       const classifier = loadClassifier();
-      mockCreate.mockResolvedValue(textResponse('{"completed":"x","remaining":"","blockers":"none"}'));
+      mockCreate.mockResolvedValue(textResponse('[]'));
 
-      await classifier.extractCheckpointWithLLM('A long enough conversation summary for extraction.');
+      await classifier.extractSessionLearningsWithLLM('A long enough conversation summary for extraction.', []);
 
       expect(mockCreate).toHaveBeenCalled();
       expect(mockCompleteCli).not.toHaveBeenCalled();
@@ -484,10 +429,10 @@ describe('llm-classifier', () => {
       // spent silently — not even as a fallback when claude -p fails.
       process.env.ANTHROPIC_API_KEY = 'test-key';
       const classifier = loadClassifier(); // CLI mock resolves null by default
-      mockCreate.mockResolvedValue(textResponse('{"completed":"x","remaining":"","blockers":"none"}'));
+      mockCreate.mockResolvedValue(textResponse('[]'));
 
-      const result = await classifier.extractCheckpointWithLLM(
-        'A long enough conversation summary for extraction.'
+      const result = await classifier.extractSessionLearningsWithLLM(
+        'A long enough conversation summary for extraction.', []
       );
 
       expect(mockCompleteCli).toHaveBeenCalled();
@@ -498,10 +443,10 @@ describe('llm-classifier', () => {
     it('never calls the CLI from inside a nested headless session (recursion guard)', async () => {
       process.env.CLAUDE_RECALL_NESTED = '1';
       const classifier = loadClassifier(); // no API key either
-      mockCompleteCli.mockResolvedValue('{"completed":"x","remaining":"","blockers":"none"}');
+      mockCompleteCli.mockResolvedValue('[]');
 
-      const result = await classifier.extractCheckpointWithLLM(
-        'A long enough conversation summary for extraction.'
+      const result = await classifier.extractSessionLearningsWithLLM(
+        'A long enough conversation summary for extraction.', []
       );
 
       expect(mockCompleteCli).not.toHaveBeenCalled();

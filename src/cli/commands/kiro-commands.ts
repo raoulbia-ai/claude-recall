@@ -31,7 +31,6 @@ export class KiroCommands {
   static readonly ALLOWED_TOOLS = [
     '@claude-recall/load_rules',
     '@claude-recall/search_memory',
-    '@claude-recall/load_checkpoint',
   ];
 
   /**
@@ -366,8 +365,8 @@ export class KiroCommands {
     console.log('resumed. Start ONE fresh conversation (no --resume) per project; every');
     console.log('conversation from then on carries the hooks, including when resumed.');
     console.log('');
-    console.log('Not available under Kiro: transcript-based failure detection and');
-    console.log('session-end checkpoints (Kiro exposes no transcript to hooks).');
+    console.log('Not available under Kiro: transcript-based failure detection');
+    console.log('(Kiro exposes no transcript to hooks).');
     process.exit(0);
   }
 
