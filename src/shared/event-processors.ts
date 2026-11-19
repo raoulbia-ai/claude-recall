@@ -14,7 +14,10 @@ import {
   searchExisting,
   jaccardSimilarity,
   safeErrorMessage,
+  hookStateDir,
 } from '../hooks/shared';
+import { ConfigService } from '../services/config';
+import { failureNoiseReason, isKnownFailure, isExternalTool, externalFailureRepeats } from './failure-noise';
 import { extractSessionLearningsWithLLM } from '../hooks/llm-classifier';
 import { MemoryService } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
@@ -138,8 +141,7 @@ export function processToolOutcome(
     const isFail = isError || isToolFailureOutput(toolName, toolOutput);
 
     if (isFail) {
-      storeToolFailure(toolName, toolInput, toolOutput, sessionId);
-      result.captured = true;
+      result.captured = storeToolFailure(toolName, toolInput, toolOutput, sessionId);
     } else {
       // Success — check if this fixes a recent failure
       result.fixPaired = tryPairFix(toolName, toolInput, toolOutput);
@@ -172,10 +174,25 @@ function storeToolFailure(
   toolName: string,
   toolInput: any,
   output: string,
-  _sessionId: string,
-): void {
+  sessionId: string,
+): boolean {
   const filePath = toolInput?.file_path ?? '';
   const command = toolInput?.command ?? '';
+
+  const isBash = toolName === 'Bash' || toolName === 'bash';
+  const noise = failureNoiseReason({ toolName: isBash ? 'Bash' : toolName, command, text: output });
+  if (noise) {
+    logFn('event-processor', `Skipped failure (${noise}): ${truncate(command || toolName, 60)}`);
+    return false;
+  }
+  try {
+    if (isBash && command && isKnownFailure(MemoryService.getInstance().getStorage().getDatabase(), command, ConfigService.getInstance().getProjectId())) {
+      return false;
+    }
+    if (!isBash && isExternalTool(toolName) && !externalFailureRepeats(hookStateDir(), toolName, output, sessionId)) {
+      return false;
+    }
+  } catch { /* fall through: capture */ }
 
   let whatFailed: string;
   if ((toolName === 'Bash' || toolName === 'bash') && command) {
@@ -188,7 +205,7 @@ function storeToolFailure(
 
   // Dedup
   const existing = searchExisting(whatFailed);
-  if (isDuplicate(whatFailed, existing, 0.7)) return;
+  if (isDuplicate(whatFailed, existing, 0.7)) return false;
 
   const failureContent: FailureMemoryContent = {
     what_failed: whatFailed,
@@ -217,6 +234,7 @@ function storeToolFailure(
   while (pendingFailures.length > MAX_PENDING) pendingFailures.shift();
 
   logFn('event-processor', `Stored failure: ${truncate(whatFailed, 60)}`);
+  return true;
 }
 
 function recordOutcomeEvent(toolName: string, toolInput: any, output: string): void {

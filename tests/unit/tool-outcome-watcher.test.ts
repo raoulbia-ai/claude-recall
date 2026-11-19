@@ -144,7 +144,7 @@ describe('tool-outcome-watcher', () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Bash',
         tool_input: { command: 'npm test' },
-        tool_output: 'Error\nExit code 1',
+        tool_output: 'Error: Cannot find module ./config\nExit code 1',
         session_id: SESSION,
       });
 
@@ -178,7 +178,7 @@ describe('tool-outcome-watcher', () => {
       await handleToolOutcomeWatcher({
         tool_name: 'Bash',
         tool_input: { command: 'npm test' },
-        tool_output: 'Error\nExit code 1',
+        tool_output: 'Error: Cannot find module ./config\nExit code 1',
         session_id: SESSION,
       });
 
@@ -200,7 +200,7 @@ describe('tool-outcome-watcher', () => {
         await handleToolOutcomeWatcher({
           tool_name: 'Bash',
           tool_input: { command: 'npm test' },
-          tool_output: 'Error\nExit code 1',
+          tool_output: 'Error: Cannot find module ./config\nExit code 1',
           session_id: SESSION,
         });
       } finally {
@@ -307,13 +307,32 @@ describe('tool-outcome-watcher', () => {
       expect(mockCreateOutcomeEvent).toHaveBeenCalledTimes(1);
     });
 
-    it('MCP failures are captured via the PostToolUseFailure path', async () => {
+    it('PostToolUseFailure skips a lookup that answered "no" and a killed process', async () => {
       await handleToolFailure({
-        tool_name: 'mcp__github__create_issue',
-        tool_input: { title: 'test' },
-        error: 'authentication failed',
+        tool_name: 'Bash',
+        tool_input: { command: 'ls tests/unit/x.test.ts; git check-ignore -v tests/unit/x.test.ts' },
+        error: "Exit code 1\nls: cannot access 'tests/unit/x.test.ts': No such file or directory",
         session_id: SESSION,
       });
+      await handleToolFailure({
+        tool_name: 'Bash',
+        tool_input: { command: 'pkill -f jest; timeout 500 npx jest --forceExit' },
+        error: 'Exit code 144',
+        session_id: SESSION,
+      });
+      expect(mockStore).not.toHaveBeenCalled();
+    });
+
+    it('MCP failures are captured via the PostToolUseFailure path, once a second session sees them', async () => {
+      const fail = (session_id: string) => handleToolFailure({
+        tool_name: 'mcp__github__create_issue',
+        tool_input: { title: 'test' },
+        error: `authentication failed ${SESSION}`,
+        session_id,
+      });
+      await fail(`${SESSION}-a`);
+      expect(mockStore).not.toHaveBeenCalled(); // could be a one-off outage
+      await fail(`${SESSION}-b`);
 
       expect(mockStore).toHaveBeenCalledTimes(1);
       const call = mockStore.mock.calls[0][0];

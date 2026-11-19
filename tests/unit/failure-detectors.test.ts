@@ -155,14 +155,25 @@ describe('detectTranscriptFailures', () => {
   describe('non-zero exit codes', () => {
     it('detects non-zero exit code', () => {
       const entries = [
-        makeAssistantToolUse('Bash', { command: 'ls /nonexistent' }, 'tc1'),
-        makeUserToolResult('tc1', 'ls: cannot access: No such file or directory\nExit code 1', true),
+        makeAssistantToolUse('Bash', { command: 'npm run build' }, 'tc1'),
+        makeUserToolResult('tc1', "src/a.ts(3,1): error TS2304: Cannot find name 'x'\nExit code 2", true),
       ];
       const failures = detectTranscriptFailures(entries);
       expect(failures).toHaveLength(1);
       expect(failures[0].signal).toBe('non-zero-exit');
       expect(failures[0].confidence).toBe(0.85);
-      expect(failures[0].content.what_failed).toContain('ls /nonexistent');
+      expect(failures[0].content.what_failed).toContain('npm run build');
+      expect(failures[0].command).toBe('npm run build');
+    });
+
+    it('skips a lookup that answered "no" and a killed process', () => {
+      const entries = [
+        makeAssistantToolUse('Bash', { command: 'ls /nonexistent' }, 'tc1'),
+        makeUserToolResult('tc1', 'ls: cannot access: No such file or directory\nExit code 2', true),
+        makeAssistantToolUse('Bash', { command: 'pkill -f jest; npx jest' }, 'tc2'),
+        makeUserToolResult('tc2', 'Exit code 144', true),
+      ];
+      expect(detectTranscriptFailures(entries)).toEqual([]);
     });
 
     it('skips hook infrastructure errors', () => {
@@ -417,8 +428,8 @@ describe('detectTranscriptFailures', () => {
     it('prioritizes by detector order (non-zero > silent > cycle > backtrack > retry)', () => {
       const entries = [
         // Non-zero exit
-        makeAssistantToolUse('Bash', { command: 'false' }, 'tc1'),
-        makeUserToolResult('tc1', 'Exit code 1', true),
+        makeAssistantToolUse('Bash', { command: 'npm run build' }, 'tc1'),
+        makeUserToolResult('tc1', "error TS2304: Cannot find name 'x'\nExit code 2", true),
         // Backtracking
         makeAssistantText('Let me try a different approach.'),
       ];

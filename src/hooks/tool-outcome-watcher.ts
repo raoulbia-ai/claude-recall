@@ -29,6 +29,23 @@ import {
 import { MemoryService, MemorySource } from '../services/memory';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { shouldRecordOutcomes } from '../shared/outcome-capture';
+import { failureNoiseReason, isKnownFailure, isExternalTool, externalFailureRepeats } from '../shared/failure-noise';
+import { ConfigService } from '../services/config';
+
+/** Shared noise gate for both Claude Code capture paths. Returns a reason to skip, or null. */
+function skipFailure(toolName: string, command: string, text: string, sessionId: string): string | null {
+  const noise = failureNoiseReason({ toolName, command, text });
+  if (noise) return noise;
+  if (command) {
+    try {
+      const db = MemoryService.getInstance().getStorage().getDatabase();
+      if (isKnownFailure(db, command, ConfigService.getInstance().getProjectId())) return 'already recorded';
+    } catch { /* fall through: capture */ }
+  } else if (isExternalTool(toolName)) {
+    if (!externalFailureRepeats(hookStateDir(), toolName, text, sessionId)) return 'external tool, first session to see it';
+  }
+  return null;
+}
 
 const HOOK_NAME = 'tool-outcome-watcher';
 const EXIT_CODE_REGEX = /Exit code (\d+)/;
@@ -73,6 +90,11 @@ function writePendingFailures(sessionId: string, pending: PendingFailure[]): voi
   } catch {
     // Never fail on state file writes
   }
+}
+
+function exitCodeOfError(error: string): string | null {
+  const m = error.match(EXIT_CODE_REGEX);
+  return m ? m[1] : null;
 }
 
 function truncate(s: string, maxLen: number): string {
@@ -289,6 +311,11 @@ async function handleBashFailure(
     hookLog(HOOK_NAME, `Skipped low-quality failure: ${truncate(command, 60)} (exit ${exitCode})`);
     return;
   }
+  const skip = skipFailure('Bash', command, output, sessionId);
+  if (skip) {
+    hookLog(HOOK_NAME, `Skipped failure (${skip}): ${truncate(command, 60)}`);
+    return;
+  }
 
   // Dedup check
   const existing = searchExisting(command);
@@ -444,6 +471,21 @@ export async function handleToolFailure(input: any): Promise<void> {
 
     const filePath = input.tool_input?.file_path ?? '';
     const command = input.tool_input?.command ?? '';
+
+    // Same filters as the PostToolUse path. Before 0.52.1 this, the busiest
+    // capture path, had none: every lookup that answered "no" was queued.
+    if (toolName === 'Bash' && command) {
+      const exitCode = exitCodeOfError(error);
+      if (exitCode && !shouldCaptureFailure(command, exitCode, error)) {
+        hookLog(HOOK_NAME, `Skipped low-quality failure: ${truncate(command, 60)} (exit ${exitCode})`);
+        return;
+      }
+    }
+    const skip = skipFailure(toolName, toolName === 'Bash' ? command : '', error, String(input.session_id ?? 'unknown'));
+    if (skip) {
+      hookLog(HOOK_NAME, `Skipped failure (${skip}): ${truncate(command || toolName, 60)}`);
+      return;
+    }
 
     // Build tool-specific context
     let whatFailed: string;

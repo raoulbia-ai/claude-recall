@@ -177,7 +177,7 @@ The full list, by agent (CC = Claude Code):
 | **As you type** | Your messages are classified; lasting preferences and corrections are stored | ✓ | ✓ | ✓ |
 | **Before each command or edit** | Rules relevant to that action are put back in front of the agent | ✓ | ✓ |  |
 | **Every 15 prompts** | Rules are re-sent so long sessions can't lose them (interval configurable) |  |  | ✓ |
-| **When something fails** | The failure is recorded for your review; shell failures are paired with their eventual fix | ✓ | ✓ | ✓ |
+| **When something fails** | The failure is recorded for your review; shell failures are paired with their eventual fix. Things that aren't really mistakes are left out: a lookup that found nothing, a process that was stopped, a typo in a one-off script, or a web or MCP hiccup seen only once | ✓ | ✓ | ✓ |
 | **Before the conversation is compressed** | Important context is captured first | ✓ | ✓ |  |
 | **After it's compressed** | Rules are re-loaded into the fresh context | ✓ |  |  |
 | **A sub-agent starts** | It's given your rules too | ✓ |  |  |

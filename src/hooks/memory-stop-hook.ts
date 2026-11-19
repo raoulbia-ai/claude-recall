@@ -25,6 +25,7 @@ import * as path from 'path';
 import { MemoryService } from '../services/memory';
 import { ConfigService } from '../services/config';
 import { detectTranscriptFailures } from './failure-detectors';
+import { isKnownFailure } from '../shared/failure-noise';
 import { DetectedFailure } from './failure-detectors';
 import { OutcomeStorage } from '../services/outcome-storage';
 import { shouldRecordOutcomes } from '../shared/outcome-capture';
@@ -356,6 +357,11 @@ function detectAndStoreFailures(transcriptPath: string): DetectedFailure[] {
     let stored = 0;
 
     for (const failure of failures) {
+      // The failure hooks usually recorded this command already, mid-session
+      if (failure.command && isKnownFailure(MemoryService.getInstance().getStorage().getDatabase(), failure.command, projectId)) {
+        hookLog('memory-stop', `[FailureDetector] Skipped already-recorded: ${failure.command.substring(0, 60)}`);
+        continue;
+      }
       // Dedup against existing failure memories
       const searchQuery = failure.content.what_failed.substring(0, 100);
       const existing = searchExisting(searchQuery);

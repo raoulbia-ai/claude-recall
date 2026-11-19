@@ -525,7 +525,7 @@ describe('Pi Extension', () => {
       toolCallId: 'tc1',
       toolName: 'bash',
       input: { command: 'npm test' },
-      content: [{ type: 'text', text: 'Exit code 1' }],
+      content: [{ type: 'text', text: 'Exit code 1\nError: Cannot find module ./config' }],
       isError: true,
       details: undefined,
     };
