@@ -5,9 +5,12 @@
 
 const mockLoadActiveRules = jest.fn();
 const mockCountPending = jest.fn().mockReturnValue(0);
+const sumRules = (r: any) => ['preferences', 'corrections', 'failures', 'devops', 'solutions']
+  .reduce((n, k) => n + ((r && r[k]) || []).length, 0);
 jest.mock('../../src/services/memory', () => ({
   MemoryService: { getInstance: () => ({
     loadActiveRules: (...a: any[]) => mockLoadActiveRules(...a),
+    countRules: (pid: string) => sumRules(mockLoadActiveRules(pid)),
     countPending: (...a: any[]) => mockCountPending(...a),
   }) },
 }));
@@ -89,13 +92,17 @@ describe('StatuslineCommands.run', () => {
   });
 });
 
-describe('StatuslineCommands — rules vs auto-captured failures', () => {
-  it('does not call auto-captured failures "rules"', () => {
-    // 2 taught rules + 3 failures must not read as "5 rules"
-    expect(StatuslineCommands.format('my-proj', 2, 3)).toBe('🧠 Recall · 2 rules · 3 failures · my-proj');
-    expect(StatuslineCommands.format('my-proj', 0, 1)).toBe('🧠 Recall · 0 rules · 1 failure · my-proj');
+describe('StatuslineCommands — one number', () => {
+  it('counts mistakes to avoid as rules too, so the bar never says "failure"', () => {
+    expect(StatuslineCommands.format('my-proj', 5)).toBe('🧠 Recall · 5 rules · my-proj');
+    expect(StatuslineCommands.format('my-proj', 5)).not.toMatch(/failure/);
   });
-  it('omits the failure segment when there are none', () => {
-    expect(StatuslineCommands.format('my-proj', 2, 0)).toBe('🧠 Recall · 2 rules · my-proj');
+
+  it('adds failures into the total in run()', () => {
+    jest.spyOn(StatuslineCommands, 'stdinCwd').mockReturnValue('/home/u/repos/cool-app');
+    mockLoadActiveRules.mockReturnValue(rules({ preferences: [{}, {}], failures: [{}] }));
+    const out = captureStdout();
+    StatuslineCommands.run();
+    expect(out.restore().trim()).toBe('🧠 Recall · 3 rules · cool-app');
   });
 });

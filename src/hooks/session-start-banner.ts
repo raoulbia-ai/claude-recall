@@ -29,12 +29,8 @@ export async function handleSessionStartBanner(input: any): Promise<void> {
     if (input?.source === 'compact') return;
 
     const projectId = ConfigService.getInstance().getProjectId();
-    const rules = MemoryService.getInstance().loadActiveRules(projectId);
-    // Count what the user taught (not auto-captured failures) so the number
-    // matches the statusline and doesn't overstate stated preferences.
-    const total =
-      rules.preferences.length + rules.corrections.length +
-      rules.devops.length + (rules.solutions ?? []).length;
+    // Same number as the status line
+    const total = MemoryService.getInstance().countRules(projectId);
 
     if (total > 0) {
       console.log(

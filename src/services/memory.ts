@@ -677,6 +677,18 @@ export class MemoryService {
   }
 
   /**
+   * How many memories steer the agent in this project: every active rule
+   * (preferences, corrections, failures, devops, solutions) plus project
+   * notes. One number for the status line and the session banner, so neither
+   * has to name kinds. Doesn't count as the agent loading the rules.
+   */
+  countRules(projectId?: string): number {
+    const r = this.loadActiveRules(projectId, { countLoad: false });
+    return r.preferences.length + r.corrections.length + r.failures.length +
+      r.devops.length + r.solutions.length + this.getActiveKnowledge(projectId).length;
+  }
+
+  /**
    * Active project-knowledge memories (facts about the project, surfaced by
    * relevance rather than loaded as rules), newest first. Same filters as
    * loadActiveRules: inactive and unreviewed ones are left out.

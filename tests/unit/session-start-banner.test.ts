@@ -7,8 +7,13 @@ const mockLoadActiveRules = jest.fn();
 const mockGetProjectId = jest.fn().mockReturnValue('my-project');
 const mockHookLog = jest.fn();
 
+const sumRules = (r: any) => ['preferences', 'corrections', 'failures', 'devops', 'solutions']
+  .reduce((n, k) => n + ((r && r[k]) || []).length, 0);
 jest.mock('../../src/services/memory', () => ({
-  MemoryService: { getInstance: () => ({ loadActiveRules: (...a: any[]) => mockLoadActiveRules(...a) }) },
+  MemoryService: { getInstance: () => ({
+    loadActiveRules: (...a: any[]) => mockLoadActiveRules(...a),
+    countRules: (pid: string) => sumRules(mockLoadActiveRules(pid)),
+  }) },
 }));
 jest.mock('../../src/services/config', () => ({
   ConfigService: { getInstance: () => ({ getProjectId: () => mockGetProjectId() }) },

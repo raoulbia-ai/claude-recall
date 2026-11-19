@@ -188,7 +188,7 @@ Every one of these uses the agent's **own** AI: Claude Code through headless `cl
 
 **Rules are kept precise and current.** Where your message allows, a rule is phrased as *situation + concrete pattern* ("email files must start with email" becomes *"When creating an email text file, name it `email_*.txt`"*). A rule too vague to act on is still kept, but flagged, and the agent is nudged to ask you for a precise version. When you restate a rule in new words, **the new wording replaces the old one** (its usage history carries over) instead of piling up a duplicate.
 
-**You can see it's on.** Because the work happens out of sight, Claude Recall puts a line at the bottom of the Claude Code terminal for the whole session: `🧠 Recall · N rules · <project>`, plus `⏳ N to review` when something is waiting for you. `setup --install` adds it, and never replaces a status line you already have (add `claude-recall statusline` to yours). After the conversation is compressed you'll also see `🔄 Recall: N rules re-loaded`. For a full check-up:
+**You can see it's on.** Because the work happens out of sight, Claude Recall puts a line at the bottom of the Claude Code terminal for the whole session: `🧠 Recall · N rules · <project>`, plus `⏳ N to review` when something is waiting for you. N counts everything that steers the agent there; `recall rules` shows what they are. `setup --install` adds it, and never replaces a status line you already have (add `claude-recall statusline` to yours). After the conversation is compressed you'll also see `🔄 Recall: N rules re-loaded`. For a full check-up:
 
 ```bash
 claude-recall doctor                     # full health check (install, config, hooks, server, database)
@@ -210,10 +210,9 @@ You'll know when something is waiting: the status bar shows `⏳ N to review`, a
 | `recall pending` | Lists them with ids |
 | `recall approve 12 15` · `recall approve all` | Approves by id, or everything waiting |
 | `recall reject 12` | Rejects; the same text won't be accepted again from an untrusted source |
-| `recall rules` | Shows the rules the agent is given in this project |
-| `recall knowledge` | Shows the facts kept about this project. Unlike rules, these are brought up only when relevant |
+| `recall rules` | Shows everything that steers the agent in this project, with ids: your preferences, corrections, mistakes to avoid (in full: what went wrong, why, what to do instead), DevOps rules, and project notes, which are given only when relevant. `recall reject <id>` drops one |
 
-Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for the facts.
+Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for project notes.
 
 To keep the queue short, the daily [janitor](#memory-janitor) rewrites cryptic failures into plain descriptions and drops ones that weren't real, and failures nobody reviewed leave the queue after 14 days. To switch reviewing off and load everything as before, set `CLAUDE_RECALL_QUARANTINE=off`.
 

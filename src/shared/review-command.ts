@@ -15,8 +15,8 @@
  *   recall pending [all]          list them
  *   recall approve <ids|all>      approve by id, or everything pending
  *   recall reject <ids|all>       reject by id, or everything pending
- *   recall rules                  the rules loaded for this project
- *   recall knowledge              the facts kept about this project
+ *   recall rules                  everything that steers the agent here, with ids
+ *   recall knowledge              just the project notes
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -236,21 +236,48 @@ function waitingNote(): string {
   return n > 0 ? `\n\n⏳ ${n} more waiting for your review: type "recall review".` : '';
 }
 
-/** What the agent is given as rules in this project, shown to the user. */
+/** A mistake to avoid, in full: what went wrong, why, and what to do instead. */
+function failureDetail(m: Memory): string {
+  const parse = (x: any) => {
+    if (typeof x === 'string' && /^\s*[{[]/.test(x)) { try { return JSON.parse(x); } catch { /* plain text */ } }
+    return x;
+  };
+  let v = parse(m.value);
+  if (v && typeof v === 'object' && v.content !== undefined && typeof parse(v.content) === 'object') v = parse(v.content);
+  if (!v || typeof v !== 'object' || !v.what_failed) return line(m);
+  const clean = (x: any) => String(x).replace(/\s+/g, ' ').slice(0, 300);
+  const generic = /^(Check (inputs|command syntax)|Verify)/i;
+  const rows = [`  #${m.id} ${clean(v.what_failed)}`];
+  if (v.why_failed) rows.push(`      why: ${clean(v.why_failed)}`);
+  if (v.what_should_do && !generic.test(v.what_should_do)) rows.push(`      instead: ${clean(v.what_should_do)}`);
+  return rows.join('\n');
+}
+
+/**
+ * Everything that steers the agent in this project, shown to the user: the
+ * rules it's given every session, mistakes to avoid (in full), and project
+ * notes it's given when relevant. The status line shows only the total.
+ */
 function showRules(): string {
-  const r = MemoryService.getInstance().loadActiveRules(undefined, { countLoad: false });
-  const sections: Array<[string, Memory[]]> = [
-    ['Preferences', r.preferences], ['Corrections', r.corrections], ['Failures to avoid', r.failures],
-    ['DevOps rules', r.devops], ['Solutions', r.solutions],
+  const ms = MemoryService.getInstance();
+  const r = ms.loadActiveRules(undefined, { countLoad: false });
+  const notes = ms.getActiveKnowledge();
+  const sections: Array<[string, Memory[], (m: Memory) => string]> = [
+    ['Your preferences', r.preferences, line],
+    ['Corrections', r.corrections, line],
+    ['Mistakes to avoid', r.failures, failureDetail],
+    ['DevOps', r.devops, line],
+    ['Solutions', r.solutions, line],
+    ['Project notes (given when relevant)', notes, line],
   ];
   const body = sections
     .filter(([, list]) => list.length > 0)
-    .map(([title, list]) => `${title} (${list.length})\n${list.map(line).join('\n')}`)
+    .map(([title, list, fmt]) => `${title} (${list.length})\n${list.map(fmt).join('\n')}`)
     .join('\n\n');
   const total = sections.reduce((n, [, list]) => n + list.length, 0);
   const project = ConfigService.getInstance().getProjectId();
-  if (total === 0) return `No rules loaded for "${project}" yet.${waitingNote()}`;
-  return `🧠 ${total} rule${total === 1 ? '' : 's'} loaded for "${project}":\n\n${body}\n\nFacts about the project are listed separately: type "recall knowledge".${waitingNote()}`;
+  if (total === 0) return `No rules yet for "${project}".${waitingNote()}`;
+  return `🧠 ${total} rule${total === 1 ? '' : 's'} for "${project}":\n\n${body}\n\nTo drop one: "recall reject <id>".${waitingNote()}`;
 }
 
 /** Facts kept about this project; given to the agent when relevant, not as rules. */

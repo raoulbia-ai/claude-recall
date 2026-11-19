@@ -19,9 +19,10 @@ import type { Command } from 'commander';
  */
 export class StatuslineCommands {
   /** Pure, testable formatter for the status line text. */
-  static format(projectId: string, ruleCount: number, failureCount = 0, pendingCount = 0): string {
+  static format(projectId: string, ruleCount: number, pendingCount = 0): string {
+    // One number for everything that steers the agent (rules, mistakes to
+    // avoid, project notes). `recall rules` shows the breakdown.
     const parts = [`${ruleCount} rule${ruleCount === 1 ? '' : 's'}`];
-    if (failureCount > 0) parts.push(`${failureCount} failure${failureCount === 1 ? '' : 's'}`);
     // The one place the user sees quarantine without asking: it updates every
     // turn, so a memory waiting for review shows up as soon as it's stored.
     if (pendingCount > 0) parts.push(`⏳ ${pendingCount} to review`);
@@ -69,13 +70,11 @@ export class StatuslineCommands {
       // Lazy require so a broken native SQLite binding can't crash the status
       // bar — it just shows the minimal indicator below.
       const { MemoryService } = require('../../services/memory');
-      const r = MemoryService.getInstance().loadActiveRules(projectId);
-      // "rules" = what you actually taught it. Auto-captured failures are shown
-      // separately: counting them as "rules" overstates what the user stated.
-      const taught =
-        r.preferences.length + r.corrections.length + r.devops.length + (r.solutions ?? []).length;
+      // countRules doesn't bump load counts: this runs every turn, and counting
+      // each refresh as a load skewed which rules look used.
+      const total = MemoryService.getInstance().countRules(projectId);
       const pending = MemoryService.getInstance().countPending(projectId);
-      process.stdout.write(StatuslineCommands.format(projectId, taught, r.failures.length, pending) + '\n');
+      process.stdout.write(StatuslineCommands.format(projectId, total, pending) + '\n');
     } catch {
       // Never emit an error into the status bar.
       process.stdout.write('🧠 Recall\n');

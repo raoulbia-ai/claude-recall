@@ -5,12 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.52.2] - 2026-11-19
 
 ### Added
 
-- `recall rules` in the chat (Claude Code, Pi) shows the rules the agent is given in this project, grouped by kind, with ids. Like the review commands, it's handled before the agent sees your message. Viewing doesn't count as the agent loading a rule, so it doesn't affect which rules get retired for going unused.
-- `recall knowledge` shows the facts kept about this project. Project knowledge isn't part of the rule list; the agent is given it when it's relevant. Only approved facts are shown, and both commands mention anything still waiting for review.
+- **`recall rules`** in the chat (Claude Code, Pi) shows everything that steers the agent in this project, with ids:
+  - your preferences;
+  - corrections;
+  - mistakes to avoid, in full: what went wrong, why, and what to do instead;
+  - DevOps rules and solutions;
+  - project notes, which are given only when relevant.
+
+  `recall reject <id>` drops one. Like the review commands, `recall rules` is handled before the agent sees your message. `recall knowledge` lists just the project notes.
+
+### Changed
+
+- **One number in the status line and session banner.** `🧠 Recall · N rules` now counts everything that steers the agent, including mistakes to avoid and project notes. It used to show a separate "N failures" count, which sounded alarming and left notes out entirely.
+
+### Fixed
+
+- **The status line no longer affects which rules look used.** It refreshes every turn, and each refresh counted as the agent loading every rule. That inflated the load counts behind stale-rule retirement. The session banner and `recall rules` don't count as a load either.
 
 ## [0.52.1] - 2026-11-19
 
