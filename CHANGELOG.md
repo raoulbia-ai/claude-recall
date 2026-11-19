@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `recall rules` in the chat (Claude Code, Pi) shows the rules the agent is given in this project, grouped by kind, with ids. Like the review commands, it's handled before the agent sees your message. Viewing doesn't count as the agent loading a rule, so it doesn't affect which rules get retired for going unused.
+- `recall knowledge` shows the facts kept about this project. Project knowledge isn't part of the rule list; the agent is given it when it's relevant. Only approved facts are shown, and both commands mention anything still waiting for review.
+
 ## [0.52.1] - 2026-11-19
 
 ### Fixed

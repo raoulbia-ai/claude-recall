@@ -15,6 +15,8 @@
  *   recall pending [all]          list them
  *   recall approve <ids|all>      approve by id, or everything pending
  *   recall reject <ids|all>       reject by id, or everything pending
+ *   recall rules                  the rules loaded for this project
+ *   recall knowledge              the facts kept about this project
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -191,6 +193,9 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
     }
   }
 
+  if (/^recall\s+rules\s*$/i.test(t)) return showRules();
+  if (/^recall\s+(knowledge|facts)\s*$/i.test(t)) return showKnowledge();
+
   const m = /^recall\s+(review|pending|approve|reject)\b\s*(.*)$/i.exec(t);
   if (!m) return null;
   const verb = m[1].toLowerCase();
@@ -220,4 +225,40 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
   const n = verb === 'approve' ? ms.approveRules(ids) : ms.rejectRules(ids);
   const left = pending(false).length;
   return `✓ ${verb === 'approve' ? 'Approved' : 'Rejected'} ${n} memor${n === 1 ? 'y' : 'ies'}.${left > 0 ? ` ${left} still waiting here.` : ''}`;
+}
+
+function line(m: Memory): string {
+  return `  #${m.id} ${memoryText(m.value).replace(/\s+/g, ' ').slice(0, 220)}`;
+}
+
+function waitingNote(): string {
+  const n = pending(false).length;
+  return n > 0 ? `\n\n⏳ ${n} more waiting for your review: type "recall review".` : '';
+}
+
+/** What the agent is given as rules in this project, shown to the user. */
+function showRules(): string {
+  const r = MemoryService.getInstance().loadActiveRules(undefined, { countLoad: false });
+  const sections: Array<[string, Memory[]]> = [
+    ['Preferences', r.preferences], ['Corrections', r.corrections], ['Failures to avoid', r.failures],
+    ['DevOps rules', r.devops], ['Solutions', r.solutions],
+  ];
+  const body = sections
+    .filter(([, list]) => list.length > 0)
+    .map(([title, list]) => `${title} (${list.length})\n${list.map(line).join('\n')}`)
+    .join('\n\n');
+  const total = sections.reduce((n, [, list]) => n + list.length, 0);
+  const project = ConfigService.getInstance().getProjectId();
+  if (total === 0) return `No rules loaded for "${project}" yet.${waitingNote()}`;
+  return `🧠 ${total} rule${total === 1 ? '' : 's'} loaded for "${project}":\n\n${body}\n\nFacts about the project are listed separately: type "recall knowledge".${waitingNote()}`;
+}
+
+/** Facts kept about this project; given to the agent when relevant, not as rules. */
+function showKnowledge(): string {
+  const list = MemoryService.getInstance().getActiveKnowledge();
+  const project = ConfigService.getInstance().getProjectId();
+  if (list.length === 0) return `No project knowledge kept for "${project}" yet.${waitingNote()}`;
+  const shown = list.slice(0, 40).map(line).join('\n');
+  const more = list.length > 40 ? `\n  …and ${list.length - 40} more (claude-recall list -t project-knowledge --all).` : '';
+  return `📚 ${list.length} fact${list.length === 1 ? '' : 's'} kept about "${project}" (brought up when relevant, not loaded as rules):\n\n${shown}${more}${waitingNote()}`;
 }

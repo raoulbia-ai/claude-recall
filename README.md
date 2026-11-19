@@ -210,8 +210,10 @@ You'll know when something is waiting: the status bar shows `⏳ N to review`, a
 | `recall pending` | Lists them with ids |
 | `recall approve 12 15` · `recall approve all` | Approves by id, or everything waiting |
 | `recall reject 12` | Rejects; the same text won't be accepted again from an untrusted source |
+| `recall rules` | Shows the rules the agent is given in this project |
+| `recall knowledge` | Shows the facts kept about this project. Unlike rules, these are brought up only when relevant |
 
-Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`).
+Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for the facts.
 
 To keep the queue short, the daily [janitor](#memory-janitor) rewrites cryptic failures into plain descriptions and drops ones that weren't real, and failures nobody reviewed leave the queue after 14 days. To switch reviewing off and load everything as before, set `CLAUDE_RECALL_QUARANTINE=off`.
 

@@ -125,6 +125,31 @@ describe('in-session review (handleReviewInput)', () => {
     expect(say('recall approve')).toMatch(/Name the memories/);
   });
 
+  it('"recall rules" shows the loaded rules without counting it as a load', () => {
+    ms().store({ key: 'u1', origin: 'user', type: 'preference', value: { content: 'use pnpm, not npm' } });
+    const msg = say('recall rules')!;
+    expect(msg).toMatch(/1 rule loaded/);
+    expect(msg).toContain('use pnpm, not npm');
+    expect(msg).not.toContain('prefer small pull requests'); // still pending
+    expect(msg).toMatch(/3 more waiting for your review/);
+    expect((ms().getStorage().retrieve('u1') as any).load_count || 0).toBe(0);
+  });
+
+  it('"recall knowledge" lists approved project facts only', () => {
+    ms().store({ key: 'k1', origin: 'user', type: 'project-knowledge', value: { content: 'the API lives in services/api' } });
+    ms().store({ key: 'k2', origin: 'agent', type: 'project-knowledge', value: { content: 'the db is postgres 15' } });
+    const msg = say('recall knowledge')!;
+    expect(msg).toMatch(/1 fact kept/);
+    expect(msg).toContain('the API lives in services/api');
+    expect(msg).not.toContain('postgres'); // waiting for review
+  });
+
+  it('says so when there are no rules or facts', () => {
+    ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
+    expect(say('recall rules')).toMatch(/No rules loaded/);
+    expect(say('recall knowledge')).toMatch(/No project knowledge/);
+  });
+
   it('says so when nothing is waiting', () => {
     ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
     expect(say('recall review')).toMatch(/Nothing waiting/);
