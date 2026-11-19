@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.1] - 2026-11-19
+
+### Fixed
+
+- **Fewer failures to review.** One noise filter now covers every way a failure is captured. Before, each capture path had its own rules, and the busiest one (Claude Code's tool-failure hook) had none. Left out now:
+  - lookups that answered "no": `ls`, `cat`, `grep`, `find`, `pgrep`, `git check-ignore`, and similar read-only commands exiting 1 or 2;
+  - processes that were stopped, not broken: exit 124 (`timeout`), 130 (Ctrl-C), and 129–165 (killed by a signal, such as 144 from `pkill -f` matching its own shell);
+  - the same failure recorded twice, by the live hook and the end-of-session transcript scan. A command already on record, including one you rejected, isn't queued again;
+  - web and MCP tool failures (a blocked domain, an extension timing out) until the same one shows up in a second session;
+  - failures with nothing to learn: just an exit code and no message, a one-off command in the agent's scratch directory, or an error inside a script the agent wrote on the spot (`python3 - <<EOF`, `python3 -c`). A missing module or program is still kept, because that is a real lesson about your setup.
+- Checked against a real database, this would have stopped 101 of 148 failures that were rejected, demoted by the janitor, or left to expire, and none that were approved.
+
 ## [0.52.0] - 2026-11-19
 
 ### Removed

@@ -106,7 +106,7 @@ describe('event-processors', () => {
     });
 
     it('stores failure for Bash with non-zero exit', () => {
-      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error: Cannot find module ./config\nExit code 1', false, 'sess1');
 
       expect(mockStore).toHaveBeenCalledTimes(1);
       expect(mockStore.mock.calls[0][0].type).toBe('failure');
@@ -163,7 +163,7 @@ describe('event-processors', () => {
 
     it('pairs fix when success follows similar failure', () => {
       // First: failure
-      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error: Cannot find module ./config\nExit code 1', false, 'sess1');
       expect(mockStore).toHaveBeenCalledTimes(1);
 
       // Then: success with similar command
@@ -176,7 +176,7 @@ describe('event-processors', () => {
     });
 
     it('does not pair fix for dissimilar commands', () => {
-      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error: Cannot find module ./config\nExit code 1', false, 'sess1');
       processToolOutcome('Bash', { command: 'git status' }, 'On branch main', false, 'sess1');
 
       expect(mockMergeIntoValue).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe('event-processors', () => {
     });
 
     it('resets pending failures', () => {
-      processToolOutcome('Bash', { command: 'npm test' }, 'Error\nExit code 1', false, 'sess1');
+      processToolOutcome('Bash', { command: 'npm test' }, 'Error: Cannot find module ./config\nExit code 1', false, 'sess1');
       resetPendingFailures();
       processToolOutcome('Bash', { command: 'npm test' }, 'All tests passed', false, 'sess1');
 

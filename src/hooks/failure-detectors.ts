@@ -14,6 +14,7 @@
  */
 
 import { FailureMemoryContent } from '../services/failure-extractor';
+import { failureNoiseReason } from '../shared/failure-noise';
 import {
   ToolInteraction,
   extractToolInteractions,
@@ -30,6 +31,8 @@ export interface DetectedFailure {
     | 'tool_failure';
   content: FailureMemoryContent;
   confidence: number;
+  /** The Bash command, for non-zero-exit failures (used to dedup across capture paths). */
+  command?: string;
 }
 
 const MAX_FAILURES = 3;
@@ -63,10 +66,12 @@ function detectNonZeroExits(
 
     const command = ix.call.input?.command ?? 'unknown command';
     const commandKey = command.substring(0, 200);
+    if (failureNoiseReason({ toolName: 'Bash', command, text: output })) continue;
 
     const failure: DetectedFailure = {
       signal: 'non-zero-exit',
       confidence: 0.85,
+      command,
       content: {
         what_failed: `Command failed: ${truncate(command, 100)}`,
         why_failed: `Exit code ${exitMatch[1]}: ${truncate(firstLine(output), 150)}`,
