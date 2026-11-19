@@ -144,7 +144,6 @@ Claude Recall registers hooks on six Claude Code events for automatic capture, j
 | `correction-detector` | UserPromptSubmit | Captures user corrections, preferences, and project knowledge from natural language |
 | `memory-stop` | Stop | Captures corrections, preferences, failures, and devops patterns from the last 6 transcript entries |
 | `precompact-preserve` | PreCompact | Broader sweep of up to 50 transcript entries before context compression |
-| `session-end-checkpoint` | SessionEnd | Auto-saves a `{completed, remaining, blockers}` task checkpoint when the session ends voluntarily (`clear`, `prompt_input_exit`, `logout`). Spawns a detached worker so it stays within Claude Code's 1.5s SessionEnd timeout. Pi has the equivalent via the `session_shutdown` event handler. |
 | `rule-injector` | PreToolUse | **Just-in-time rule injection.** Before each tool call, searches active rules for matches against `tool_name + tool_input` and injects the top 3 (excluding raw failures) as a `<system-reminder>` block adjacent to the action. Closes the rule-loading gap: rules are surfaced at the moment of decision, not 50,000 tokens upstream from where attention has moved on. Each injection is logged to `rule_injection_events` for outcome correlation. Pi has the equivalent via per-turn injection in the `before_agent_start` handler. |
 | `rule-injection-resolver` | PostToolUse / PostToolUseFailure | Resolves recorded `rule_injection_events` with the tool outcome (success/failure). Together with the injector, this becomes the new "is this rule actually helpful" signal — replacing the broken `(applied from memory: ...)` citation regex. |
 
@@ -155,7 +154,6 @@ Claude Recall registers hooks on six Claude Code events for automatic capture, j
 - Batch classification: Stop and PreCompact hooks send all texts in a single API call
 - Near-duplicate detection via Jaccard similarity (55% threshold) prevents redundant storage
 - Per-event limits: 3 (Stop), 5 (PreCompact) to prevent DB flooding
-- Auto-checkpoint quality gate: refuses to save when the LLM detects the task was already complete — manual checkpoints stay sticky
 - Always exits 0 — hooks never block Claude
 
 **Setup:** Run `claude-recall setup --install` to register hooks in `.claude/settings.json`. After an upgrade whose release notes mention new or changed hooks (a `hooksVersion` bump), re-run it in each active project — it's idempotent, so when hooks are already current it's a no-op and touches nothing.

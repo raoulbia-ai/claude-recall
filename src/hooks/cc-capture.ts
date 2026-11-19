@@ -7,7 +7,7 @@
  * user's prompt on the hook. So the registered hook (`hook run
  * correction-detector`, unchanged in settings.json) spawns a DETACHED worker,
  * pipes the payload to it over stdin, and returns in milliseconds — the same
- * pattern as Kiro's kiro-capture (kiro-hooks.ts) and session-end-checkpoint.
+ * pattern as Kiro's kiro-capture (kiro-hooks.ts).
  *
  * Trade-off: the synchronous "📌 Recall: auto-captured …" echo is gone —
  * capture is silent and lands ~4s later. Verify via

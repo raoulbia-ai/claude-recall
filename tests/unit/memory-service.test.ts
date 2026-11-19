@@ -544,26 +544,4 @@ describe('MemoryService', () => {
     });
   });
 
-  describe('checkpoints', () => {
-    it('save/has/load/delete round trip', () => {
-      expect(service.hasCheckpoint('proj-ckpt')).toBe(false);
-
-      service.saveCheckpoint('proj-ckpt', {
-        completed: 'wrote the storage layer',
-        remaining: 'wire the CLI command',
-        blockers: 'none',
-        notes: 'see src/memory/storage.ts',
-      });
-
-      expect(service.hasCheckpoint('proj-ckpt')).toBe(true);
-      const ckpt = service.loadCheckpoint('proj-ckpt');
-      expect(ckpt).not.toBeNull();
-      expect(ckpt!.completed).toBe('wrote the storage layer');
-      expect(ckpt!.remaining).toBe('wire the CLI command');
-
-      expect(service.deleteCheckpoint('proj-ckpt')).toBe(true);
-      expect(service.hasCheckpoint('proj-ckpt')).toBe(false);
-      expect(service.deleteCheckpoint('proj-ckpt')).toBe(false);
-    });
-  });
 });

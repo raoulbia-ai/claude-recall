@@ -195,33 +195,6 @@ export class MemoryTools {
         },
         handler: this.handleDeleteMemory.bind(this)
       },
-      {
-        name: 'save_checkpoint',
-        description: 'Save a task checkpoint — a structured snapshot of work in progress (completed/remaining/blockers/notes). Replaces any previous checkpoint for this project. Call when ending a work session or pausing on a task.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            completed: { type: 'string', description: 'What has been finished in this work stream' },
-            remaining: { type: 'string', description: 'What is left to do' },
-            blockers: { type: 'string', description: 'Current blockers (use "none" if none)' },
-            notes: { type: 'string', description: 'Optional free-form notes, file references, etc.' },
-            projectId: { type: 'string', description: 'Optional project ID override. Defaults to current project.' },
-          },
-          required: ['completed', 'remaining', 'blockers'],
-        },
-        handler: this.handleSaveCheckpoint.bind(this),
-      },
-      {
-        name: 'load_checkpoint',
-        description: 'Load the latest task checkpoint for the current project. Returns null if none exists. Call at the start of a session to recall where you left off — load_rules will hint when one exists.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            projectId: { type: 'string', description: 'Optional project ID override. Defaults to current project.' },
-          },
-        },
-        handler: this.handleLoadCheckpoint.bind(this),
-      },
     ];
   }
 
@@ -459,21 +432,6 @@ export class MemoryTools {
         // Non-critical
       }
 
-      // Checkpoint hint — surface existence without dumping content
-      let checkpointHint = '';
-      try {
-        const project = projectId || context.projectId || ConfigService.getInstance().getProjectId();
-        if (this.memoryService.hasCheckpoint(project)) {
-          const cp = this.memoryService.loadCheckpoint(project);
-          if (cp) {
-            const updatedDate = new Date(cp.updated_at).toLocaleString();
-            checkpointHint = `📌 You have an unfinished task checkpoint from ${updatedDate} — call \`load_checkpoint\` to see completed/remaining/blockers before starting work.\n\n`;
-          }
-        }
-      } catch {
-        // Non-critical
-      }
-
       // Quarantine notice: the one channel MCP-only clients (no hooks) have
       let pendingHint = '';
       let pending = 0;
@@ -489,10 +447,10 @@ export class MemoryTools {
       if (sections.length > 0) {
         const body = sections.join('\n\n');
         rulesText = directive
-          ? `${directive}\n\n${pendingHint}${checkpointHint}---\n\n${body}`
-          : `${pendingHint}${checkpointHint}${body}`;
+          ? `${directive}\n\n${pendingHint}---\n\n${body}`
+          : `${pendingHint}${body}`;
       } else {
-        rulesText = `${pendingHint}${checkpointHint}` || 'No active rules found. This may be a new project.';
+        rulesText = pendingHint || 'No active rules found. This may be a new project.';
       }
 
       return {
@@ -613,45 +571,6 @@ export class MemoryTools {
       }
     } catch (error) {
       this.logger.error('MemoryTools', 'Failed to delete memory', error);
-      throw error;
-    }
-  }
-
-  private async handleSaveCheckpoint(input: any, _context: MCPContext): Promise<any> {
-    try {
-      const { completed, remaining, blockers, notes, projectId } = input;
-      if (typeof completed !== 'string' || typeof remaining !== 'string' || typeof blockers !== 'string') {
-        throw new Error('completed, remaining, and blockers are required string fields');
-      }
-      const project = projectId || ConfigService.getInstance().getProjectId();
-      this.memoryService.saveCheckpoint(project, { completed, remaining, blockers, notes });
-      return {
-        success: true,
-        projectId: project,
-        message: `Checkpoint saved for project: ${project}`,
-      };
-    } catch (error) {
-      this.logger.error('MemoryTools', 'Failed to save checkpoint', error);
-      throw error;
-    }
-  }
-
-  private async handleLoadCheckpoint(input: any, _context: MCPContext): Promise<any> {
-    try {
-      const { projectId } = input || {};
-      const project = projectId || ConfigService.getInstance().getProjectId();
-      const checkpoint = this.memoryService.loadCheckpoint(project);
-      if (!checkpoint) {
-        return { found: false, projectId: project };
-      }
-      return {
-        found: true,
-        projectId: project,
-        ...checkpoint,
-        updated_at_iso: new Date(checkpoint.updated_at).toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('MemoryTools', 'Failed to load checkpoint', error);
       throw error;
     }
   }

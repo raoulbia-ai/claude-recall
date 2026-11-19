@@ -3,7 +3,7 @@ import { importSkipReason, MAX_IMPORT_VALUE_CHARS } from '../../src/cli/import-v
 describe('importSkipReason', () => {
   it('accepts every type the system actually writes (export → import round trip)', () => {
     for (const type of ['preference', 'correction', 'devops', 'failure', 'project-knowledge',
-      'solution', 'task-checkpoint', 'tool-use', 'imported']) {
+      'solution', 'tool-use', 'imported']) {
       expect(importSkipReason({ type, value: 'x' })).toBeNull();
     }
   });

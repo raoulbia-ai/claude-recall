@@ -102,7 +102,6 @@ same precedence:
 
 | Feature | Runs in | Without any key, now |
 | --- | --- | --- |
-| Auto-checkpoint extraction | Session-exit worker (CC + **Pi** — Pi's only recovery path, it has no `--resume`) | Works via `claude -p` |
 | Failure hindsight hints | Stop hook, inline | Works via `claude -p` |
 | End-of-session lesson extraction | Stop hook, inline | Works via `claude -p` |
 | Batch classification | Stop hook, inline | Works via `claude -p` |

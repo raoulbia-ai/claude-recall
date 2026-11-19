@@ -24,7 +24,6 @@ import {
   setLogFunction,
   resetPendingFailures,
   extractSessionLearnings,
-  extractCheckpoint,
   ConversationEntry,
 } from '../shared/event-processors';
 import { rankRulesForToolCall, Rule, RankedRule } from '../services/rule-retrieval';
@@ -123,12 +122,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
   /** Rules injected into the current turn — the only candidates for its citations. */
   let injectedThisTurn: CitableRule[] = [];
   const collectedUserTexts: string[] = [];
-  // Chronologically interleaved entries (user input + tool results in order)
-  // for auto-checkpoint extraction at session end. Distinct from the two
-  // arrays above which are kept for backward compat with processSessionEnd
-  // and extractSessionLearnings.
-  const collectedEntries: ConversationEntry[] = [];
-  const MAX_COLLECTED_ENTRIES = 100;
   /**
    * Longest quitting may be held up by what a session owes at its end. A
    * backstop: every piece that asks a model is capped at 10s on its own, they
@@ -148,7 +141,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
     rulesLoaded = false;
     collectedUserTexts.length = 0;
     collectedToolResults.length = 0;
-    collectedEntries.length = 0;
     resetPendingFailures();
     try {
       ConfigService.getInstance().updateConfig({
@@ -318,16 +310,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
       isError: event.isError,
     });
 
-    // Append to chronologically interleaved log for auto-checkpoint
-    collectedEntries.push({
-      role: 'tool_result',
-      text: output.substring(0, 300),
-      toolName: event.toolName,
-      isError: event.isError,
-    });
-    if (collectedEntries.length > MAX_COLLECTED_ENTRIES) {
-      collectedEntries.splice(0, collectedEntries.length - MAX_COLLECTED_ENTRIES);
-    }
 
     if (ctx.hasUI) {
       const label = event.input?.command
@@ -360,10 +342,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
     }
 
     collectedUserTexts.push(event.text);
-    collectedEntries.push({ role: 'user', text: event.text });
-    if (collectedEntries.length > MAX_COLLECTED_ENTRIES) {
-      collectedEntries.splice(0, collectedEntries.length - MAX_COLLECTED_ENTRIES);
-    }
     processUserInput(event.text, sessionId).then(msg => {
       if (msg && ctx.hasUI) {
         try { ctx.ui.notify(`📌 ${msg}`, 'info'); } catch { /* non-critical */ }
@@ -401,24 +379,9 @@ export default function(pi: PiTypes.ExtensionAPI) {
       }).catch(() => {}));
     }
 
-    // Auto-checkpoint: extract "where I left off" hint for next Pi session.
-    // Critical for Pi which has no `--resume` flag — without this, the next
-    // Pi session has no memory of what came before. Uses chronologically
-    // interleaved entries (collectedEntries) so the LLM sees the actual
-    // most-recent task, not user texts followed by all tool results.
-    if (collectedEntries.length >= 3 && projectId) {
-      work.push(extractCheckpoint(collectedEntries, projectId, 'pi').then(saved => {
-        if (saved && ctx.hasUI) {
-          try {
-            ctx.ui.notify('📌 Recall: saved task checkpoint for next session', 'info');
-          } catch { /* non-critical */ }
-        }
-      }).catch(() => {}));
-    }
-
     // Pi awaits this handler and then exits the process, so on quit anything
     // still running is cut off at its next await: the episode is opened and
-    // never closed, nothing is promoted or pruned, no checkpoint is written.
+    // never closed, nothing is promoted or pruned.
     // When the session is only being replaced the process lives on, and the
     // work is left to finish behind the new session rather than hold it up.
     if (event?.reason === undefined || event.reason === 'quit') {
@@ -468,21 +431,9 @@ export default function(pi: PiTypes.ExtensionAPI) {
           for (const m of all) os.recordRetrieval(m.key);
         } catch { /* non-critical */ }
 
-        // Checkpoint hint — surface existence without dumping content
-        let checkpointHint = '';
-        try {
-          if (ms.hasCheckpoint(projectId)) {
-            const cp = ms.loadCheckpoint(projectId);
-            if (cp) {
-              const updatedDate = new Date(cp.updated_at).toLocaleString();
-              checkpointHint = `📌 You have an unfinished task checkpoint from ${updatedDate} — call \`recall_load_checkpoint\` to see completed/remaining/blockers before starting work.\n\n`;
-            }
-          }
-        } catch { /* non-critical */ }
-
         const text = body
-          ? `${LOAD_RULES_DIRECTIVE}\n\n${checkpointHint}---\n\n${body}`
-          : (checkpointHint || 'No active rules found. This may be a new project.');
+          ? `${LOAD_RULES_DIRECTIVE}\n\n---\n\n${body}`
+          : 'No active rules found. This may be a new project.';
 
         return {
           content: [{ type: 'text' as const, text }],
@@ -634,84 +585,6 @@ export default function(pi: PiTypes.ExtensionAPI) {
       } catch (err) {
         return {
           content: [{ type: 'text' as const, text: `Failed to search: ${(err as Error).message}` }],
-          isError: true,
-        };
-      }
-    },
-  });
-
-  // --- Tool: recall_save_checkpoint ---
-
-  pi.registerTool({
-    name: 'recall_save_checkpoint',
-    label: 'Save Task Checkpoint',
-    description: 'Save a structured snapshot of work in progress (completed/remaining/blockers/notes). Replaces any previous checkpoint for this project. Call when ending a session or pausing on a task.',
-    promptSnippet: 'Save a task checkpoint with what is done, what remains, and any blockers',
-    parameters: {
-      type: 'object',
-      properties: {
-        completed: { type: 'string', description: 'What has been completed so far' },
-        remaining: { type: 'string', description: 'What remains to be done' },
-        blockers: { type: 'string', description: 'Any blockers or issues (use "none" if none)' },
-        notes: { type: 'string', description: 'Optional additional notes' },
-      },
-      required: ['completed', 'remaining', 'blockers'],
-    },
-    async execute(_id, params: any, _signal, _onUpdate, _ctx) {
-      try {
-        const { completed, remaining, blockers, notes } = params || {};
-        if (typeof completed !== 'string' || typeof remaining !== 'string' || typeof blockers !== 'string') {
-          return {
-            content: [{ type: 'text' as const, text: 'Error: completed, remaining, and blockers are required string fields' }],
-            isError: true,
-          };
-        }
-        const ms = MemoryService.getInstance();
-        ms.saveCheckpoint(projectId, { completed, remaining, blockers, notes });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({
-            success: true,
-            projectId,
-            message: `Checkpoint saved for project: ${projectId}`,
-          }) }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: `Failed to save checkpoint: ${(err as Error).message}` }],
-          isError: true,
-        };
-      }
-    },
-  });
-
-  // --- Tool: recall_load_checkpoint ---
-
-  pi.registerTool({
-    name: 'recall_load_checkpoint',
-    label: 'Load Task Checkpoint',
-    description: 'Load the latest task checkpoint for the current project. Returns null if none exists. Call at session start to recall where you left off.',
-    promptSnippet: 'Load the saved task checkpoint to see what was in progress',
-    parameters: {},
-    async execute(_id, _params: any, _signal, _onUpdate, _ctx) {
-      try {
-        const ms = MemoryService.getInstance();
-        const checkpoint = ms.loadCheckpoint(projectId);
-        if (!checkpoint) {
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ found: false, projectId }) }],
-          };
-        }
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({
-            found: true,
-            projectId,
-            ...checkpoint,
-            updated_at_iso: new Date(checkpoint.updated_at).toISOString(),
-          }) }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text' as const, text: `Failed to load checkpoint: ${(err as Error).message}` }],
           isError: true,
         };
       }

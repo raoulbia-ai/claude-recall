@@ -68,7 +68,7 @@ important — prompt of a session. Even when it fits, blocking every turn on a
 ~3 s LLM call is a poor experience for an interactive session.
 
 So the `userPromptSubmit` hook does **not** classify inline. It spawns a
-**detached worker** (the same pattern as `session-end-checkpoint`), pipes the
+**detached worker** (the same pattern as Claude Code's `cc-capture`), pipes the
 prompt to it over stdin, and returns in milliseconds. The worker performs the
 ~3 s Kiro classify call and stores the memory in the background. The trade-off:
 no synchronous "captured" echo, and a brief window where a memory stated in one

@@ -4,13 +4,11 @@
  */
 
 const mockLoadActiveRules = jest.fn();
-const mockLoadCheckpoint = jest.fn();
 
 jest.mock('../../src/services/memory', () => ({
   MemoryService: {
     getInstance: () => ({
       loadActiveRules: mockLoadActiveRules,
-      loadCheckpoint: mockLoadCheckpoint,
     }),
   },
 }));
@@ -124,7 +122,6 @@ describe('normalizeKiroInput', () => {
 describe('handleKiroAgentSpawn', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLoadCheckpoint.mockReturnValue(null);
   });
 
   it('prints directive + rule sections to stdout for context injection', async () => {
@@ -175,7 +172,7 @@ describe('handleKiroAgentSpawn', () => {
     expect(out).not.toContain('Use pnpm, not npm ⚠️');
   });
 
-  it('emits the memory-capability directive even with no rules and no checkpoint', async () => {
+  it('emits the memory-capability directive even with no rules', async () => {
     // Regression: on a fresh database the agent previously received NOTHING,
     // answered "I have no persistent memory", and never called store_memory
     // when the user said "remember ..."
@@ -191,22 +188,6 @@ describe('handleKiroAgentSpawn', () => {
     expect(out).toContain('PERSISTENT MEMORY');
     expect(out).toContain('store_memory');
     expect(out).not.toContain('## Preferences'); // no rule sections when empty
-  });
-
-  it('surfaces a pending checkpoint hint', async () => {
-    mockLoadActiveRules.mockReturnValue({ preferences: [], corrections: [], failures: [], devops: [], summary: '' });
-    mockLoadCheckpoint.mockReturnValue({
-      completed: 'phase 1', remaining: 'wire the parser into the CLI', blockers: 'none', updated_at: Date.now(),
-    });
-
-    const cap = captureStdout();
-    try {
-      await handleKiroAgentSpawn({});
-    } finally {
-      cap.restore();
-    }
-    expect(cap.out()).toContain('task checkpoint');
-    expect(cap.out()).toContain('wire the parser into the CLI');
   });
 
   it('never throws when rule loading fails', async () => {

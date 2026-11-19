@@ -4,7 +4,7 @@
  * future session's context.
  *
  * Types are checked by SHAPE, not against a fixed list: the type set is open
- * (storage never constrains it, e.g. `solution`, `task-checkpoint`), and an
+ * (storage never constrains it, e.g. `solution`), and an
  * export → import round trip must not silently drop real memories.
  */
 

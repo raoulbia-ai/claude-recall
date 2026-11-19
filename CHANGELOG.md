@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.0] - 2026-11-19
+
+### Removed
+
+- **Task checkpoints.** The "where I left off" note saved at session end is gone, along with the `checkpoint` command, the `save_checkpoint` / `load_checkpoint` MCP tools, the Pi `recall_save_checkpoint` / `recall_load_checkpoint` tools, and the hint in `load_rules` and at Kiro agent start. Across months of use no automatic checkpoint had been saved since early September and none had ever been loaded, while every session end paid for an extra model call. Claude Code's own `/resume` and compaction summaries already cover this. Stored checkpoints are deleted when the database opens.
+- This also closes a memory-poisoning gap noted in the design doc: checkpoint text reached the agent without passing through quarantine.
+
+### Upgrading
+
+- Nothing to do. An existing `SessionEnd` hook entry for `session-end-checkpoint` now does nothing and is dropped the next time `claude-recall setup --install` rewrites your hooks (hooks version 18.0.0).
+
 ## [0.51.2] - 2026-11-19
 
 ### Changed

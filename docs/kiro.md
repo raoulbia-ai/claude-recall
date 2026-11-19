@@ -96,13 +96,13 @@ Works in Kiro's default agent; nothing happens automatically. Register just the 
     "claude-recall": {
       "command": "claude-recall",
       "args": ["mcp", "start"],
-      "autoApprove": ["load_rules", "search_memory", "load_checkpoint"]
+      "autoApprove": ["load_rules", "search_memory"]
     }
   }
 }
 ```
 
-With Option B the agent has the memory tools (`load_rules`, `store_memory`, `search_memory`, checkpoints) but no rules at session start and no auto-capture. Ask it to *"load my rules"*.
+With Option B the agent has the memory tools (`load_rules`, `store_memory`, `search_memory`) but no rules at session start and no auto-capture. Ask it to *"load my rules"*.
 
 ---
 
@@ -128,10 +128,7 @@ Under enterprise governance that restricts MCP to a trusted registry, Kiro drops
 
 ## What's not available under Kiro
 
-Kiro's hooks expose no transcript, so two features are off with either setup option:
-
-- transcript-based failure detection
-- session-end auto-checkpoints (existing checkpoints are still surfaced at agent start)
+Kiro's hooks expose no transcript, so transcript-based failure detection is off with either setup option.
 
 ---
 
