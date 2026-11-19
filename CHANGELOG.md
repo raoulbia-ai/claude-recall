@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.1] - 2026-11-19
+
+### Changed
+
+- **The README is rewritten as a narrative.** It opens with the problem, follows a week of using Claude Recall (a correction captured, a failure set aside for review, the janitor describing it, approval, the rule applied in a new session), and gives plain definitions before detail. Every command, setting and link from before is kept.
+
 ## [0.51.0] - 2026-11-19
 
 **Upgrading: review your memories once.** Memories stored before this release have no recorded origin, so they wait for your review and don't load until you approve them. Type `recall review` in a Claude Code or Pi chat, or run `claude-recall rules review`; `claude-recall rules approve --all --type <t>` approves a whole group. Rules you state from now on load straight away. Details: [Reviewing what it learned](README.md#reviewing-what-it-learned).
