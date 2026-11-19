@@ -598,7 +598,7 @@ export class MemoryService {
    * Returns preferences, corrections, failures, and devops rules
    * scoped to current project + universal + unscoped memories.
    */
-  loadActiveRules(projectId?: string): ActiveRules {
+  loadActiveRules(projectId?: string, opts: { countLoad?: boolean } = {}): ActiveRules {
     try {
       const pid = projectId || this.config.getProjectId();
       const searchContext = { project_id: pid };
@@ -664,7 +664,8 @@ export class MemoryService {
       const allIds = [
         ...preferences, ...corrections, ...failures, ...devops, ...solutions
       ].map(m => m.id).filter((id): id is number => id !== undefined);
-      if (allIds.length > 0) {
+      // Showing the user their rules isn't the agent loading them: don't count it
+      if (allIds.length > 0 && opts.countLoad !== false) {
         this.storage.incrementLoadCounts(allIds);
       }
 
@@ -673,6 +674,31 @@ export class MemoryService {
       this.logger.logServiceError('MemoryService', 'loadActiveRules', error as Error);
       return { preferences: [], corrections: [], failures: [], devops: [], solutions: [], summary: 'Error loading rules' };
     }
+  }
+
+  /**
+   * How many memories steer the agent in this project: every active rule
+   * (preferences, corrections, failures, devops, solutions) plus project
+   * notes. One number for the status line and the session banner, so neither
+   * has to name kinds. Doesn't count as the agent loading the rules.
+   */
+  countRules(projectId?: string): number {
+    const r = this.loadActiveRules(projectId, { countLoad: false });
+    return r.preferences.length + r.corrections.length + r.failures.length +
+      r.devops.length + r.solutions.length + this.getActiveKnowledge(projectId).length;
+  }
+
+  /**
+   * Active project-knowledge memories (facts about the project, surfaced by
+   * relevance rather than loaded as rules), newest first. Same filters as
+   * loadActiveRules: inactive and unreviewed ones are left out.
+   */
+  getActiveKnowledge(projectId?: string): Memory[] {
+    const pid = projectId || this.config.getProjectId();
+    const quarantine = quarantineEnabled();
+    return this.storage.searchByContext({ project_id: pid, type: 'project-knowledge' })
+      .filter(m => m.is_active !== false && (!quarantine || isTrustedMemory(m)))
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }
 
   /**

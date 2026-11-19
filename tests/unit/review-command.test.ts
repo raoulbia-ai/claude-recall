@@ -125,6 +125,47 @@ describe('in-session review (handleReviewInput)', () => {
     expect(say('recall approve')).toMatch(/Name the memories/);
   });
 
+  it('"recall rules" shows the loaded rules without counting it as a load', () => {
+    ms().store({ key: 'u1', origin: 'user', type: 'preference', value: { content: 'use pnpm, not npm' } });
+    const msg = say('recall rules')!;
+    expect(msg).toMatch(/1 rule for/);
+    expect(msg).toContain('use pnpm, not npm');
+    expect(msg).not.toContain('prefer small pull requests'); // still pending
+    expect(msg).toMatch(/3 more waiting for your review/);
+    expect((ms().getStorage().retrieve('u1') as any).load_count || 0).toBe(0);
+  });
+
+  it('"recall rules" shows mistakes to avoid in full and includes project notes', () => {
+    ms().store({ key: 'f9', origin: 'user', type: 'failure', value: {
+      what_failed: 'Reported the release as published too early',
+      why_failed: 'CI went green before npm had the new version',
+      what_should_do: 'Poll npm view until it returns the new version',
+    } });
+    ms().store({ key: 'n9', origin: 'user', type: 'project-knowledge', value: { content: 'commit only tracked files' } });
+    const msg = say('recall rules')!;
+    expect(msg).toMatch(/Mistakes to avoid \(1\)/);
+    expect(msg).toMatch(/why: CI went green/);
+    expect(msg).toMatch(/instead: Poll npm view/);
+    expect(msg).toMatch(/Project notes \(given when relevant\) \(1\)[\s\S]*commit only tracked files/);
+    expect(msg).toMatch(/2 rules for/);
+    expect(msg).toMatch(/recall reject <id>/);
+  });
+
+  it('"recall knowledge" lists approved project facts only', () => {
+    ms().store({ key: 'k1', origin: 'user', type: 'project-knowledge', value: { content: 'the API lives in services/api' } });
+    ms().store({ key: 'k2', origin: 'agent', type: 'project-knowledge', value: { content: 'the db is postgres 15' } });
+    const msg = say('recall knowledge')!;
+    expect(msg).toMatch(/1 fact kept/);
+    expect(msg).toContain('the API lives in services/api');
+    expect(msg).not.toContain('postgres'); // waiting for review
+  });
+
+  it('says so when there are no rules or facts', () => {
+    ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
+    expect(say('recall rules')).toMatch(/No rules yet/);
+    expect(say('recall knowledge')).toMatch(/No project knowledge/);
+  });
+
   it('says so when nothing is waiting', () => {
     ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
     expect(say('recall review')).toMatch(/Nothing waiting/);

@@ -15,6 +15,8 @@
  *   recall pending [all]          list them
  *   recall approve <ids|all>      approve by id, or everything pending
  *   recall reject <ids|all>       reject by id, or everything pending
+ *   recall rules                  everything that steers the agent here, with ids
+ *   recall knowledge              just the project notes
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -191,6 +193,9 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
     }
   }
 
+  if (/^recall\s+rules\s*$/i.test(t)) return showRules();
+  if (/^recall\s+(knowledge|facts)\s*$/i.test(t)) return showKnowledge();
+
   const m = /^recall\s+(review|pending|approve|reject)\b\s*(.*)$/i.exec(t);
   if (!m) return null;
   const verb = m[1].toLowerCase();
@@ -220,4 +225,67 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
   const n = verb === 'approve' ? ms.approveRules(ids) : ms.rejectRules(ids);
   const left = pending(false).length;
   return `✓ ${verb === 'approve' ? 'Approved' : 'Rejected'} ${n} memor${n === 1 ? 'y' : 'ies'}.${left > 0 ? ` ${left} still waiting here.` : ''}`;
+}
+
+function line(m: Memory): string {
+  return `  #${m.id} ${memoryText(m.value).replace(/\s+/g, ' ').slice(0, 220)}`;
+}
+
+function waitingNote(): string {
+  const n = pending(false).length;
+  return n > 0 ? `\n\n⏳ ${n} more waiting for your review: type "recall review".` : '';
+}
+
+/** A mistake to avoid, in full: what went wrong, why, and what to do instead. */
+function failureDetail(m: Memory): string {
+  const parse = (x: any) => {
+    if (typeof x === 'string' && /^\s*[{[]/.test(x)) { try { return JSON.parse(x); } catch { /* plain text */ } }
+    return x;
+  };
+  let v = parse(m.value);
+  if (v && typeof v === 'object' && v.content !== undefined && typeof parse(v.content) === 'object') v = parse(v.content);
+  if (!v || typeof v !== 'object' || !v.what_failed) return line(m);
+  const clean = (x: any) => String(x).replace(/\s+/g, ' ').slice(0, 300);
+  const generic = /^(Check (inputs|command syntax)|Verify)/i;
+  const rows = [`  #${m.id} ${clean(v.what_failed)}`];
+  if (v.why_failed) rows.push(`      why: ${clean(v.why_failed)}`);
+  if (v.what_should_do && !generic.test(v.what_should_do)) rows.push(`      instead: ${clean(v.what_should_do)}`);
+  return rows.join('\n');
+}
+
+/**
+ * Everything that steers the agent in this project, shown to the user: the
+ * rules it's given every session, mistakes to avoid (in full), and project
+ * notes it's given when relevant. The status line shows only the total.
+ */
+function showRules(): string {
+  const ms = MemoryService.getInstance();
+  const r = ms.loadActiveRules(undefined, { countLoad: false });
+  const notes = ms.getActiveKnowledge();
+  const sections: Array<[string, Memory[], (m: Memory) => string]> = [
+    ['Your preferences', r.preferences, line],
+    ['Corrections', r.corrections, line],
+    ['Mistakes to avoid', r.failures, failureDetail],
+    ['DevOps', r.devops, line],
+    ['Solutions', r.solutions, line],
+    ['Project notes (given when relevant)', notes, line],
+  ];
+  const body = sections
+    .filter(([, list]) => list.length > 0)
+    .map(([title, list, fmt]) => `${title} (${list.length})\n${list.map(fmt).join('\n')}`)
+    .join('\n\n');
+  const total = sections.reduce((n, [, list]) => n + list.length, 0);
+  const project = ConfigService.getInstance().getProjectId();
+  if (total === 0) return `No rules yet for "${project}".${waitingNote()}`;
+  return `🧠 ${total} rule${total === 1 ? '' : 's'} for "${project}":\n\n${body}\n\nTo drop one: "recall reject <id>".${waitingNote()}`;
+}
+
+/** Facts kept about this project; given to the agent when relevant, not as rules. */
+function showKnowledge(): string {
+  const list = MemoryService.getInstance().getActiveKnowledge();
+  const project = ConfigService.getInstance().getProjectId();
+  if (list.length === 0) return `No project knowledge kept for "${project}" yet.${waitingNote()}`;
+  const shown = list.slice(0, 40).map(line).join('\n');
+  const more = list.length > 40 ? `\n  …and ${list.length - 40} more (claude-recall list -t project-knowledge --all).` : '';
+  return `📚 ${list.length} fact${list.length === 1 ? '' : 's'} kept about "${project}" (brought up when relevant, not loaded as rules):\n\n${shown}${more}${waitingNote()}`;
 }
