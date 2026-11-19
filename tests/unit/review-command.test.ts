@@ -166,6 +166,18 @@ describe('in-session review (handleReviewInput)', () => {
     expect(say('recall knowledge')).toMatch(/No project knowledge/);
   });
 
+  it('"recall list" is the same as "recall rules"', () => {
+    ms().store({ key: 'u2', origin: 'user', type: 'preference', value: { content: 'tabs, not spaces' } });
+    expect(say('recall list')).toBe(say('recall rules'));
+  });
+
+  it('answers an unknown "recall <word>" with the commands, but lets sentences through', () => {
+    expect(say('recall help')).toMatch(/Claude Recall commands[\s\S]*recall rules/);
+    expect(say('recall foo')).toMatch(/Claude Recall commands/);
+    expect(say('recall what we decided about the parser')).toBeNull();
+    expect(say('recall the earlier plan')).toBeNull();
+  });
+
   it('says so when nothing is waiting', () => {
     ms().getStorage().getDatabase().prepare('DELETE FROM memories').run();
     expect(say('recall review')).toMatch(/Nothing waiting/);

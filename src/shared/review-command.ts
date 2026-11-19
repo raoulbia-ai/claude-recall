@@ -15,7 +15,8 @@
  *   recall pending [all]          list them
  *   recall approve <ids|all>      approve by id, or everything pending
  *   recall reject <ids|all>       reject by id, or everything pending
- *   recall rules                  everything that steers the agent here, with ids
+ *   recall rules | list           everything that steers the agent here, with ids
+ *   recall <other word>           shows this list instead of reaching the agent
  *   recall knowledge              just the project notes
  */
 import * as fs from 'fs';
@@ -116,6 +117,16 @@ function pending(allProjects: boolean): Memory[] {
   });
 }
 
+const COMMAND_HELP = [
+  'Claude Recall commands (handled here, never sent to the agent):',
+  '  recall rules              everything that steers the agent in this project, with ids (also: recall list)',
+  '  recall knowledge          just the project notes',
+  '  recall review             step through what is waiting for your review',
+  '  recall pending            list what is waiting, with ids',
+  '  recall approve <ids|all>  approve by id',
+  '  recall reject <ids|all>   drop by id (works on approved rules too)',
+].join('\n');
+
 const PROMPT_LINE = 'Reply: y = approve · n = reject · s = skip · all = approve the rest · q = stop · several at once: nyy';
 
 function showCurrent(s: ReviewState, prefix = ''): string {
@@ -193,11 +204,14 @@ export function handleReviewInput(text: string, sessionKey: string, stateDir: st
     }
   }
 
-  if (/^recall\s+rules\s*$/i.test(t)) return showRules();
-  if (/^recall\s+(knowledge|facts)\s*$/i.test(t)) return showKnowledge();
+  if (/^recall\s+(rules|list|ls|show)\s*$/i.test(t)) return showRules();
+  if (/^recall\s+(knowledge|facts|notes)\s*$/i.test(t)) return showKnowledge();
 
   const m = /^recall\s+(review|pending|approve|reject)\b\s*(.*)$/i.exec(t);
-  if (!m) return null;
+  // "recall <one word>" that isn't a command: show the commands rather than
+  // hand a mistyped command to the agent. Longer sentences ("recall what we
+  // decided about X") still go to the agent.
+  if (!m) return /^recall\s+[a-z-]+[?!.]?\s*$/i.test(t) ? COMMAND_HELP : null;
   const verb = m[1].toLowerCase();
   const rest = m[2].trim();
   const allProjects = /\ball[-\s]?projects\b|\beverywhere\b/i.test(rest) || (verb !== 'approve' && verb !== 'reject' && /^all\b/i.test(rest));

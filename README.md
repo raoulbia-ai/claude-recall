@@ -210,9 +210,9 @@ You'll know when something is waiting: the status bar shows `⏳ N to review`, a
 | `recall pending` | Lists them with ids |
 | `recall approve 12 15` · `recall approve all` | Approves by id, or everything waiting |
 | `recall reject 12` | Rejects; the same text won't be accepted again from an untrusted source |
-| `recall rules` | Shows everything that steers the agent in this project, with ids: your preferences, corrections, mistakes to avoid (in full: what went wrong, why, what to do instead), DevOps rules, and project notes, which are given only when relevant. `recall reject <id>` drops one |
+| `recall rules` (or `recall list`) | Shows everything that steers the agent in this project, with ids: your preferences, corrections, mistakes to avoid (in full: what went wrong, why, what to do instead), DevOps rules, and project notes, which are given only when relevant. `recall reject <id>` drops one |
 
-Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for project notes.
+Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. Type `recall help` (or any other `recall <word>`) to see the list. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for project notes.
 
 To keep the queue short, the daily [janitor](#memory-janitor) rewrites cryptic failures into plain descriptions and drops ones that weren't real, and failures nobody reviewed leave the queue after 14 days. To switch reviewing off and load everything as before, set `CLAUDE_RECALL_QUARANTINE=off`.
 
@@ -379,7 +379,7 @@ claude-recall hook run memory-sync           # Stop + PreCompact hook (syncs rul
 
 ## Under the hood
 
-Everything lives in one local SQLite database (`~/.claude-recall/claude-recall.db`, in WAL mode, with content-hash deduplication and automatic compaction). The agent reaches it through six memory tools: `load_rules`, `store_memory`, `search_memory`, `delete_memory`, `save_checkpoint` and `load_checkpoint`. Each agent connects in its own way:
+Everything lives in one local SQLite database (`~/.claude-recall/claude-recall.db`, in WAL mode, with content-hash deduplication and automatic compaction). The agent reaches it through four memory tools: `load_rules`, `store_memory`, `search_memory` and `delete_memory`. Each agent connects in its own way:
 
 - **Claude Code**: an MCP server (`mcp__claude-recall__*` tools) plus hooks that do the automatic capture
 - **Pi**: a native extension (`recall_*` tools) plus event handlers

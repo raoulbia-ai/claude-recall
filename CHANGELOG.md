@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.3] - 2026-11-19
+
+### Added
+
+- `recall list` works the same as `recall rules`.
+- Typing `recall` plus one word that isn't a command, such as `recall help` or a typo, now shows the list of chat commands instead of sending your message to the agent. Longer messages, such as "recall what we decided about X", still reach the agent.
+
+### Fixed
+
+- README: the memory tools list no longer names the checkpoint tools retired in 0.52.0.
+
 ## [0.52.2] - 2026-11-19
 
 ### Added
