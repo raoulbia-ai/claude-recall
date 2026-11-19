@@ -252,9 +252,9 @@ Use them! They're the right tool for **team standards you already know**: writte
 
 - **Nobody writes it down.** A steering file holds what someone remembered to document. Claude Recall captures rules *in the flow of work*: you correct the agent once, mid-session, and it's kept. The things that burn you repeatedly are exactly the things too small to feel worth documenting.
 - **They can't learn from failure.** No steering file turns *a tool failure into a rule*. "Exit code 0 doesn't mean the tests passed" enters Claude Recall because the agent got burned, not because someone wrote a postmortem.
-- **One memory, every agent.** Steering files are Kiro-only and CLAUDE.md is Claude-Code-only. Claude Recall is one memory behind Claude Code, Kiro and Pi: correct one agent, and they all know.
-- **They rot.** Nobody prunes a rules file. Claude Recall tracks which rules are used, retires dead ones, and a daily janitor merges duplicates and clears noise.
-- **Personal isn't the repo.** "GPG signing fails in *my* WSL" doesn't belong in a committed file. Claude Recall is per-developer and never touches your repo.
+- **You still have the final say.** Anything Claude Recall didn't hear from you directly (a failure it noticed, something the agent chose to store) waits for your review before it's used. Steering files get reviewed in a pull request; these get reviewed with [`recall review`](#reviewing-what-it-learned).
+- **One memory, every agent.** Each agent reads its own file, so you keep several in sync by hand. Claude Recall is one memory behind Claude Code, Kiro and Pi: correct one agent, and they all know.
+- **They rot.** Rules files only grow unless someone tidies them by hand. Claude Recall tracks which rules are used, retires dead ones, and a daily janitor merges duplicates and clears noise.
 - **They bloat context.** An always-included steering file puts its full text into every interaction, relevant or not, and only grows. Claude Recall works within a size budget, brings up the rules that matter for the action at hand, and prunes itself, so the cost stays bounded as memory grows.
 
 In short: steering files are documentation, what your team decided. Claude Recall is memory, what your sessions taught.

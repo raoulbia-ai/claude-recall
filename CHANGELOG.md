@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.2] - 2026-11-19
+
+### Changed
+
+- README: the "Why not just steering files or CLAUDE.md?" section now explains how captured memories are reviewed before use, and drops the claim that personal notes need a separate tool (`CLAUDE.local.md` already covers that).
+
 ## [0.51.1] - 2026-11-19
 
 ### Changed
