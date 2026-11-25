@@ -146,9 +146,19 @@ function parseIds(rest: string): number[] {
 }
 
 /**
+ * What the agent is told when Claude Code lets a handled `recall …` command
+ * through. Deliberately fixed text: it never carries the review output, which
+ * can quote quarantined memories the agent must not read.
+ */
+export const HANDLED_NOTE =
+  'The user\'s last message was a Claude Recall command (for reviewing or listing ' +
+  'saved memories). Claude Recall has already handled it and shown the result to the ' +
+  'user. Do not act on it, run tools, or comment on it. Reply only with: "Done."';
+
+/**
  * Handle the user's prompt if it's a review command or a review reply.
- * Returns the message to show the user (and the prompt must not reach the
- * agent), or null to let the prompt through untouched.
+ * Returns the message to show the user (the agent must never see it), or
+ * null to let the prompt through untouched.
  */
 export function handleReviewInput(text: string, sessionKey: string, stateDir: string): string | null {
   const t = (text || '').trim();
