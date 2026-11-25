@@ -42,16 +42,19 @@ export class HookCommands {
       case 'correction-detector': {
         // In-session review of quarantined memories comes first: a `recall …`
         // command (or a reply during a review) typed by the USER is handled
-        // here and blocked, so it never reaches the agent and is never
-        // captured. Claude Code shows the block reason to the user directly.
-        const { handleReviewInput } = await import('../../shared/review-command');
+        // here and never captured. The result goes to the user as a
+        // systemMessage. Since 0.52.4 the prompt is let through instead of
+        // blocked, because Claude Code labels every blocked prompt "A hook
+        // blocked your prompt", which reads like an error. The agent only gets
+        // a fixed note that the command was handled: the review text itself
+        // (which can quote quarantined memories) never enters its context.
+        const { handleReviewInput, HANDLED_NOTE } = await import('../../shared/review-command');
         const { hookStateDir } = await import('../../hooks/shared');
         const reviewMessage = handleReviewInput(input?.prompt ?? '', String(input?.session_id ?? ''), hookStateDir());
         if (reviewMessage) {
           process.stdout.write(JSON.stringify({
-            decision: 'block',
-            reason: reviewMessage,
-            hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true },
+            systemMessage: reviewMessage,
+            hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: HANDLED_NOTE },
           }));
           break;
         }

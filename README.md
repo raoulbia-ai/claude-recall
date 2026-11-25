@@ -212,7 +212,7 @@ You'll know when something is waiting: the status bar shows `⏳ N to review`, a
 | `recall reject 12` | Rejects; the same text won't be accepted again from an untrusted source |
 | `recall rules` (or `recall list`) | Shows everything that steers the agent in this project, with ids: your preferences, corrections, mistakes to avoid (in full: what went wrong, why, what to do instead), DevOps rules, and project notes, which are given only when relevant. `recall reject <id>` drops one |
 
-Each item says where it came from and what approving it would do. These commands are handled before the agent sees your message, so the agent can't approve anything on your behalf. Type `recall help` (or any other `recall <word>`) to see the list. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for project notes.
+Each item says where it came from and what approving it would do. Claude Recall handles these commands before your message reaches the agent. The agent is only told that a command ran, so it can't approve anything for you and never reads what's waiting. In Claude Code the result shows up as a hook message and the agent replies "Done." Type `recall help` (or any other `recall <word>`) to see the list. In a terminal, use `claude-recall rules review` (or `rules pending` / `approve` / `reject`), and `claude-recall list -t project-knowledge` for project notes.
 
 To keep the queue short, the daily [janitor](#memory-janitor) rewrites cryptic failures into plain descriptions and drops ones that weren't real, and failures nobody reviewed leave the queue after 14 days. To switch reviewing off and load everything as before, set `CLAUDE_RECALL_QUARANTINE=off`.
 

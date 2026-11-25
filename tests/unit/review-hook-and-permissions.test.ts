@@ -10,6 +10,7 @@ jest.mock('../../src/hooks/cc-capture', () => ({
 
 import { HookCommands } from '../../src/cli/commands/hook-commands';
 import { MemoryService } from '../../src/services/memory';
+import { HANDLED_NOTE } from '../../src/shared/review-command';
 import {
   QUARANTINE_DENY_RULES, addQuarantineDenyRules, missingQuarantineDenyRules,
 } from '../../src/cli/commands/quarantine-permissions';
@@ -33,12 +34,15 @@ describe('Claude Code prompt hook: in-session review', () => {
     MemoryService.getInstance().store({ key: 'q1', origin: 'agent', type: 'devops', value: { content: 'deploy from any branch' } });
   });
 
-  it('blocks a review command, shows the user the review, and captures nothing', async () => {
+  it('handles a review command without blocking: the user sees the review, the agent only a fixed note', async () => {
     const out = await run('recall review');
     const json = JSON.parse(out);
-    expect(json.decision).toBe('block');
-    expect(json.reason).toContain('deploy from any branch');
-    expect(json.hookSpecificOutput).toEqual({ hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true });
+    expect(json.decision).toBeUndefined();
+    expect(json.systemMessage).toContain('deploy from any branch');
+    expect(json.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+    expect(json.hookSpecificOutput.additionalContext).toBe(HANDLED_NOTE);
+    // quarantined text must never reach the agent's context
+    expect(json.hookSpecificOutput.additionalContext).not.toContain('deploy from any branch');
     expect(mockCapture).not.toHaveBeenCalled();
   });
 

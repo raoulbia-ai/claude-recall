@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.52.4] - 2026-11-25
+
+### Changed
+
+- In Claude Code, `recall …` commands no longer show **"A hook blocked your prompt"**. The hook still handles the command, but it now lets your message through instead of blocking it. The result appears as a hook message, and the agent replies "Done." The agent is told only that a command ran; the review text, which can quote memories waiting for review, never reaches it.
+
 ## [0.52.3] - 2026-11-19
 
 ### Added
